@@ -1,6 +1,6 @@
 // 통화·손익·퍼센트 등 숫자 표기를 한국어 형식으로 통일하는 포맷 유틸
 
-/** 원화 표기. 예: 10000000 -> "1,000만원" 대신 정확 금액이 필요하면 formatKRW 사용 */
+/** 정확한 원화 금액. 예: 10000000 -> "10,000,000원". 축약이 필요하면 formatManEok 을 쓴다. */
 export function formatKRW(value: number): string {
   return `${value.toLocaleString('ko-KR')}원`
 }
@@ -26,6 +26,10 @@ export function formatPnl(value: number): string {
   return `${sign}${formatManEok(Math.abs(value))}`
 }
 
+/**
+ * 이미 퍼센트인 값을 받는다. 백엔드 scale-4 비율을 그대로 넘기면 안 된다 —
+ * 변환은 datetime.ts 의 ratioToPercent 한 곳에서만 한다.
+ */
 export function formatPercent(value: number): string {
   const sign = value > 0 ? '+' : value < 0 ? '−' : ''
   return `${sign}${Math.abs(value).toFixed(1)}%`
@@ -36,13 +40,4 @@ export function pnlTone(value: number): string {
   if (value > 0) return 'text-gain'
   if (value < 0) return 'text-loss'
   return 'text-muted'
-}
-
-export function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
 }

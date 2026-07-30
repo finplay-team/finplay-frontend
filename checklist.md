@@ -30,7 +30,10 @@
 - [x] 소셜 로그인 버튼 (`SocialLogin.tsx`)
 - [x] 고객센터 1:1 문의 폼 (FAQ는 유지)
 - [x] `mockDb.ts` 전체 삭제 + 코인 시장 UI 제거 (`landing/SplitAccounts.tsx` 포함)
-- [x] 죽은 아이콘 정리 (`Trophy`·`Target`·`Flag`·`Calendar`·`Users`·`Notebook`·`Coin`·`Menu`)
+- [x] AI 습관 분석 (`landing/AiHabit.tsx` — 백엔드에 습관·리포트 엔드포인트 없음)
+- [x] 죽은 아이콘 정리 (`Trophy`·`Target`·`Flag`·`Calendar`·`Users`·`Notebook`·`Coin`·`Menu`·`Sparkle`)
+- [x] `lib/format.ts` 다크 토큰 전환(`pnlTone`) + 죽은 `formatDate` 제거
+- [x] `index.html` title·description 실제 기능 기준 갱신 + `color-scheme: dark`
 
 ## D. 데이터 레이어
 - [x] `lib/tokenStore.ts` (모듈 스코프 + `useSyncExternalStore`, 순환 의존 차단)

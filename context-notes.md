@@ -215,9 +215,16 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
 - **`Signup`·`Trade`·`Portfolio`·`MyPage` 는 "준비 중" 자리표시자로 축소했다.** mock 엔진(`tradeService.tick`,
   `tutorialService`, `useLivePrices`, `DecisionLog`)에 너무 깊게 묶여 있어 부분 수정보다 통째 교체가 싸다.
   각 파일 첫 줄에 `TODO(4차)` 주석을 남겼다. `Login` 은 실 API 로그인만 최소 연결해 살려 뒀다.
-- **`Landing` 은 4섹션(Hero·AiHabit·TechHighlights·CTA)으로 줄었다.** 삭제된 4섹션 중 `SplitAccounts` 는
-  "주식·코인 계좌 분리"가 섹션 존재 이유라 코인 제거(D3)와 함께 사라졌다. `Hero` 의 듀얼 계좌 미리보기도
-  주식 단일 카드로 바꿨다.
+- **`Landing` 은 3섹션(Hero·TechHighlights·CTA)으로 줄었다.** 삭제된 5섹션 중 `SplitAccounts` 는
+  "주식·코인 계좌 분리"가 섹션 존재 이유라 코인 제거(D3)와 함께 사라졌고, `AiHabit` 은 백엔드에
+  습관 분석·AI 리포트 엔드포인트가 없어 투자일기와 같은 규칙으로 제거했다. `Hero` 의 듀얼 계좌
+  미리보기도 주식 단일 카드로 바꿨고, 깨진 `랭킹 둘러보기`(`/rankings`) CTA 는 `/support` 로 돌렸다.
+- ⚠️ **`TechHighlights` 문구는 아직 낡았다** — Kafka 랭킹 컨슈머·투자일기 파이프라인·코인 실시간을
+  언급한다. 코드는 컴파일되지만 내용이 사실과 다르므로 랜딩 재작성 담당이 문구를 고쳐야 한다.
+- **`lib/format.ts` 에서 `formatDate(iso)` 를 지웠다.** 소비자가 0개였고 `new Date(iso)` 로 오프셋 없는
+  백엔드 문자열을 파싱하는 함정이었다. 날짜·시각 표시는 `lib/datetime.ts` 가 단독으로 책임진다.
+  `formatPercent` 는 계속 **퍼센트**를 받는다 — 비율 ×100 은 `ratioToPercent` 한 곳에서만 한다.
+  mock 수수료·세금 계산은 `tradeService` 안에 있었어서 `format.ts` 에는 지울 것이 없었다.
 - **`Card` 의 `accent` 를 `'brand' | 'none'` 으로 줄였다.** `'stock'`·`'coin'` 은 tailwind 에서 토큰이 이미
   삭제돼 실제로는 CSS 가 생성되지 않는 죽은 값이었다.
 - **부팅 `/me` 가 401 이면 세션을 비운다.** 갱신 성공 후에도 `/me` 가 401 이면(회원 삭제 등) 액세스 토큰이

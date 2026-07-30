@@ -28,12 +28,6 @@ export const ArrowRight = (props: IconProps) => (
 )
 
 
-export const Sparkle = (props: IconProps) => (
-  <svg {...base(props)}>
-    <path d="M12 3c.4 3.8 1.9 5.3 5.7 5.7-3.8.4-5.3 1.9-5.7 5.7-.4-3.8-1.9-5.3-5.7-5.7C10.1 8.3 11.6 6.8 12 3Z" />
-    <path d="M18.5 14.5c.2 1.6.8 2.2 2.4 2.4-1.6.2-2.2.8-2.4 2.4-.2-1.6-.8-2.2-2.4-2.4 1.6-.2 2.2-.8 2.4-2.4Z" />
-  </svg>
-)
 
 export const Layers = (props: IconProps) => (
   <svg {...base(props)}>
