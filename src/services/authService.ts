@@ -1,100 +1,61 @@
-// 회원가입·로그인·세션 조회를 mock으로 처리하는 인증 서비스 (실 API로 교체 가능)
-import { accounts, mockPasswords, SEED_AMOUNT, users } from './mockDb'
-import type { Account, SessionUser, SignupPayload, User } from './types'
+// 회원가입 3단계·로그인·회원정보 변경 등 /api/auth 엔드포인트를 감싸는 서비스
+import { api } from '../lib/apiClient'
+import type {
+  EmailChangeRequest,
+  EmailVerificationConfirmResponse,
+  Member,
+  NicknameChangeRequest,
+  SignupRequest,
+  TokenResponse,
+} from './types'
 
-const SESSION_KEY = 'investory.session'
-
-/** 네트워크 지연 시뮬레이션 */
-const delay = (ms = 500) => new Promise((resolve) => setTimeout(resolve, ms))
-
-let seq = users.length
-
-function persist(user: SessionUser) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user))
+/** 1단계 — 인증번호 발송 요청. 202. 로컬은 FakeEmailSender 라 백엔드 콘솔에만 코드가 찍힌다. */
+export function requestEmailVerification(email: string): Promise<void> {
+  return api.post<void>('/auth/email-verifications', { email }, { auth: false })
 }
 
-export const authService = {
-  /** 현재 로그인 세션 조회 — 인메모리 DB에 없는 유저(새로고침으로 소실)는 세션 무효화 */
-  getSession(): SessionUser | null {
-    // DEV 전용: ?as=user|admin 쿼리로 데모 세션 자동 주입 (스크린샷·시연용)
-    if (import.meta.env.DEV) {
-      const as = new URLSearchParams(window.location.search).get('as')
-      if (as === 'user' || as === 'admin') {
-        const auto = users.find((u) => u.id === (as === 'admin' ? 'u_admin' : 'u_demo'))
-        if (auto) {
-          persist(auto)
-          return auto
-        }
-      }
-    }
-    const raw = localStorage.getItem(SESSION_KEY)
-    if (!raw) return null
-    try {
-      const session = JSON.parse(raw) as SessionUser
-      const live = users.find((u) => u.id === session.id)
-      if (!live || live.status === 'SUSPENDED') {
-        localStorage.removeItem(SESSION_KEY)
-        return null
-      }
-      return live
-    } catch {
-      return null
-    }
-  },
+/** 2단계 — 6자리 코드 확인. 가입에 필요한 signupVerificationToken 을 받는다. */
+export function confirmEmailVerification(
+  email: string,
+  code: string,
+): Promise<EmailVerificationConfirmResponse> {
+  return api.post<EmailVerificationConfirmResponse>(
+    '/auth/email-verifications/confirm',
+    { email, code },
+    { auth: false },
+  )
+}
 
-  async login(email: string, password: string): Promise<SessionUser> {
-    await delay()
-    const user = users.find((u) => u.email === email.trim().toLowerCase())
-    if (!user || mockPasswords[user.email] !== password) {
-      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.')
-    }
-    if (user.status === 'SUSPENDED') {
-      throw new Error('정지된 계정입니다. 관리자에게 문의해 주세요.')
-    }
-    persist(user)
-    return user
-  },
+/** 3단계 — 201 + TokenResponse 이므로 응답을 저장하면 그대로 로그인 상태가 된다. */
+export function signup(req: SignupRequest): Promise<TokenResponse> {
+  return api.post<TokenResponse>('/auth/signup', req, { auth: false })
+}
 
-  async signup(payload: SignupPayload): Promise<SessionUser> {
-    await delay()
-    const email = payload.email.trim().toLowerCase()
-    if (users.some((u) => u.email === email)) {
-      throw new Error('이미 가입된 이메일입니다.')
-    }
-    if (users.some((u) => u.nickname === payload.nickname.trim())) {
-      throw new Error('이미 사용 중인 닉네임입니다.')
-    }
+export function login(email: string, password: string): Promise<TokenResponse> {
+  return api.post<TokenResponse>('/auth/login', { email, password }, { auth: false })
+}
 
-    const user: User = {
-      id: `u_${++seq}`,
-      email,
-      nickname: payload.nickname.trim(),
-      role: 'USER',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-    }
-    users.push(user)
-    mockPasswords[email] = payload.password
+export function logout(refreshToken: string): Promise<void> {
+  return api.post<void>('/auth/logout', { refreshToken })
+}
 
-    // 가입 시 주식·코인 계좌를 각각 시드머니와 함께 자동 생성
-    const newAccounts: Account[] = (['STOCK', 'CRYPTO'] as const).map((market) => ({
-      id: `a_${user.id}_${market.toLowerCase()}`,
-      userId: user.id,
-      market,
-      seedAmount: SEED_AMOUNT,
-      bonusTotal: 0,
-      cashBalance: SEED_AMOUNT,
-      totalValue: SEED_AMOUNT,
-      realizedPnl: 0,
-      unrealizedPnl: 0,
-    }))
-    accounts.push(...newAccounts)
+export function getMe(): Promise<Member> {
+  return api.get<Member>('/auth/me')
+}
 
-    persist(user)
-    return user
-  },
+export function changeNickname(req: NicknameChangeRequest): Promise<Member> {
+  return api.patch<Member>('/auth/me/nickname', req)
+}
 
-  logout() {
-    localStorage.removeItem(SESSION_KEY)
-  },
+/** 이메일 변경 1단계 — 새 이메일로 인증번호 발송. 202. */
+export function requestEmailChange(req: EmailChangeRequest): Promise<void> {
+  return api.post<void>('/auth/email-changes', req)
+}
+
+/**
+ * 이메일 변경 2단계. 서버가 모든 리프레시 토큰을 폐기하므로
+ * 호출부는 성공 후 반드시 tokenStore.clearSession() 을 해야 한다.
+ */
+export function confirmEmailChange(newEmail: string, code: string): Promise<Member> {
+  return api.post<Member>('/auth/email-changes/confirm', { newEmail, code })
 }

@@ -20,31 +20,34 @@
 - [ ] `docs/api-routes.md` · `docs/api-contracts.md` 동기화
 
 ## C. 해체 (백엔드 미구현 기능 제거)
-- [ ] 지정가 주문 / `PendingOrder` / 주문유형 토글
-- [ ] 랭킹 (`rankingService`, `pages/Rankings.tsx`, `landing/RankingPhilosophy.tsx`)
-- [ ] 튜토리얼 보상 (`tutorialService`, `landing/Missions.tsx`)
-- [ ] 관리자 (`adminService`, `pages/Admin.tsx`, `requireAdmin`)
-- [ ] 투자일기 (`DecisionLog`, `landing/RecordReview.tsx`, `lib/labels.ts`)
-- [ ] 경제 이벤트 (`EconomicEvent`)
-- [ ] AI 챗봇 위젯 (`AssistantWidget.tsx`)
-- [ ] 소셜 로그인 버튼 (`SocialLogin.tsx`)
-- [ ] 고객센터 1:1 문의 폼 (FAQ는 유지)
-- [ ] `mockDb.ts` 전체 삭제 + 코인 시장 UI 제거
+- [x] 지정가 주문 / `PendingOrder` / 주문유형 토글 (`OrderType` 을 `'MARKET'` 단일 유니온으로 고정)
+- [x] 랭킹 (`rankingService`, `pages/Rankings.tsx`, `landing/RankingPhilosophy.tsx`)
+- [x] 튜토리얼 보상 (`tutorialService`, `landing/Missions.tsx`)
+- [x] 관리자 (`adminService`, `pages/Admin.tsx`, `requireAdmin`)
+- [x] 투자일기 (`DecisionLog`, `landing/RecordReview.tsx`, `lib/labels.ts`)
+- [x] 경제 이벤트 (`EconomicEvent`)
+- [x] AI 챗봇 위젯 (`AssistantWidget.tsx`)
+- [x] 소셜 로그인 버튼 (`SocialLogin.tsx`)
+- [x] 고객센터 1:1 문의 폼 (FAQ는 유지)
+- [x] `mockDb.ts` 전체 삭제 + 코인 시장 UI 제거 (`landing/SplitAccounts.tsx` 포함)
+- [x] 죽은 아이콘 정리 (`Trophy`·`Target`·`Flag`·`Calendar`·`Users`·`Notebook`·`Coin`·`Menu`)
 
 ## D. 데이터 레이어
-- [ ] `lib/tokenStore.ts` (모듈 스코프 + `useSyncExternalStore`, 순환 의존 차단)
-- [ ] `lib/apiClient.ts` (`ApiError` + 401 단일 비행 갱신)
-- [ ] `lib/errorMessages.ts` (`code` → 한국어 문구)
-- [ ] `lib/datetime.ts` (오프셋 없는 `LocalDateTime` 파싱 + `ratioToPercent`)
-- [ ] `services/types.ts` 실응답 기준 전면 교체
-- [ ] `services/` — auth / instrument / order / trade / holding / account / community
-- [ ] `auth/AuthContext.tsx` 비동기 부팅 + `ProtectedRoute` (`requireAdmin` 제거)
+- [x] `lib/tokenStore.ts` (모듈 스코프 + `useSyncExternalStore`, 순환 의존 차단)
+- [x] `lib/apiClient.ts` (`ApiError` + 401 단일 비행 갱신)
+- [x] `lib/errorMessages.ts` (`code` → 한국어 문구)
+- [x] `lib/datetime.ts` (오프셋 없는 `LocalDateTime` 파싱 + `ratioToPercent`)
+- [x] `services/types.ts` 실응답 기준 전면 교체
+- [x] `services/` — auth / instrument / order / trade / holding / account / community
+- [x] `auth/AuthContext.tsx` 비동기 부팅 + `ProtectedRoute` (`requireAdmin` 제거)
+- [x] 공통 UI 프리미티브 다크 대응 (`Button`·`Tabs`·`Field`·`Card`)
 
 ## E. 시세
-- [ ] `hooks/useStockStream.ts` (fetch + ReadableStream SSE, 백오프, 401 재연결)
-- [ ] `hooks/useCandles.ts` (`sourceTime` upsert 병합)
-- [ ] `components/CandleChart.tsx` (인라인 SVG, 빈 배열 = 정상 상태)
-- [ ] `hooks/useLivePrices.ts` 삭제
+- [x] `hooks/useStockStream.ts` (fetch + ReadableStream SSE, 백오프, 401 재연결)
+- [x] `hooks/useCandles.ts` (`sourceTime` upsert 병합)
+- [x] `hooks/useInstruments.ts` · `hooks/useIdempotencyKey.ts`
+- [x] `components/CandleChart.tsx` (인라인 SVG, 빈 배열 = 정상 상태)
+- [x] `hooks/useLivePrices.ts` 삭제
 
 ## F. 화면
 - [ ] `Signup` 3단계 (이메일 → 6자리 코드 → 비밀번호·닉네임) + DEV 콘솔 안내
@@ -58,7 +61,7 @@
 - [ ] `Support` FAQ만 남기고 실제 기능 기준으로 문구 갱신
 
 ## G. 검증
-- [ ] `npm run build` 통과 (타입 에러 0)
+- [x] `npm run build` 통과 (타입 에러 0) — 해체 + 데이터 레이어 기준. 화면 재작성 후 재실행 필요
 - [ ] 백엔드 기동 + 시드 후 브라우저 E2E: 가입 → 로그인 → 매수 → 보유 확인 → 매도 → 거래내역
 - [ ] 커뮤니티 글 작성 → 댓글 → 삭제 왕복
 - [ ] 시세 없는 상태(시드 전)에서 주문 버튼 비활성 + 사유 문구 확인

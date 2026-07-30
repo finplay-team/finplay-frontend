@@ -1,0 +1,66 @@
+// 종목 목록·시세·분봉 조회 서비스. 주문·거래 응답에 symbol·name 이 없어 모듈 스코프 캐시 조인이 필수다
+import { api } from '../lib/apiClient'
+import type { Candle, Instrument, Market, PriceResponse } from './types'
+
+export interface InstrumentIndex {
+  byId: Map<number, Instrument>
+  bySymbol: Map<string, Instrument>
+}
+
+// 종목은 Flyway 시드라 런타임에 변하지 않는다 → TTL·재검증 없는 영구 캐시가 맞다.
+let cache: InstrumentIndex | null = null
+let inFlight: Promise<InstrumentIndex> | null = null
+
+export function loadInstruments(market?: Market): Promise<Instrument[]> {
+  return api.get<Instrument[]>('/instruments', { query: { market } })
+}
+
+/** 전체 종목을 1회만 로드해 캐시한다. 동시 마운트된 컴포넌트가 여러 개여도 요청은 한 번만 나간다. */
+export function ensureInstrumentCache(): Promise<InstrumentIndex> {
+  if (cache) return Promise.resolve(cache)
+  if (inFlight) return inFlight
+
+  inFlight = loadInstruments()
+    .then((list) => {
+      const index: InstrumentIndex = {
+        byId: new Map(list.map((i) => [i.instrumentId, i])),
+        bySymbol: new Map(list.map((i) => [i.symbol, i])),
+      }
+      cache = index
+      return index
+    })
+    .finally(() => {
+      inFlight = null
+    })
+
+  return inFlight
+}
+
+/** 목록 렌더에서 쓰는 동기 조회. 캐시가 아직 없으면 undefined 다. */
+export function getCachedInstrument(instrumentId: number): Instrument | undefined {
+  return cache?.byId.get(instrumentId)
+}
+
+export function getCachedBySymbol(symbol: string): Instrument | undefined {
+  return cache?.bySymbol.get(symbol)
+}
+
+export function invalidateInstrumentCache(): void {
+  cache = null
+}
+
+/** 시세가 없으면 200 이 아니라 409 PRICE_UNAVAILABLE 로 온다. */
+export function getPrice(instrumentId: number): Promise<PriceResponse> {
+  return api.get<PriceResponse>(`/instruments/${instrumentId}/price`)
+}
+
+/** interval 은 항상 '1m'. 200 [] 은 오류가 아니라 정상 응답이다(장 준비 전 등). */
+export function getCandles(
+  instrumentId: number,
+  p?: { from?: string; to?: string; signal?: AbortSignal },
+): Promise<Candle[]> {
+  return api.get<Candle[]>(`/instruments/${instrumentId}/candles`, {
+    query: { interval: '1m', from: p?.from, to: p?.to },
+    signal: p?.signal,
+  })
+}

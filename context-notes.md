@@ -210,6 +210,27 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
 - **`bg-ink text-white` 조합 금지**: `ink`가 이제 밝은 색이라 흰 글씨가 안 보인다.
   (기존 `Button` primary·`Tabs` 활성 상태가 이 조합이었다 — 민트로 교체했다.)
 
+## 해체·데이터 레이어 작업 중 추가 결정 (2026-07-30)
+
+- **`Signup`·`Trade`·`Portfolio`·`MyPage` 는 "준비 중" 자리표시자로 축소했다.** mock 엔진(`tradeService.tick`,
+  `tutorialService`, `useLivePrices`, `DecisionLog`)에 너무 깊게 묶여 있어 부분 수정보다 통째 교체가 싸다.
+  각 파일 첫 줄에 `TODO(4차)` 주석을 남겼다. `Login` 은 실 API 로그인만 최소 연결해 살려 뒀다.
+- **`Landing` 은 4섹션(Hero·AiHabit·TechHighlights·CTA)으로 줄었다.** 삭제된 4섹션 중 `SplitAccounts` 는
+  "주식·코인 계좌 분리"가 섹션 존재 이유라 코인 제거(D3)와 함께 사라졌다. `Hero` 의 듀얼 계좌 미리보기도
+  주식 단일 카드로 바꿨다.
+- **`Card` 의 `accent` 를 `'brand' | 'none'` 으로 줄였다.** `'stock'`·`'coin'` 은 tailwind 에서 토큰이 이미
+  삭제돼 실제로는 CSS 가 생성되지 않는 죽은 값이었다.
+- **부팅 `/me` 가 401 이면 세션을 비운다.** 갱신 성공 후에도 `/me` 가 401 이면(회원 삭제 등) 액세스 토큰이
+  회전될 때마다 부팅 이펙트가 다시 돌아 **무한 갱신 루프**가 된다. 네트워크 오류는 세션을 비우지 않고
+  캐시된 member 로 계속 그린다.
+- **`Nav` 의 지갑 pill 은 제거했다.** mock `getSummarySync` 2.5초 폴링이 근거였고, 실 API 로 살리려면
+  `/api/accounts/summary` 주기 폴링이 필요해 화면 재작성 단계에서 판단할 일이다.
+- **아이콘은 스코프와 함께 죽은 것만 지웠다** (`Trophy`·`Target`·`Flag`·`Calendar`·`Users`·`Notebook`·`Coin`·`Menu`).
+  `Check`·`Close`·`User`·`ArrowRight` 는 현재 소비자가 없어도 남겼다 — 재작성될 가입 체크박스·모달 닫기 등에
+  다시 필요할 범용 아이콘이라 지웠다 다시 만드는 편이 더 손해다.
+- **다크 톤 하드코딩 정리**: `pnlTone()` 이 `text-rose-600`/`text-blue-600` 대신 `gain`/`loss` 토큰을 쓴다.
+  `AuthLayout`·`CTA` 의 `bg-ink` + `text-white` 패널은 `bg-surface`/`bg-canvas` + `text-ink` + `.orb` 로 교체했다.
+
 ## 남은 한계 (알고 있는 것)
 
 - 커뮤니티 게시글에 `authorId`가 없어 소유 판정을 `authorNickname === me.nickname`으로 한다.

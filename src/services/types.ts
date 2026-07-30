@@ -1,246 +1,316 @@
-// 서비스 전역에서 공유하는 도메인 타입 정의 (백엔드 엔티티와 1:1 대응)
+// 백엔드 실제 응답 계약에 1:1 대응하는 도메인 타입 정의 (모든 성공 응답은 봉투 없는 bare JSON)
+
+/* ---------- 공통 ---------- */
 
 export type Market = 'STOCK' | 'CRYPTO'
-export type Role = 'USER' | 'ADMIN'
-export type UserStatus = 'ACTIVE' | 'SUSPENDED'
 
-export interface User {
-  id: string
+/**
+ * 백엔드 LocalDateTime 직렬화 문자열. 예: "2026-07-29T09:01:00" — 오프셋·Z 가 없다.
+ * 절대 'Z' 를 붙이지 말 것. 파싱은 lib/datetime.ts 의 parseLocalDateTime 을 쓴다.
+ */
+export type LocalDateTimeString = string
+/** 백엔드 LocalDate 직렬화 문자열. 예: "2026-07-29" */
+export type LocalDateString = string
+
+/**
+ * BigDecimal 은 JSON 숫자로 내려온다. 같은 값이 엔드포인트마다 다른 scale 로 온다
+ * (POST /api/orders → 10, GET /api/orders → 10.00000000). 문자열 비교 금지, 항상 숫자로 비교한다.
+ */
+export type Decimal = number
+
+/** 백엔드 공통 오류 봉투 — 성공 응답에는 봉투가 없다. */
+export interface ApiErrorEnvelope {
+  error: { code: string; message: string; requestId: string }
+}
+
+/* ---------- 인증 ---------- */
+
+export type SignupMethod = 'EMAIL' | 'KAKAO' | 'NAVER'
+
+/** GET /api/auth/me — role 필드가 없다. 클라이언트 관리자 개념은 존재할 수 없다. */
+export interface Member {
+  id: number
   email: string
   nickname: string
-  role: Role
-  status: UserStatus
-  createdAt: string
+  signupMethod: SignupMethod
 }
 
-/** 로그인 세션에 노출되는 공개 사용자 정보 (비밀번호 제외) */
-export type SessionUser = Omit<User, never>
-
-export interface Account {
-  id: string
-  userId: string
-  market: Market
-  /** 지급 시드머니 (원). 확정값 10,000,000 */
-  seedAmount: number
-  /** 튜토리얼 보상으로 추가 지급된 누적 보너스 (원) */
-  bonusTotal: number
-  cashBalance: number
-  /** 보유자산 평가액 + 현금 */
-  totalValue: number
-  /** 실현손익 누적 (랭킹 산정 기준) */
-  realizedPnl: number
-  /** 미실현 평가손익 (AI 리포트 기준) */
-  unrealizedPnl: number
+export interface TokenResponse {
+  accessToken: string
+  refreshToken: string
+  accessTokenExpiresInSeconds: number
+  refreshTokenExpiresInSeconds: number
 }
 
-export interface Instrument {
-  id: string
-  market: Market
-  symbol: string
-  name: string
-  /** 호가 단위 (원). 코인은 소수 가능 */
-  tickSize: number
-  /** 최소 주문 금액 (원) */
-  minOrderAmount: number
-  isTradable: boolean
+export interface EmailVerificationRequest {
+  email: string
+}
+/** code 는 정확히 6자리 숫자 */
+export interface EmailVerificationConfirmRequest {
+  email: string
+  code: string
+}
+export interface EmailVerificationConfirmResponse {
+  signupVerificationToken: string
+  expiresInSeconds: number
 }
 
-export interface RankingRow {
-  rank: number
-  accountId: string
-  nickname: string
-  market: Market
-  realizedPnl: number
-  /** 수익률 % (참고 지표) */
-  returnRate: number
-  avgHoldingDays: number
-  tradeCount: number
-  /** 미실현 손익 — AI 관점 대비용 */
-  unrealizedPnl: number
-}
-
-export interface HabitMetrics {
-  tradeCount: number
-  avgHoldingDays: number
-  stopLossRatio: number
-  concentrationCount: number
-}
-
-export interface Mission {
-  id: string
-  title: string
-  description: string
-  rewardType: 'BADGE' | 'TITLE' | 'NONE'
-  rewardLabel: string
-  order: number
-  isActive: boolean
-}
-
-export type EconomicEventType = 'RATE' | 'CPI' | 'EARNINGS' | 'ETC'
-
-export interface EconomicEvent {
-  id: string
-  title: string
-  type: EconomicEventType
-  eventAt: string
-  description: string
-  alertEnabled: boolean
-}
-
-export interface AdminStats {
-  totalUsers: number
-  activeUsers: number
-  totalAccounts: number
-  todayTradeVolume: number
-  activeEvents: number
-}
-
-/** 회원가입 요청 페이로드 */
-export interface SignupPayload {
+/** POST /api/auth/signup — 201 로 TokenResponse 를 돌려주며 그대로 로그인된다. 가입 시 STOCK·CRYPTO 계좌가 동시 생성된다. */
+export interface SignupRequest {
   email: string
   nickname: string
   password: string
+  termsAgreed: true
+  signupVerificationToken: string
 }
 
-/* ---------- 거래(모의투자) 도메인 ---------- */
+export interface LoginRequest {
+  email: string
+  password: string
+}
+export interface RefreshRequest {
+  refreshToken: string
+}
+export interface LogoutRequest {
+  refreshToken: string
+}
+
+/** 서버가 DB 의 가입 방식으로 필요한 재인증 수단을 판단한다 (EMAIL → currentPassword). */
+export interface NicknameChangeRequest {
+  nickname: string
+  currentPassword?: string
+  reauthToken?: string
+}
+export interface EmailChangeRequest {
+  newEmail: string
+  currentPassword?: string
+  reauthToken?: string
+}
+export interface EmailChangeConfirmRequest {
+  newEmail: string
+  code: string
+}
+
+/* ---------- 종목·시세 ---------- */
+
+/** GET /api/instruments — bare array. Flyway 시드 28건 (id 1~16 STOCK, 17~28 CRYPTO). */
+export interface Instrument {
+  instrumentId: number
+  market: Market
+  symbol: string
+  name: string
+  tickSize: Decimal
+  minOrderAmount: number
+  tradable: boolean
+}
+
+export type PriceStatus = 'AVAILABLE' | 'UNAVAILABLE'
+export type MarketStatus = 'OPEN' | 'CLOSED'
+
+/** GET /api/instruments/{id}/price — 가격이 없으면 200 이 아니라 409 PRICE_UNAVAILABLE 이다. */
+export interface PriceResponse {
+  price: Decimal | null
+  sourceTime: LocalDateTimeString | null
+  status: PriceStatus
+  sourceTradingDate: LocalDateString | null
+}
+
+/**
+ * GET /api/instruments/{id}/candles?interval=1m — bare array, sourceTime 오름차순.
+ * 주식: 미마감 분봉 제외, from·to 의 날짜 성분은 무시(시각만 사용), 재생세션 미준비 시 200 [] (정상).
+ *       sourceTime 의 날짜는 오늘이 아니라 원본 거래일(sourceTradingDate)이다.
+ * 코인: 진행 중 분봉 포함, 최대 200개.
+ */
+export interface Candle {
+  sourceTime: LocalDateTimeString
+  open: Decimal
+  high: Decimal
+  low: Decimal
+  close: Decimal
+  volume: Decimal
+}
+
+/* ---------- SSE (GET /api/stocks/stream, Bearer 필수 → EventSource 사용 불가) ---------- */
+
+export interface StreamPriceSnapshot {
+  symbol: string
+  price: Decimal | null
+  sourceTime: LocalDateTimeString | null
+  status: PriceStatus
+}
+
+/** event: snapshot — 구독 직후 1회. 주식 16종이 항상 전부 포함된다. */
+export interface StockSnapshotEvent {
+  market: 'STOCK'
+  sourceTradingDate: LocalDateString | null
+  marketStatus: MarketStatus
+  emittedAt: LocalDateTimeString
+  prices: StreamPriceSnapshot[]
+}
+
+/** event: price — 매분 새로 공개된 종목만. */
+export interface StockPriceEvent {
+  market: 'STOCK'
+  symbol: string
+  price: Decimal
+  sourceTime: LocalDateTimeString
+  emittedAt: LocalDateTimeString
+  sourceTradingDate: LocalDateString | null
+  marketStatus: MarketStatus
+}
+
+/** event: status — marketStatus 가 바뀔 때만. */
+export interface StockStatusEvent {
+  market: 'STOCK'
+  marketStatus: MarketStatus
+  emittedAt: LocalDateTimeString
+}
+
+/* ---------- 주문·체결 ---------- */
 
 export type OrderSide = 'BUY' | 'SELL'
-export type OrderType = 'MARKET' | 'LIMIT'
-export type OrderStatus = 'FILLED' | 'PENDING' | 'CANCELLED'
-export type DecisionBasis = 'NEWS' | 'TECHNICAL' | 'LONGTERM' | 'GUT' | 'ETC'
+/** MARKET 만 지원한다. 그 외 값은 422 UNSUPPORTED_ORDER_TYPE. 지정가·미체결 주문 개념은 없다. */
+export type OrderType = 'MARKET'
+export type OrderStatus = 'FILLED'
 
-/** 실시간(시뮬레이션) 시세 스냅샷 */
-export interface Quote {
-  instrumentId: string
-  price: number
-  /** 당일 시가 대비 변동액 */
-  changeAmount: number
-  /** 당일 시가 대비 변동률 (%) */
-  changeRate: number
-}
-
-/** 계좌별 종목 보유 현황 */
-export interface Holding {
-  accountId: string
-  instrumentId: string
-  quantity: number
-  avgPrice: number
-}
-
-/** 보유 종목의 현재가 평가 결과 */
-export interface Position {
-  instrument: Instrument
-  quantity: number
-  avgPrice: number
-  currentPrice: number
-  marketValue: number
-  costBasis: number
-  unrealizedPnl: number
-  unrealizedRate: number
-}
-
-/** 계좌 요약 (현금 + 평가액 + 손익) */
-export interface PortfolioSummary {
-  accountId: string
+/** POST /api/orders — Idempotency-Key 헤더 필수(공백 불가, 100자 이하, 사용자별 유일). quantity 는 문자열로 보낸다. */
+export interface OrderCreateRequest {
   market: Market
-  seedAmount: number
-  /** 시드 + 튜토리얼 보너스 = 투자원금 */
-  investedCapital: number
-  cashBalance: number
-  holdingsValue: number
-  totalValue: number
-  realizedPnl: number
-  unrealizedPnl: number
-  returnRate: number
-}
-
-/** 체결된 거래 내역 */
-export interface TradeRecord {
-  id: string
-  accountId: string
-  instrumentId: string
-  instrumentName: string
-  side: OrderSide
-  price: number
-  quantity: number
-  amount: number
-  fee: number
-  executedAt: string
-  decisionLogId?: string
-}
-
-/** 미체결 지정가 주문 */
-export interface PendingOrder {
-  id: string
-  accountId: string
-  instrumentId: string
-  instrumentName: string
-  side: OrderSide
-  limitPrice: number
-  quantity: number
-  status: OrderStatus
-  createdAt: string
-}
-
-/** 투자일기 (매매 근거 + 메모 + AI 복기) */
-export interface DecisionLog {
-  id: string
-  tradeId: string
-  instrumentName: string
-  side: OrderSide
-  basis: DecisionBasis
-  memo: string
-  createdAt: string
-  aiReview?: string
-}
-
-/** 주문 요청 페이로드 */
-export interface PlaceOrderInput {
-  accountId: string
-  instrumentId: string
+  instrumentId: number
   side: OrderSide
   orderType: OrderType
-  quantity: number
-  /** 지정가일 때 필수 */
-  limitPrice?: number
-  decision?: {
-    basis: DecisionBasis
-    memo: string
-  }
+  quantity: string
 }
 
-/** 주문 결과 */
-export interface PlaceOrderResult {
-  status: 'FILLED' | 'PENDING'
-  trade?: TradeRecord
-  pending?: PendingOrder
+/** POST /api/orders 201 — 시장가는 즉시 체결되어 주문+체결 결과가 한 번에 온다. */
+export interface OrderExecutionResponse {
+  orderId: number
+  market: Market
+  instrumentId: number
+  side: OrderSide
+  orderType: OrderType
+  status: OrderStatus
+  quantity: Decimal
+  requestedAt: LocalDateTimeString
+  tradeId: number
+  price: Decimal
+  amount: Decimal
+  fee: Decimal
+  /** BUY 는 항상 null */
+  realizedPnl: Decimal | null
+  executedAt: LocalDateTimeString
 }
 
-/* ---------- 튜토리얼(입문자 온보딩) ---------- */
+/** GET /api/orders — bare array. symbol·name 이 없어 instrumentService 캐시로 조인해야 한다. */
+export interface OrderSummary {
+  orderId: number
+  market: Market
+  instrumentId: number
+  side: OrderSide
+  orderType: OrderType
+  status: OrderStatus
+  quantity: Decimal
+  requestedAt: LocalDateTimeString
+}
 
-/** 입문자 튜토리얼 단계. 완료 시 초기지급액의 rewardRate 만큼 보너스 지급 */
-export interface TutorialStep {
-  id: string
-  order: number
+/** GET /api/trades — symbol·name 없음. instrumentService 캐시로 조인한다. */
+export interface Trade {
+  tradeId: number
+  instrumentId: number
+  side: OrderSide
+  price: Decimal
+  quantity: Decimal
+  amount: Decimal
+  fee: Decimal
+  realizedPnl: Decimal | null
+  executedAt: LocalDateTimeString
+}
+
+/** cursor 형식: `{ISO_LOCAL_DATE_TIME}_{tradeId}`. limit 기본 20, 1..100 (서버가 클램프하지 않고 400 을 낸다). */
+export interface TradePage {
+  content: Trade[]
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+/* ---------- 보유·계좌 ---------- */
+
+/** GET /api/holdings?market= (market 필수). priceStatus 가 UNAVAILABLE 이면 아래 4개 필드가 명시적 null 이다. */
+export interface Holding {
+  instrumentId: number
+  symbol: string
+  name: string
+  quantity: Decimal
+  averagePrice: Decimal
+  currentPrice: Decimal | null
+  evaluationAmount: Decimal | null
+  unrealizedPnl: Decimal | null
+  returnRate: Decimal | null
+  priceStatus: PriceStatus
+}
+
+/**
+ * GET /api/accounts/summary?market= (market 필수).
+ * returnRate 는 퍼센트가 아니라 scale-4 비율이다 (0.0020 == 0.20%). 화면 표시 시 ×100 필수.
+ */
+export interface AccountSummary {
+  cashBalance: Decimal
+  holdingsValue: Decimal
+  totalValue: Decimal
+  realizedPnl: Decimal
+  unrealizedPnl: Decimal
+  returnRate: Decimal
+}
+
+/** GET /api/portfolio — 파라미터 없음. 두 시장 합산이므로 분모는 20,000,000 이다. returnRate 도 비율. */
+export interface PortfolioTotal {
+  totalValue: Decimal
+  returnRate: Decimal
+  unrealizedPnl: Decimal
+  realizedPnl: Decimal
+}
+
+/* ---------- 커뮤니티 ---------- */
+
+/** 목록도 content 를 전부 포함한다. authorId 가 없어 소유 판정은 authorNickname 비교뿐이다. */
+export interface Post {
+  postId: number
+  authorNickname: string
   title: string
-  description: string
-  /** 시드머니 대비 지급 비율 (예: 0.02 = 2%) */
-  rewardRate: number
+  content: string
+  createdAt: LocalDateTimeString
+  updatedAt: LocalDateTimeString
 }
 
-/** 사용자별 단계 진행 상태 */
-export interface TutorialProgress {
-  step: TutorialStep
-  /** 실제 거래 활동으로 자동 판정한 완료 여부 */
-  completed: boolean
-  /** 보상 수령 여부 */
-  claimed: boolean
+export interface PostPage {
+  content: Post[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  hasNext: boolean
 }
 
-/** 보상 수령 결과 */
-export interface ClaimResult {
-  rewardRate: number
-  /** 계좌별로 지급된 금액 (원) */
-  bonusPerAccount: number
-  progress: TutorialProgress[]
+/** title 최대 100자, content 최대 5000자 */
+export interface PostCreateRequest {
+  title: string
+  content: string
+}
+/** PATCH 는 부분 수정이 아니라 전체 교체 — 두 필드 모두 필수 */
+export interface PostUpdateRequest {
+  title: string
+  content: string
+}
+
+/** GET /api/community/posts/{id}/comments — bare array, createdAt 오름차순, 페이지네이션·수정·대댓글·좋아요 없음 */
+export interface Comment {
+  commentId: number
+  authorNickname: string
+  content: string
+  createdAt: LocalDateTimeString
+}
+
+/** content 최대 1000자 */
+export interface CommentCreateRequest {
+  content: string
 }
