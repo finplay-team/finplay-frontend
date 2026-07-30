@@ -76,6 +76,17 @@ export function Portfolio() {
     return () => clearInterval(timer)
   }, [isCrypto])
 
+  // 두 계좌는 완전히 분리돼 있다. 새 응답이 오기 전까지 앞 시장의 잔고·보유·체결을 그대로 두면 안 된다.
+  useEffect(() => {
+    setAccount(null)
+    setHoldings(null)
+    setAccountError(null)
+    setTrades([])
+    setTradesLoaded(false)
+    setNextCursor(null)
+    setHasNext(false)
+  }, [market])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {

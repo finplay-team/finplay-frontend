@@ -78,6 +78,17 @@ function formatQty(value: number): string {
   return value.toLocaleString('ko-KR', { maximumFractionDigits: 8 })
 }
 
+/**
+ * 수량 입력창에 넣을 문자열. String(0.00000001) 은 "1e-8" 이 되고 그대로 주문 본문에 실리면
+ * 백엔드가 파싱하지 못한다 → 항상 고정 소수로 만든 뒤 꼬리 0 만 지운다.
+ */
+function toQtyInput(value: number): string {
+  return value
+    .toFixed(CRYPTO_QTY_DECIMALS)
+    .replace(/(\.\d*?)0+$/, '$1')
+    .replace(/\.$/, '')
+}
+
 /** 코인은 1원 미만 단위까지 움직인다 — 원화 반올림으로 0 이 되지 않게 소수점을 남긴다. */
 function formatPrice(value: number): string {
   if (value >= 1000) return formatKRW(value)
@@ -193,6 +204,13 @@ export function Trade() {
     return () => clearInterval(timer)
   }, [isCrypto])
 
+  // 두 계좌는 완전히 분리돼 있다. 새 응답이 오기 전까지 앞 시장의 잔고를 그대로 두면 안 된다.
+  useEffect(() => {
+    setAccount(null)
+    setHoldings(null)
+    setAccountError(null)
+  }, [market])
+
   // 잔고는 스트림으로 오지 않는다. 시장 전환·분 경과·주문 성공 직후에 직접 다시 읽는다.
   useEffect(() => {
     let cancelled = false
@@ -255,7 +273,7 @@ export function Trade() {
         cleaned = `${whole}.${frac.slice(0, CRYPTO_QTY_DECIMALS)}`
       }
       if (side === 'SELL' && held > 0 && cleaned !== '' && Number(cleaned) > held) {
-        setQuantity(String(held))
+        setQuantity(toQtyInput(held))
         return
       }
       setQuantity(cleaned)
@@ -264,7 +282,7 @@ export function Trade() {
     // 주식 수량에 소수점이 있으면 백엔드가 400 VALIDATION_ERROR 를 낸다 → 입력 자체에서 막는다.
     const digits = raw.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '')
     if (side === 'SELL' && held > 0 && digits !== '' && Number(digits) > held) {
-      setQuantity(String(held))
+      setQuantity(toQtyInput(held))
       return
     }
     setQuantity(digits)
@@ -603,7 +621,7 @@ export function Trade() {
                         {held > 0 && (
                           <button
                             type="button"
-                            onClick={() => setQuantity(String(held))}
+                            onClick={() => setQuantity(toQtyInput(held))}
                             className="ml-2 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-brand transition-colors hover:bg-white/[0.1]"
                           >
                             전량
