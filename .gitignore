@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+
+# 에디터/도구
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# 로그
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

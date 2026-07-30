@@ -1,0 +1,70 @@
+/* 전역 디자인 토큰과 Tailwind 레이어를 정의하는 스타일 진입점 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-feature-settings: 'ss01', 'cv01';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 숫자는 등폭 정렬로 표 가독성 확보 */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Double-Bezel 외곽 셸 */
+  .bezel {
+    @apply rounded-bezel bg-white/60 p-1.5 ring-1 ring-black/[0.05] backdrop-blur-sm;
+  }
+
+  /* Double-Bezel 이너 코어 */
+  .bezel-core {
+    @apply rounded-core bg-surface shadow-inset;
+  }
+
+  .eyebrow {
+    @apply inline-flex items-center gap-2 rounded-full border border-black/[0.06] bg-white/70 px-3 py-1 text-[10px] font-medium uppercase tracking-eyebrow text-muted;
+  }
+}
+
+@layer utilities {
+  .reveal {
+    opacity: 0;
+    transform: translate3d(0, 4rem, 0);
+    filter: blur(12px);
+    transition:
+      opacity 0.8s cubic-bezier(0.32, 0.72, 0, 1),
+      transform 0.8s cubic-bezier(0.32, 0.72, 0, 1),
+      filter 0.8s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform, opacity;
+  }
+
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      opacity: 1;
+      transform: none;
+      filter: none;
+      transition: none;
+    }
+  }
+}
