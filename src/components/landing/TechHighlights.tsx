@@ -1,4 +1,5 @@
 // 실제 구현된 스택(Spring Boot·MySQL·Redis·SSE·멱등 주문)만 근거로 신뢰를 설명하는 섹션
+// 주의: Redis 는 코인 시세 전용이다. 주식 시세는 MySQL stock_candles 에서 읽는다.
 import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
 import { Reveal } from '../ui/Reveal'
@@ -8,12 +9,12 @@ const items = [
   {
     icon: <Bolt width={20} height={20} />,
     title: 'SSE 단방향 시세 스트리밍',
-    desc: '시세는 서버가 밀어 주는 SSE 한 방향으로 흐릅니다. 구독 직후 전체 스냅샷을 한 번 주고 이후에는 새로 공개된 종목만 보내며, 주기적인 하트비트로 연결을 유지합니다.',
+    desc: '주식 시세는 서버가 밀어 주는 SSE 한 방향으로 흐릅니다. 구독 직후 전체 스냅샷을 한 번 주고 이후에는 새로 공개된 종목만 보내며, 주기적인 하트비트로 연결을 유지합니다.',
   },
   {
     icon: <Cpu width={20} height={20} />,
-    title: 'Redis 시세 저장소',
-    desc: '최신 가격은 Redis에 두고 읽습니다. 값이 없으면 임의 가격을 지어내지 않고 시세 없음으로 응답해, 잘못된 가격에 체결되는 일을 원천적으로 막습니다.',
+    title: '시장별로 나눈 시세 경로',
+    desc: '주식은 MySQL에 저장된 과거 1분봉을 시각에 맞춰 읽고, 코인은 빗썸에서 받은 최신 틱을 Redis에 넣어 읽습니다. 어느 쪽이든 값이 없으면 임의 가격을 지어내지 않고 시세 없음으로 응답해, 잘못된 가격에 체결되는 일을 막습니다.',
   },
   {
     icon: <Shield width={20} height={20} />,
@@ -29,7 +30,7 @@ const items = [
 
 export function TechHighlights() {
   return (
-    <section id="tech" className="scroll-mt-24 px-4 py-24 md:py-36">
+    <section id="tech" className="scroll-mt-24 px-4 py-20 md:py-28">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mx-auto max-w-2xl text-center">
           <Eyebrow>기술 하이라이트</Eyebrow>
@@ -42,10 +43,10 @@ export function TechHighlights() {
           </p>
         </Reveal>
 
-        <div className="mt-14 grid gap-5 md:grid-cols-2">
+        <div className="mt-12 grid gap-5 md:grid-cols-2">
           {items.map((it, i) => (
             <Reveal key={it.title} delay={(i % 2) * 100}>
-              <Card className="h-full">
+              <Card className="lift h-full">
                 <div className="flex h-full gap-5 p-7">
                   <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-brand-soft text-brand">
                     {it.icon}

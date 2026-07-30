@@ -14,8 +14,8 @@ export function Footer() {
               <span className="font-display text-lg font-semibold tracking-tight">Investory</span>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-muted">
-              과거 거래일의 시세를 재생해, 가상 자산으로 주식 매매를 연습하는 교육형 모의투자
-              플랫폼. 실전이 아니라 안전하게 시험해 볼 수 있습니다.
+              가상 자산으로 주식과 코인 매매를 연습하는 교육형 모의투자 플랫폼. 주식은 과거
+              거래일의 1분봉을 재생하고, 코인은 빗썸 실시간 시세를 씁니다.
             </p>
           </div>
 

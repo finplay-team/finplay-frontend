@@ -331,7 +331,7 @@ export function Signup() {
               />
               <span>
                 <span className="text-ink">서비스 이용약관과 개인정보 처리방침에 동의합니다.</span>{' '}
-                (필수) 가입하면 시드머니 1,000만원의 모의 주식 계좌가 만들어집니다.
+                (필수) 가입하면 각각 시드머니 1,000만원의 모의 주식·코인 계좌가 함께 만들어집니다.
               </span>
             </label>
             <Button type="submit" size="lg" withIcon disabled={pending} className="w-full">
@@ -385,8 +385,8 @@ function SignupAside() {
         연습부터 시작하세요
       </h2>
       <p className="mt-6 max-w-xs text-sm leading-relaxed text-muted">
-        가입하면 시드머니 1,000만원 모의 주식 계좌가 바로 열립니다. 실제 거래일 분봉을 재생하는
-        시세로 시장가 매매를 연습하고, 커뮤니티에서 판단을 나눠 보세요.
+        가입하면 시드머니 1,000만원짜리 모의 주식·코인 계좌가 함께 열립니다. 주식은 실제 거래일
+        분봉을 재생한 시세로, 코인은 빗썸 실시간 시세로 시장가 매매를 연습해 보세요.
       </p>
     </div>
   )

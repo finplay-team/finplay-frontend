@@ -4,7 +4,7 @@ import { Reveal } from '../ui/Reveal'
 
 export function CTA() {
   return (
-    <section className="px-4 py-24 md:py-32">
+    <section className="px-4 py-20 md:py-28">
       <Reveal className="mx-auto max-w-5xl">
         <div className="relative overflow-hidden rounded-bezel border border-white/[0.08] bg-surface px-6 py-20 text-center shadow-glow-lg md:py-28">
           <div aria-hidden className="orb -left-20 -top-20 h-72 w-72" />
@@ -22,8 +22,8 @@ export function CTA() {
               오늘 첫 기록을 남기세요
             </h2>
             <p className="mx-auto mt-6 max-w-md text-base leading-relaxed text-muted">
-              가입하면 주식 계좌가 생성되고 가상 시드머니가 지급됩니다. 실전이 아니니 마음껏 시험해
-              보세요.
+              가입하면 주식·코인 계좌가 함께 생성되고 계좌마다 가상 시드머니 1,000만원이
+              지급됩니다. 실전이 아니니 마음껏 시험해 보세요.
             </p>
             <div className="mt-9 flex justify-center">
               <LinkButton to="/signup" size="lg" withIcon>
