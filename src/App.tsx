@@ -8,8 +8,11 @@ import { Signup } from './pages/Signup'
 import { Login } from './pages/Login'
 import { Trade } from './pages/Trade'
 import { Portfolio } from './pages/Portfolio'
+import { Community } from './pages/Community'
+import { CommunityPost } from './pages/CommunityPost'
 import { MyPage } from './pages/MyPage'
 import { Support } from './pages/Support'
+import { NotFound } from './pages/NotFound'
 
 export default function App() {
   const location = useLocation()
@@ -41,6 +44,23 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          {/* 커뮤니티는 목록 조회도 Bearer 토큰이 필요해 전부 보호한다 */}
+          <Route
+            path="/community"
+            element={
+              <ProtectedRoute>
+                <Community />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/community/:postId"
+            element={
+              <ProtectedRoute>
+                <CommunityPost />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/me"
             element={
@@ -49,7 +69,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="*" element={<Landing />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       {!hideChrome && <Footer />}

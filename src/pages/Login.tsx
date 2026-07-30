@@ -1,4 +1,3 @@
-// TODO(4차): Login 실연동 재작성 예정 (현재는 실 API 로그인만 최소 연결)
 // 로그인 페이지 — 실제 /api/auth/login 으로 인증하고 원래 경로 또는 거래 화면으로 이동
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -10,13 +9,17 @@ import { toUserMessage } from '../lib/errorMessages'
 
 interface LocationState {
   from?: string
+  /** 이메일 변경 등으로 세션이 끊겨 강제 재로그인이 필요할 때 이유를 전달한다. */
+  notice?: string
 }
 
 export function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as LocationState | null)?.from ?? '/trade'
+  const state = location.state as LocationState | null
+  const from = state?.from ?? '/trade'
+  const notice = state?.notice
 
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
@@ -57,6 +60,11 @@ export function Login() {
       }
     >
       <form onSubmit={onSubmit} noValidate className="space-y-4">
+        {notice && (
+          <div className="rounded-2xl border border-brand/25 bg-brand-soft/50 px-4 py-3 text-sm text-brand">
+            {notice}
+          </div>
+        )}
         {error && (
           <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
             {error}
@@ -92,12 +100,13 @@ function LoginAside() {
   return (
     <div>
       <h2 className="font-display text-3xl font-semibold leading-tight text-ink">
-        결과보다 먼저,
+        오늘 다시 흐르는
         <br />
-        판단을 남기세요
+        지난 거래일의 시세
       </h2>
       <p className="mt-6 max-w-xs text-sm leading-relaxed text-muted">
-        실제 거래일 시세로 매매하고, 체결 기록과 계좌 수익률을 나란히 보며 습관을 점검하세요.
+        실제 거래일 분봉을 실시간으로 재생하는 시세로 시장가 모의매매를 하고, 체결 내역과 계좌
+        수익률을 확인하고, 커뮤니티에서 판단을 나눠 보세요.
       </p>
     </div>
   )

@@ -14,8 +14,8 @@ export function Footer() {
               <span className="font-display text-lg font-semibold tracking-tight">Investory</span>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-muted">
-              실제 시세로 움직이는 가상 자산으로 주식 매매를 연습하는 교육형 모의투자 플랫폼.
-              실전이 아니라 안전하게 시험해 볼 수 있습니다.
+              과거 거래일의 시세를 재생해, 가상 자산으로 주식 매매를 연습하는 교육형 모의투자
+              플랫폼. 실전이 아니라 안전하게 시험해 볼 수 있습니다.
             </p>
           </div>
 
@@ -24,8 +24,8 @@ export function Footer() {
               title="서비스"
               items={[
                 { label: '홈', to: '/' },
+                { label: '커뮤니티', to: '/community' },
                 { label: '고객센터', to: '/support' },
-                { label: '시작하기', to: '/signup' },
               ]}
             />
             <FooterCol

@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { getAccountSummary } from '../services/accountService'
+import type { AccountSummary } from '../services/types'
+import { formatManEok } from '../lib/format'
 import { LinkButton } from './ui/Button'
 import { Logout } from './ui/icons'
 
@@ -14,6 +17,7 @@ const publicLinks = [
 const authLinks = [
   { to: '/trade', label: '거래' },
   { to: '/portfolio', label: '포트폴리오' },
+  { to: '/community', label: '커뮤니티' },
   { to: '/me', label: '내정보' },
 ]
 
@@ -24,6 +28,7 @@ export function Nav() {
   const navigate = useNavigate()
 
   const isAuthenticated = status !== 'anonymous'
+  const [wallet, setWallet] = useState<AccountSummary | null>(null)
 
   // 라우트 변경 시 모바일 메뉴 닫기
   useEffect(() => {
@@ -38,6 +43,25 @@ export function Nav() {
     }
   }, [open])
 
+  // 주기 폴링 없이 화면 이동마다 한 번만 읽는다. 실패하면 0원을 보여주는 대신 pill 을 숨긴다.
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      setWallet(null)
+      return
+    }
+    let cancelled = false
+    getAccountSummary('STOCK')
+      .then((s) => {
+        if (!cancelled) setWallet(s)
+      })
+      .catch(() => {
+        if (!cancelled) setWallet(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [status, location.pathname])
+
   const handleLogout = async () => {
     await logout()
     navigate('/')
@@ -47,7 +71,7 @@ export function Nav() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex justify-center px-4">
-      <nav className="mt-5 flex w-full max-w-5xl items-center justify-between rounded-full border border-white/[0.08] bg-canvas/70 py-2 pl-5 pr-2 shadow-soft-sm backdrop-blur-xl">
+      <nav className="mt-5 flex w-full max-w-6xl items-center justify-between rounded-full border border-white/[0.08] bg-canvas/70 py-2 pl-5 pr-2 shadow-soft-sm backdrop-blur-xl">
         <Link to="/" className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-brand-ink">
             i
@@ -70,6 +94,26 @@ export function Nav() {
         <div className="hidden items-center gap-2 md:flex">
           {isAuthenticated ? (
             <>
+              {wallet && (
+                <Link
+                  to="/me"
+                  className="flex items-center gap-3 rounded-full bg-white/[0.04] px-4 py-1.5 ring-1 ring-white/[0.08] transition-colors duration-300 hover:bg-white/[0.08]"
+                >
+                  <span className="flex flex-col leading-tight">
+                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">평가자산</span>
+                    <span className="text-sm font-medium text-ink tabular">
+                      {formatManEok(wallet.totalValue)}
+                    </span>
+                  </span>
+                  <span className="h-6 w-px bg-line" aria-hidden />
+                  <span className="flex flex-col leading-tight">
+                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">가능 현금</span>
+                    <span className="text-sm font-medium text-brand tabular">
+                      {formatManEok(wallet.cashBalance)}
+                    </span>
+                  </span>
+                </Link>
+              )}
               <span className="text-sm text-muted">
                 <span className="font-medium text-ink">{member?.nickname}</span>님
               </span>
@@ -144,12 +188,34 @@ export function Nav() {
           style={{ transitionDelay: open ? '360ms' : '0ms' }}
         >
           {isAuthenticated ? (
-            <button
-              onClick={handleLogout}
-              className="rounded-full bg-brand px-6 py-3.5 text-center text-[15px] font-medium text-brand-ink shadow-glow"
-            >
-              로그아웃
-            </button>
+            <>
+              {wallet && (
+                <Link
+                  to="/me"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center justify-between rounded-2xl border border-line bg-surface px-5 py-4"
+                >
+                  <span className="flex flex-col leading-tight">
+                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">평가자산</span>
+                    <span className="text-base font-medium text-ink tabular">
+                      {formatManEok(wallet.totalValue)}
+                    </span>
+                  </span>
+                  <span className="flex flex-col text-right leading-tight">
+                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">가능 현금</span>
+                    <span className="text-base font-medium text-brand tabular">
+                      {formatManEok(wallet.cashBalance)}
+                    </span>
+                  </span>
+                </Link>
+              )}
+              <button
+                onClick={handleLogout}
+                className="rounded-full bg-brand px-6 py-3.5 text-center text-[15px] font-medium text-brand-ink shadow-glow"
+              >
+                로그아웃
+              </button>
+            </>
           ) : (
             <>
               <LinkButton to="/signup" size="lg" withIcon className="justify-between">

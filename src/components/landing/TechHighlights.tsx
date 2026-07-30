@@ -1,4 +1,4 @@
-// 실시간 시세·정합성·이벤트 기반·AI 제약 등 기술 신뢰 근거를 보여주는 섹션 (증권사명 없이)
+// 실제 구현된 스택(Spring Boot·MySQL·Redis·SSE·멱등 주문)만 근거로 신뢰를 설명하는 섹션
 import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
 import { Reveal } from '../ui/Reveal'
@@ -7,23 +7,23 @@ import { Bolt, Shield, Layers, Cpu } from '../ui/icons'
 const items = [
   {
     icon: <Bolt width={20} height={20} />,
-    title: '실시간 시세 스트리밍',
-    desc: '고빈도 시세는 Redis Pub/Sub → WebSocket으로 브로드캐스트. 코인은 실시간, 주식은 시세 공급자 추상화로 대응합니다.',
-  },
-  {
-    icon: <Shield width={20} height={20} />,
-    title: '동시 매매 정합성',
-    desc: '분산락·낙관적 락으로 잔고와 수량을 원자적으로 처리해, 동시 주문에서도 데이터가 어긋나지 않게 합니다.',
-  },
-  {
-    icon: <Layers width={20} height={20} />,
-    title: '이벤트 기반 아키텍처',
-    desc: '주문 체결처럼 유실되면 안 되는 이벤트는 Kafka로 발행해 포트폴리오·알림·랭킹·투자일기 컨슈머가 병렬 소비합니다.',
+    title: 'SSE 단방향 시세 스트리밍',
+    desc: '시세는 서버가 밀어 주는 SSE 한 방향으로 흐릅니다. 구독 직후 전체 스냅샷을 한 번 주고 이후에는 새로 공개된 종목만 보내며, 주기적인 하트비트로 연결을 유지합니다.',
   },
   {
     icon: <Cpu width={20} height={20} />,
-    title: '제약된 AI 연동',
-    desc: '집계·대조 로직은 직접 설계하고 서술만 LLM에 위임합니다. 프롬프트에 종목 추천 금지를 명시하고 응답을 검증합니다.',
+    title: 'Redis 시세 저장소',
+    desc: '최신 가격은 Redis에 두고 읽습니다. 값이 없으면 임의 가격을 지어내지 않고 시세 없음으로 응답해, 잘못된 가격에 체결되는 일을 원천적으로 막습니다.',
+  },
+  {
+    icon: <Shield width={20} height={20} />,
+    title: '멱등 주문 처리',
+    desc: '모든 주문에 멱등 키를 요구합니다. 같은 키의 재전송은 처음 결과를 그대로 돌려주고 키가 같은데 내용이 다르면 거부하므로, 네트워크 재시도로 중복 체결이 생기지 않습니다.',
+  },
+  {
+    icon: <Layers width={20} height={20} />,
+    title: 'MySQL 트랜잭션 정합성',
+    desc: '주문·체결·잔고·보유 수량은 Spring Boot 서비스의 한 트랜잭션 안에서 함께 갱신되고, 스키마 변경은 Flyway 마이그레이션으로만 반영합니다.',
   },
 ]
 
@@ -37,8 +37,8 @@ export function TechHighlights() {
             보이지 않는 곳이 더 단단하다
           </h2>
           <p className="mx-auto mt-6 max-w-lg text-base leading-relaxed text-muted">
-            실시간성이 중요하고 유실돼도 되는 데이터와, 정합성이 중요하고 다중 소비자가 필요한
-            이벤트를 역할에 따라 구분해 설계했습니다.
+            Spring Boot · MySQL · Redis · SSE 로 만들었습니다. 실시간성이 중요한 시세와 정합성이
+            중요한 주문을 서로 다른 방식으로 다룹니다.
           </p>
         </Reveal>
 

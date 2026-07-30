@@ -1,9 +1,16 @@
-// 랜딩 최상단 히어로 — 헤드라인, 1,000만원 시드 강조, CTA, 주식 계좌 미리보기 카드
+// 랜딩 최상단 히어로 — 헤드라인, CTA, 검증 가능한 사실만 담은 요약 카드
 import { LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
 import { Reveal } from '../ui/Reveal'
-import { formatPercent, formatPnl, pnlTone } from '../../lib/format'
+
+/** 전부 실제 계약에서 나온 값이다. 사용자 수·수익률 같은 만들어낸 수치는 두지 않는다. */
+const facts = [
+  { label: '시드머니', value: '1,000만원' },
+  { label: '거래 종목', value: '주식 16' },
+  { label: '주문 유형', value: '시장가' },
+  { label: '시세', value: '1분봉 재생' },
+]
 
 export function Hero() {
   return (
@@ -23,17 +30,17 @@ export function Hero() {
 
         <Reveal delay={80}>
           <h1 className="mt-6 font-display text-[13vw] font-bold leading-[0.95] tracking-tight sm:text-6xl md:text-7xl">
-            투자를 기록하고,
+            실제로 있었던 하루를,
             <br />
-            <span className="text-brand">복기하고,</span> 성장한다
+            <span className="text-brand">지금처럼</span> 매매한다
           </h1>
         </Reveal>
 
         <Reveal delay={160}>
           <p className="mx-auto mt-7 max-w-xl text-balance text-base leading-relaxed text-muted md:text-lg">
-            실제 거래일 시세로 움직이는 가상 자산{' '}
-            <span className="font-semibold text-ink">1,000만원</span>. 사고파는 순간의 판단을 남기고,
-            결과와 대조하며 배우는 모의투자 플랫폼.
+            과거 거래일의 1분봉을 순서대로 다시 공개해, 실제 장이 열린 것처럼 움직입니다. 가상
+            시드머니 <span className="font-semibold text-ink">1,000만원</span>으로 부담 없이 시장가
+            매매를 연습해 보세요.
           </p>
         </Reveal>
 
@@ -49,52 +56,24 @@ export function Hero() {
         </Reveal>
       </div>
 
-      {/* 계좌 미리보기 */}
-      <Reveal delay={320} className="relative mx-auto mt-20 max-w-xl">
+      {/* 서비스 사실 요약 */}
+      <Reveal delay={320} className="relative mx-auto mt-20 max-w-2xl">
         <Card accent="brand">
-          <PreviewAccount seed="1,000만원" value="1,184만" rate={12.4} pnl={1_240_000} />
+          <dl className="grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
+            {facts.map((f) => (
+              <div key={f.label} className="px-5 py-6 text-center">
+                <dt className="text-[10px] uppercase tracking-eyebrow text-muted">{f.label}</dt>
+                <dd className="mt-2 font-display text-lg font-semibold text-ink tabular">
+                  {f.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </Card>
         <p className="mt-5 text-center text-xs text-muted">
           가입하면 가상 시드머니 1,000만원이 지급된 주식 계좌가 바로 생성됩니다.
         </p>
       </Reveal>
     </section>
-  )
-}
-
-function PreviewAccount({
-  seed,
-  value,
-  rate,
-  pnl,
-}: {
-  seed: string
-  value: string
-  rate: number
-  pnl: number
-}) {
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-eyebrow text-brand">
-          주식 계좌
-        </span>
-        <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[11px] text-muted">
-          시드 {seed}
-        </span>
-      </div>
-      <div className="mt-6 flex items-end justify-between">
-        <div>
-          <p className="text-xs text-muted">평가자산</p>
-          <p className="font-display text-3xl font-semibold tabular">{value}</p>
-        </div>
-        <div className="text-right">
-          <p className={`font-display text-lg font-semibold tabular ${pnlTone(rate)}`}>
-            {formatPercent(rate)}
-          </p>
-          <p className="text-xs text-muted tabular">실현 {formatPnl(pnl)}</p>
-        </div>
-      </div>
-    </div>
   )
 }
