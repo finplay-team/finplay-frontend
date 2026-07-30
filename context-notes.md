@@ -146,6 +146,13 @@ AI 챗봇 위젯(`AssistantWidget`) / 고객센터 1:1 문의 폼 / 소셜 로�
 쓰면 총자산이 2,000만으로 보여 혼란스럽다. → **`/api/portfolio`는 쓰지 않고
 `/api/accounts/summary?market=STOCK`만 사용한다.**
 
+**D3 해제됨 (2026-07-31).** 백엔드 `finplay#104`·`#107`이 머지되어 `SPRING_PROFILES_ACTIVE=local,crypto-real`
+로 띄우면 코인 현재가·캔들이 실제 빗썸 데이터로 나온다. 당시 판단(빈 차트는 mock보다 나쁘다)은 옳았고
+전제만 바뀌었다. → 시장 탭·`coin` 토큰·`SplitAccounts`·Hero 듀얼 계좌를 복원한다.
+단, `GET /api/portfolio`를 쓰지 않는 결정은 그대로 유지한다(시장 탭 화면과 분모가 어긋난다).
+코인 시세는 전용 스트림이 없어 `useCryptoPrices`가 5초 폴링하고, 캔들은 `useCandles(market:'CRYPTO')`의
+기존 폴링 경로를 그대로 쓴다(새 캔들 훅 없음).
+
 ### D4. 주식 시세는 로컬 dev 시드로 살린다
 주식은 "과거 거래일 재생"이라 `stock_replay_sessions`에 오늘 날짜 READY 행 +
 그 원본 거래일의 `stock_candles` 행이 둘 다 있어야 시세가 나온다. 이걸 만드는 배치는
