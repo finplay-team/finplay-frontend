@@ -1,11 +1,11 @@
-/* 전역 디자인 토큰과 Tailwind 레이어를 정의하는 스타일 진입점 */
+/* 전역 디자인 토큰과 Tailwind 레이어를 정의하는 스타일 진입점 (다크 단일 테마) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    color-scheme: light;
+    color-scheme: dark;
   }
 
   html {
@@ -23,12 +23,19 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+
+  /* 다크 배경에서 기본 자동완성 배경이 흰색으로 튀는 것을 막는다 */
+  input:-webkit-autofill,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f4f4f6;
+    box-shadow: 0 0 0 1000px #1b1b21 inset;
+  }
 }
 
 @layer components {
   /* Double-Bezel 외곽 셸 */
   .bezel {
-    @apply rounded-bezel bg-white/60 p-1.5 ring-1 ring-black/[0.05] backdrop-blur-sm;
+    @apply rounded-bezel bg-white/[0.04] p-1.5 ring-1 ring-white/[0.06] backdrop-blur-sm;
   }
 
   /* Double-Bezel 이너 코어 */
@@ -37,7 +44,12 @@
   }
 
   .eyebrow {
-    @apply inline-flex items-center gap-2 rounded-full border border-black/[0.06] bg-white/70 px-3 py-1 text-[10px] font-medium uppercase tracking-eyebrow text-muted;
+    @apply inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-[10px] font-medium uppercase tracking-eyebrow text-muted;
+  }
+
+  /* 배경 장식용 민트 글로우 오브 — animate-float-orb 와 함께 사용한다 */
+  .orb {
+    @apply pointer-events-none absolute rounded-full bg-brand/20 blur-3xl;
   }
 }
 

@@ -1,5 +1,74 @@
 # Investory 구현 체크리스트
 
+---
+
+# 4차 스코프 — 실백엔드 연동 (2026-07-30, 진행 중)
+
+배경·결정 근거는 `context-notes.md`의 "4차 스코프" 섹션에 있다. 먼저 읽는다.
+
+## A. 기반 (완료)
+- [x] 베이스라인 커밋 `84cdfc5` (mock 상태 롤백 지점)
+- [x] `vite.config.ts` dev 프록시 (`/api` → `localhost:8080`)
+- [x] `tailwind.config.js` 다크 토큰 + 민트 brand + glow 섀도우
+- [x] `src/index.css` 다크 bezel/eyebrow + `.orb` 글로우 유틸
+- [x] `context-notes.md` 결정 기록 (D1~D7 + 디자인 톤 표)
+
+## B. 백엔드 로컬 시드 (별도 레포)
+- [ ] `POST /api/dev/stock-replay-seeds` (`local` 프로필 전용)
+- [ ] `LocalForcedOpenStockPriceProvider` + `force-market-open` 플래그
+- [ ] 통합 테스트 + `./gradlew build` 통과
+- [ ] `docs/api-routes.md` · `docs/api-contracts.md` 동기화
+
+## C. 해체 (백엔드 미구현 기능 제거)
+- [ ] 지정가 주문 / `PendingOrder` / 주문유형 토글
+- [ ] 랭킹 (`rankingService`, `pages/Rankings.tsx`, `landing/RankingPhilosophy.tsx`)
+- [ ] 튜토리얼 보상 (`tutorialService`, `landing/Missions.tsx`)
+- [ ] 관리자 (`adminService`, `pages/Admin.tsx`, `requireAdmin`)
+- [ ] 투자일기 (`DecisionLog`, `landing/RecordReview.tsx`, `lib/labels.ts`)
+- [ ] 경제 이벤트 (`EconomicEvent`)
+- [ ] AI 챗봇 위젯 (`AssistantWidget.tsx`)
+- [ ] 소셜 로그인 버튼 (`SocialLogin.tsx`)
+- [ ] 고객센터 1:1 문의 폼 (FAQ는 유지)
+- [ ] `mockDb.ts` 전체 삭제 + 코인 시장 UI 제거
+
+## D. 데이터 레이어
+- [ ] `lib/tokenStore.ts` (모듈 스코프 + `useSyncExternalStore`, 순환 의존 차단)
+- [ ] `lib/apiClient.ts` (`ApiError` + 401 단일 비행 갱신)
+- [ ] `lib/errorMessages.ts` (`code` → 한국어 문구)
+- [ ] `lib/datetime.ts` (오프셋 없는 `LocalDateTime` 파싱 + `ratioToPercent`)
+- [ ] `services/types.ts` 실응답 기준 전면 교체
+- [ ] `services/` — auth / instrument / order / trade / holding / account / community
+- [ ] `auth/AuthContext.tsx` 비동기 부팅 + `ProtectedRoute` (`requireAdmin` 제거)
+
+## E. 시세
+- [ ] `hooks/useStockStream.ts` (fetch + ReadableStream SSE, 백오프, 401 재연결)
+- [ ] `hooks/useCandles.ts` (`sourceTime` upsert 병합)
+- [ ] `components/CandleChart.tsx` (인라인 SVG, 빈 배열 = 정상 상태)
+- [ ] `hooks/useLivePrices.ts` 삭제
+
+## F. 화면
+- [ ] `Signup` 3단계 (이메일 → 6자리 코드 → 비밀번호·닉네임) + DEV 콘솔 안내
+- [ ] `Login` (실 로그인, 데모 자동입력 제거)
+- [ ] `Trade` 시장가 전용 + `Idempotency-Key` + 주문불가 사유 표시
+- [ ] `Portfolio` 보유·거래내역(커서 페이징)·계좌 요약
+- [ ] `MyPage` 계좌 요약 + 닉네임 변경 + 이메일 변경 2단계 + 로그아웃
+- [ ] 커뮤니티 목록·작성·상세·수정·삭제 + 댓글 작성·삭제
+- [ ] `Nav` · `Footer` · `App` 라우트 정리
+- [ ] `Landing` 실제 기능만 남긴 섹션 구성으로 재작성
+- [ ] `Support` FAQ만 남기고 실제 기능 기준으로 문구 갱신
+
+## G. 검증
+- [ ] `npm run build` 통과 (타입 에러 0)
+- [ ] 백엔드 기동 + 시드 후 브라우저 E2E: 가입 → 로그인 → 매수 → 보유 확인 → 매도 → 거래내역
+- [ ] 커뮤니티 글 작성 → 댓글 → 삭제 왕복
+- [ ] 시세 없는 상태(시드 전)에서 주문 버튼 비활성 + 사유 문구 확인
+- [ ] 401 만료 토큰 자동 갱신 동작 확인
+- [ ] 다크 톤 대비 확인 (읽히지 않는 텍스트 0)
+
+---
+
+# 이하 1~3차 스코프 (mock 시대, 완료)
+
 ## 0. 스캐폴딩
 - [x] package.json / vite / tsconfig / tailwind / postcss 설정
 - [x] index.html (폰트: Pretendard, Space Grotesk)
