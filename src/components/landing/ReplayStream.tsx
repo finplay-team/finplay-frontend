@@ -24,7 +24,7 @@ const items = [
 
 export function ReplayStream() {
   return (
-    <section className="px-4 py-24 md:py-36">
+    <section className="px-4 py-20 md:py-28">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mx-auto max-w-2xl text-center">
           <Eyebrow>실시간 시세 재생</Eyebrow>
@@ -39,10 +39,10 @@ export function ReplayStream() {
           </p>
         </Reveal>
 
-        <div className="mt-14 grid gap-5 md:grid-cols-3">
+        <div className="mt-12 grid gap-5 md:grid-cols-3">
           {items.map((it, i) => (
             <Reveal key={it.title} delay={i * 100}>
-              <Card className="h-full" accent={i === 0 ? 'brand' : 'none'}>
+              <Card className="lift h-full" accent={i === 0 ? 'brand' : 'none'}>
                 <div className="flex h-full flex-col p-7">
                   <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-brand-soft text-brand">
                     {it.icon}

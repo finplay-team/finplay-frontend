@@ -7,7 +7,7 @@ import { Chart, Coin } from '../ui/icons'
 
 export function SplitAccounts() {
   return (
-    <section className="px-4 py-24 md:py-36">
+    <section className="px-4 py-20 md:py-28">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mx-auto max-w-2xl text-center">
           <Eyebrow>계좌 분리 설계</Eyebrow>
@@ -21,9 +21,9 @@ export function SplitAccounts() {
           </p>
         </Reveal>
 
-        <div className="mt-14 grid items-stretch gap-5 md:grid-cols-[1fr_auto_1fr]">
+        <div className="mt-12 grid items-stretch gap-5 md:grid-cols-[1fr_auto_1fr]">
           <Reveal>
-            <Card accent="brand" className="h-full">
+            <Card accent="brand" className="lift h-full">
               <MarketPanel
                 icon={<Chart width={20} height={20} />}
                 color="text-brand"
@@ -38,16 +38,18 @@ export function SplitAccounts() {
 
           {/* 분리 구분자 */}
           <Reveal delay={100} className="flex items-center justify-center">
-            <div className="flex flex-col items-center gap-2 py-4">
-              <span className="rounded-full border border-line bg-elevated px-4 py-2 text-xs font-medium text-muted shadow-soft-sm">
+            {/* 위아래 세로선 사이에 pill 을 두어 두 카드의 세로 중앙에 걸리게 한다 */}
+            <div className="flex flex-col items-center gap-3 py-2">
+              <div className="hidden h-20 w-px bg-gradient-to-b from-transparent to-line md:block" />
+              <span className="whitespace-nowrap rounded-full border border-line bg-elevated px-4 py-2 text-xs font-medium text-muted shadow-soft-sm">
                 이체 불가
               </span>
-              <div className="hidden h-24 w-px bg-line md:block" />
+              <div className="hidden h-20 w-px bg-gradient-to-b from-line to-transparent md:block" />
             </div>
           </Reveal>
 
           <Reveal delay={160}>
-            <Card accent="coin" className="h-full">
+            <Card accent="coin" className="lift h-full">
               <MarketPanel
                 icon={<Coin width={20} height={20} />}
                 color="text-coin"
