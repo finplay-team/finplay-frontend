@@ -329,6 +329,9 @@ function NicknameSection({
             onChange={(e) => setNickname(e.target.value)}
             maxLength={50}
             error={nicknameError}
+            /* autoComplete 이 없으면 Chrome 이 [텍스트][비밀번호] 조합을 로그인 폼으로 보고
+               이 칸에 저장된 이메일을 자동으로 채운다 (브라우저에서 재현 확인). */
+            autoComplete="nickname"
           />
           <Field
             label="현재 비밀번호"
@@ -337,7 +340,7 @@ function NicknameSection({
             placeholder="본인 확인을 위해 필요합니다"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            autoComplete="current-password"
+            autoComplete="new-password"
           />
           <Button type="submit" disabled={pending}>
             {pending ? '변경 중…' : '닉네임 변경'}
@@ -452,7 +455,8 @@ function EmailSection({
             placeholder="new@example.com"
             value={newEmail}
             onChange={(e) => setNewEmail(e.target.value)}
-            autoComplete="email"
+            /* 저장된 "현재" 이메일이 자동으로 채워지면 안 된다 — 여기는 바꿀 새 주소다. */
+            autoComplete="off"
           />
           <Field
             label="현재 비밀번호"
@@ -461,7 +465,8 @@ function EmailSection({
             placeholder="본인 확인을 위해 필요합니다"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            autoComplete="current-password"
+            /* current-password 로 두면 Chrome 이 이 폼을 로그인 폼으로 보고 위 칸까지 채운다. */
+            autoComplete="new-password"
           />
           <Button type="submit" disabled={pending}>
             {pending ? '발송 중…' : '인증번호 받기'}
