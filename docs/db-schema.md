@@ -1,6 +1,6 @@
 # DB 스키마 — Investory
 
-> **Source of truth: 노션 "테이블 명세서"** (https://app.notion.com/p/3e6b1fddfba98241938e81c49f063dea).
+> **Source of truth: 노션 "테이블 명세서"** ((팀 내부 Notion 문서)).
 > 이 파일은 그 문서와 동기화된 사본이다. 스키마 변경은 노션에서 먼저 하고 여기로 반영한다.
 
 주식·코인 교육형 모의투자 플랫폼 **Investory**의 백엔드 DB 스키마.

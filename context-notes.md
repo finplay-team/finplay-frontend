@@ -55,7 +55,7 @@
 - 알려진 한계: 인메모리 mockDb라 새로고침 시 거래·가입 데이터 리셋(데모 계정은 시드로 복원). 실백엔드 연동 시 해소.
 
 ## 노션 테이블 명세서 (2026-07-22)
-- https://app.notion.com/p/3e6b1fddfba98241938e81c49f063dea — 백엔드 기준 **21개 테이블** (논리명/물리명/타입/Null/Key/Default/설명).
+- (팀 내부 Notion 문서) — 백엔드 기준 **21개 테이블** (논리명/물리명/타입/Null/Key/Default/설명).
 - 팀 요청으로 갱신: ① 성능 인덱스(IDX) 전부 제거, PK/FK/UNI만 유지. ② user_id를 trades·holdings·decision_logs·ai_habit_reports에 FK 추가(안전한 비정규화). ③ decision_logs에 target_price·stop_loss_price·expected_holding_period(DAY/SWING/LONG) 추가 — AI '계획 vs 실제' 피드백 근거. ④ 그래프 DB(투자성향, 튜터 제안) 설계노트. ⑤ 커뮤니티 실시간 채팅 테이블 신설(community_channels/community_messages, 수익률 인증 PNL_SHARE). ⑥ KRX 원천 stock_master/stock_daily_prices, AI 챗봇 chat_rooms/chat_messages.
 - **docs/db-schema.md 노션과 동기화 완료(2026-07-22)** — 21 테이블 전체 + mermaid ERD(UNI는 ERD에서 UK로 표기) + 공통 설계 노트 11개. 노션이 source of truth, db-schema.md는 동기화 사본.
 - api-spec.md는 아직 구버전 — 사용자가 정책 정리본을 주면 그걸 토대로 업데이트 예정.
@@ -253,7 +253,7 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
 ---
 
 ## 미로 와이어프레임 (2026-07-22)
-- 보드: https://miro.com/app/board/uXjVH5PBQGY=/ — 화면 10프레임 + OAuth(카카오/네이버) 포함 유저 플로우 다이어그램 + 설계 노트 문서. 튜터 발표용.
+- 보드: (팀 내부 Miro 보드) — 화면 10프레임 + OAuth(카카오/네이버) 포함 유저 플로우 다이어그램 + 설계 노트 문서. 튜터 발표용.
 - OAuth는 와이어프레임에만 반영(코드 미구현). 구현 시 인가코드 플로우 + 최초 로그인 자동가입/계좌생성 + 이메일 병합 정책 적용.
 
 ## 3차 스코프 — UX 보강 (2026-07-22, 사용자 추가 요청)

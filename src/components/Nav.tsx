@@ -1,8 +1,9 @@
 // 떠 있는 글래스 pill 내비게이션과 햄버거 X 모프 풀스크린 오버레이
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { getAccountSummary } from '../services/accountService'
+import { getAccountRevision, subscribeAccount } from '../lib/accountPulse'
 import type { AccountSummary } from '../services/types'
 import { formatManEok } from '../lib/format'
 import { LinkButton } from './ui/Button'
@@ -29,6 +30,7 @@ export function Nav() {
 
   const isAuthenticated = status !== 'anonymous'
   const [wallet, setWallet] = useState<AccountSummary | null>(null)
+  const accountRevision = useSyncExternalStore(subscribeAccount, getAccountRevision)
 
   // 라우트 변경 시 모바일 메뉴 닫기
   useEffect(() => {
@@ -43,7 +45,9 @@ export function Nav() {
     }
   }, [open])
 
-  // 주기 폴링 없이 화면 이동마다 한 번만 읽는다. 실패하면 0원을 보여주는 대신 pill 을 숨긴다.
+  // 주기 폴링 없이 화면 이동마다, 그리고 주문 체결로 잔고가 바뀐 직후에만 읽는다.
+  // 잔고는 SSE에 실려오지 않으므로 체결한 화면이 bumpAccount()로 알려줘야 한다.
+  // 실패하면 0원을 보여주는 대신 pill 을 숨긴다.
   useEffect(() => {
     if (status !== 'authenticated') {
       setWallet(null)
@@ -60,7 +64,7 @@ export function Nav() {
     return () => {
       cancelled = true
     }
-  }, [status, location.pathname])
+  }, [status, location.pathname, accountRevision])
 
   const handleLogout = async () => {
     await logout()
