@@ -16,3 +16,13 @@ yarn-error.log*
 
 # 빌드 산출물
 *.tsbuildinfo
+
+# 에이전트/도구 산출물 — 제품 저장소에 넣지 않는다
+.agents/
+.claude/
+.serena/
+.shots/
+
+# env 백업까지 확실히 제외 (.env.example 은 추적한다)
+.env.*
+!.env.example
