@@ -485,7 +485,18 @@ export function Trade() {
               {isCrypto ? '코인' : '종목'}
             </h2>
             {instrumentsLoading ? (
-              <p className="px-2 py-6 text-sm text-muted">종목을 불러오는 중입니다.</p>
+              // 텍스트 한 줄 대신 실제 행과 같은 크기의 자리표시를 둬 목록이 튀어오르지 않게 한다
+              <ul aria-label="종목을 불러오는 중" className="space-y-1">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                    <span className="min-w-0 flex-1 space-y-1.5">
+                      <span className="skeleton block h-3.5 w-2/3" />
+                      <span className="skeleton block h-2.5 w-1/3" />
+                    </span>
+                    <span className="skeleton h-3.5 w-16 flex-none" />
+                  </li>
+                ))}
+              </ul>
             ) : (
               <ul className="max-h-[28rem] space-y-1 overflow-y-auto lg:max-h-[36rem]">
                 {instruments.map((instrument) => {

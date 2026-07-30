@@ -17,11 +17,22 @@
     font-feature-settings: 'ss01', 'cv01';
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* 한국어는 어절 중간에서 끊으면 읽기 어렵다 — 좁은 화면에서 "하 / 루를," 같은 줄바꿈을 막는다.
+       한 어절이 줄보다 길 때만 예외적으로 끊는다. */
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
 
   /* 숫자는 등폭 정렬로 표 가독성 확보 */
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* 키보드 이동 시에만 보이는 민트 포커스 링 (마우스 클릭에는 나타나지 않는다) */
+  :focus-visible {
+    outline: 2px solid theme('colors.brand.DEFAULT');
+    outline-offset: 3px;
+    border-radius: 4px;
   }
 
   /* 다크 배경에서 기본 자동완성 배경이 흰색으로 튀는 것을 막는다 */
@@ -47,6 +58,11 @@
     @apply inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-[10px] font-medium uppercase tracking-eyebrow text-muted;
   }
 
+  /* 로딩 자리표시 블록 — 실제 데이터가 들어올 자리와 같은 크기로 쓴다 */
+  .skeleton {
+    @apply animate-pulse-soft rounded-lg bg-white/[0.06];
+  }
+
   /* 배경 장식용 민트 글로우 오브 — animate-float-orb 와 함께 사용한다 */
   .orb {
     @apply pointer-events-none absolute rounded-full bg-brand/20 blur-3xl;
@@ -54,14 +70,15 @@
 }
 
 @layer utilities {
+  /* 4rem + blur 12px 는 스크롤 중 "빈 화면"이 길게 남는다 — 이동은 짧게, 시간은 조금 빠르게 */
   .reveal {
     opacity: 0;
-    transform: translate3d(0, 4rem, 0);
-    filter: blur(12px);
+    transform: translate3d(0, 1.75rem, 0);
+    filter: blur(8px);
     transition:
-      opacity 0.8s cubic-bezier(0.32, 0.72, 0, 1),
-      transform 0.8s cubic-bezier(0.32, 0.72, 0, 1),
-      filter 0.8s cubic-bezier(0.32, 0.72, 0, 1);
+      opacity 0.65s cubic-bezier(0.32, 0.72, 0, 1),
+      transform 0.65s cubic-bezier(0.32, 0.72, 0, 1),
+      filter 0.65s cubic-bezier(0.32, 0.72, 0, 1);
     will-change: transform, opacity;
   }
 
@@ -71,12 +88,40 @@
     filter: blur(0);
   }
 
+  /* 카드 호버 — 3px 만 떠오른다. 색·테두리는 바꾸지 않는다 (포인터가 있는 기기에서만) */
+  .lift {
+    transition:
+      transform 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+      box-shadow 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  @media (hover: hover) {
+    .lift:hover {
+      transform: translateY(-3px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .reveal {
       opacity: 1;
       transform: none;
       filter: none;
       transition: none;
+    }
+
+    .lift,
+    .lift:hover {
+      transform: none;
+      transition: none;
+    }
+
+    /* orb 부유·pulse 등 장식 애니메이션도 함께 멈춘다 */
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
     }
   }
 }

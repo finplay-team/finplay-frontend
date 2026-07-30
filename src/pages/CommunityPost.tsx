@@ -259,7 +259,7 @@ export function CommunityPost() {
               <p className="text-xs text-muted">
                 제목과 내용이 모두 저장됩니다. 둘 중 하나라도 비우면 저장할 수 없습니다.
               </p>
-              {editError && <p className="text-sm text-gain">{editError}</p>}
+              {editError && <p className="text-sm text-rose-300">{editError}</p>}
 
               <div className="flex justify-end gap-2">
                 <Button
@@ -325,7 +325,7 @@ export function CommunityPost() {
                   )}
                 </div>
               )}
-              {deleteError && <p className="mt-3 text-sm text-gain">{deleteError}</p>}
+              {deleteError && <p className="mt-3 text-sm text-rose-300">{deleteError}</p>}
             </article>
           )}
         </Card>
@@ -352,7 +352,7 @@ export function CommunityPost() {
                 placeholder="댓글을 입력해 주세요"
                 className={`${inputClass} resize-y leading-relaxed`}
               />
-              {commentError && <p className="text-sm text-gain">{commentError}</p>}
+              {commentError && <p className="text-sm text-rose-300">{commentError}</p>}
               <div className="flex justify-end">
                 <Button type="submit" disabled={commentSubmitting || !commentInput.trim()}>
                   {commentSubmitting ? '등록 중…' : '댓글 등록'}
@@ -361,7 +361,7 @@ export function CommunityPost() {
             </form>
           </Card>
 
-          {commentDeleteError && <p className="mt-4 text-sm text-gain">{commentDeleteError}</p>}
+          {commentDeleteError && <p className="mt-4 text-sm text-rose-300">{commentDeleteError}</p>}
 
           {comments.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted">아직 댓글이 없습니다.</p>

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
+import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
 import { createPost, getPosts } from '../services/communityService'
@@ -139,7 +140,8 @@ export function Community() {
                 />
               </div>
 
-              {formError && <p className="text-sm text-gain">{formError}</p>}
+              {/* gain(=상승 적색) 은 시세용 토큰이다. 폼 오류는 Signup·Field 와 같은 rose 를 쓴다 */}
+              {formError && <p className="text-sm text-rose-300">{formError}</p>}
 
               <div className="flex justify-end">
                 <Button type="submit" disabled={!canSubmit}>
@@ -151,7 +153,15 @@ export function Community() {
         )}
 
         <section className="mt-8 space-y-4">
-          {loading && <p className="py-16 text-center text-sm text-muted">불러오는 중입니다…</p>}
+          {loading &&
+            Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} innerClassName="p-6">
+                <div className="skeleton h-4 w-1/2" />
+                <div className="mt-3 skeleton h-3 w-full" />
+                <div className="mt-2 skeleton h-3 w-4/5" />
+                <div className="mt-5 skeleton h-2.5 w-32" />
+              </Card>
+            ))}
 
           {!loading && loadError && (
             <Card innerClassName="p-8 text-center">
@@ -165,9 +175,24 @@ export function Community() {
           )}
 
           {!loading && !loadError && data?.content.length === 0 && (
-            <Card innerClassName="p-12 text-center">
-              <p className="font-display text-lg font-semibold text-ink">아직 게시글이 없습니다</p>
-              <p className="mt-2 text-sm text-muted">첫 글을 남겨 보세요.</p>
+            <Card accent="brand" innerClassName="px-6 py-16 text-center">
+              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+                <Layers width={22} height={22} />
+              </span>
+              <p className="mt-5 font-display text-lg font-semibold text-ink">
+                아직 게시글이 없습니다
+              </p>
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
+                왜 사고 왜 팔았는지 적어 두면 나중에 같은 판단을 다시 볼 수 있습니다. 첫 글을 남겨
+                보세요.
+              </p>
+              {!formOpen && (
+                <div className="mt-6 flex justify-center">
+                  <Button withIcon onClick={() => setFormOpen(true)}>
+                    첫 글 쓰기
+                  </Button>
+                </div>
+              )}
             </Card>
           )}
 

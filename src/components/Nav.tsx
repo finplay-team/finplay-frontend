@@ -37,11 +37,19 @@ export function Nav() {
     setOpen(false)
   }, [location.pathname])
 
-  // 메뉴 열림 동안 배경 스크롤 잠금
+  // 메뉴 열림 동안 배경 스크롤 잠금 + Esc 로 닫기
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
+    if (!open) return () => {
+      document.body.style.overflow = ''
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
     return () => {
       document.body.style.overflow = ''
+      window.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
 
@@ -75,7 +83,8 @@ export function Nav() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex justify-center px-4">
-      <nav className="mt-5 flex w-full max-w-6xl items-center justify-between rounded-full border border-white/[0.08] bg-canvas/70 py-2 pl-5 pr-2 shadow-soft-sm backdrop-blur-xl">
+      {/* relative z-40 이 없으면 아래 풀스크린 오버레이(z-30)가 pill 위에 깔려 X 버튼을 덮는다 */}
+      <nav className="relative z-40 mt-5 flex w-full max-w-6xl items-center justify-between rounded-full border border-white/[0.08] bg-canvas/70 py-2 pl-5 pr-2 shadow-soft-sm backdrop-blur-xl">
         <Link to="/" className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-brand-ink">
             i
@@ -83,19 +92,27 @@ export function Nav() {
           <span className="font-display text-lg font-semibold tracking-tight">Investory</span>
         </Link>
 
-        <div className="hidden items-center gap-1 md:flex">
-          {navLinks.map((l) => (
-            <Link
-              key={l.to}
-              to={l.to}
-              className="rounded-full px-3.5 py-2 text-sm text-muted transition-colors duration-300 hover:text-ink"
-            >
-              {l.label}
-            </Link>
-          ))}
+        {/* md(768px)에서 펼치면 메뉴·지갑·닉네임이 전부 두세 줄로 접힌다 → lg 부터 펼친다 */}
+        <div className="hidden items-center gap-1 lg:flex">
+          {navLinks.map((l) => {
+            const active =
+              l.to === '/' ? location.pathname === '/' : location.pathname.startsWith(l.to)
+            return (
+              <Link
+                key={l.to}
+                to={l.to}
+                aria-current={active ? 'page' : undefined}
+                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors duration-300 ${
+                  active ? 'bg-white/[0.06] text-ink' : 'text-muted hover:text-ink'
+                }`}
+              >
+                {l.label}
+              </Link>
+            )
+          })}
         </div>
 
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden items-center gap-2 lg:flex">
           {isAuthenticated ? (
             <>
               {wallet && (
@@ -118,12 +135,12 @@ export function Nav() {
                   </span>
                 </Link>
               )}
-              <span className="text-sm text-muted">
+              <span className="whitespace-nowrap text-sm text-muted">
                 <span className="font-medium text-ink">{member?.nickname}</span>님
               </span>
               <button
                 onClick={handleLogout}
-                className="group flex items-center gap-1.5 rounded-full bg-white/[0.04] px-4 py-2 text-sm text-ink ring-1 ring-white/[0.08] transition-all duration-400 ease-spring hover:bg-white/[0.08] active:scale-[0.98]"
+                className="group flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white/[0.04] px-4 py-2 text-sm text-ink ring-1 ring-white/[0.08] transition-all duration-400 ease-spring hover:bg-white/[0.08] active:scale-[0.98]"
               >
                 로그아웃
                 <Logout width={15} height={15} className="text-muted" />
@@ -148,7 +165,8 @@ export function Nav() {
         <button
           aria-label="메뉴"
           onClick={() => setOpen((v) => !v)}
-          className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] ring-1 ring-white/[0.08] md:hidden"
+          aria-expanded={open}
+          className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] ring-1 ring-white/[0.08] lg:hidden"
         >
           <span
             className={`absolute h-[1.5px] w-4 bg-ink transition-all duration-500 ease-spring ${
@@ -165,7 +183,7 @@ export function Nav() {
 
       {/* 풀스크린 글래스 오버레이 */}
       <div
-        className={`fixed inset-0 z-30 flex flex-col justify-center bg-canvas/90 px-6 backdrop-blur-2xl transition-all duration-500 ease-spring md:hidden ${
+        className={`fixed inset-0 z-30 flex flex-col justify-center bg-canvas/90 px-6 backdrop-blur-2xl transition-all duration-500 ease-spring lg:hidden ${
           open ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >

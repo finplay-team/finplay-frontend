@@ -7,7 +7,7 @@ import { Check } from '../ui/icons'
 const points = [
   {
     title: '가입하면 계좌가 바로 생긴다',
-    desc: '주식 계좌가 자동으로 만들어지고 가상 시드머니 1,000만원이 지급됩니다. 개설 절차가 따로 없습니다.',
+    desc: '주식·코인 계좌가 자동으로 만들어지고 계좌마다 가상 시드머니 1,000만원이 지급됩니다. 개설 절차가 따로 없습니다.',
   },
   {
     title: '주문은 시장가, 결과는 즉시',
@@ -15,7 +15,7 @@ const points = [
   },
   {
     title: '수수료는 서버가 계산한다',
-    desc: '주식 수수료 0.015%가 체결 결과에 반영됩니다. 화면이 따로 어림해서 보여주는 값이 아닙니다.',
+    desc: '주식 0.015%, 코인 0.05% 수수료가 체결 결과에 반영됩니다. 화면이 따로 어림해서 보여주는 값이 아닙니다.',
   },
   {
     title: '손익을 끝까지 따라간다',
@@ -23,13 +23,13 @@ const points = [
   },
   {
     title: '주문 못 하는 이유를 감추지 않는다',
-    desc: '평일 09:00~15:30에만 주문할 수 있습니다. 장이 닫혔거나 시세를 받을 수 없으면 버튼을 막고 사유를 적습니다.',
+    desc: '주식은 평일 09:00~15:30에만, 코인은 24시간 주문할 수 있습니다. 장이 닫혔거나 시세를 받을 수 없으면 버튼을 막고 사유를 적습니다.',
   },
 ]
 
 export function MarketOrders() {
   return (
-    <section className="relative overflow-hidden px-4 py-24 md:py-36">
+    <section className="relative overflow-hidden px-4 py-20 md:py-28">
       <div
         aria-hidden
         className="orb -right-32 top-1/3 h-96 w-96 animate-float-orb"
@@ -53,7 +53,7 @@ export function MarketOrders() {
         <div className="space-y-4">
           {points.map((p, i) => (
             <Reveal key={p.title} delay={i * 80}>
-              <Card>
+              <Card className="lift">
                 <div className="flex gap-4 p-6">
                   <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-soft text-brand">
                     <Check width={16} height={16} />
