@@ -27,12 +27,6 @@ export const ArrowRight = (props: IconProps) => (
   </svg>
 )
 
-export const Notebook = (props: IconProps) => (
-  <svg {...base(props)}>
-    <path d="M6 4h11a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2V4Z" />
-    <path d="M6 4v16M3 8h3M3 12h3M3 16h3M10 8h6M10 12h4" />
-  </svg>
-)
 
 export const Sparkle = (props: IconProps) => (
   <svg {...base(props)}>
@@ -48,20 +42,7 @@ export const Layers = (props: IconProps) => (
   </svg>
 )
 
-export const Trophy = (props: IconProps) => (
-  <svg {...base(props)}>
-    <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />
-    <path d="M8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M10 15h4M9 20h6M12 15v5" />
-  </svg>
-)
 
-export const Target = (props: IconProps) => (
-  <svg {...base(props)}>
-    <circle cx="12" cy="12" r="8" />
-    <circle cx="12" cy="12" r="4" />
-    <circle cx="12" cy="12" r="0.6" fill="currentColor" />
-  </svg>
-)
 
 export const Cpu = (props: IconProps) => (
   <svg {...base(props)}>
@@ -83,12 +64,6 @@ export const Bolt = (props: IconProps) => (
   </svg>
 )
 
-export const Coin = (props: IconProps) => (
-  <svg {...base(props)}>
-    <circle cx="12" cy="12" r="8" />
-    <path d="M12 8v8M9.5 9.5h3.2a1.8 1.8 0 0 1 0 3.6H9.5" />
-  </svg>
-)
 
 export const Chart = (props: IconProps) => (
   <svg {...base(props)}>
@@ -103,11 +78,6 @@ export const Check = (props: IconProps) => (
   </svg>
 )
 
-export const Menu = (props: IconProps) => (
-  <svg {...base(props)}>
-    <path d="M4 8h16M4 16h16" />
-  </svg>
-)
 
 export const Close = (props: IconProps) => (
   <svg {...base(props)}>
@@ -122,26 +92,8 @@ export const User = (props: IconProps) => (
   </svg>
 )
 
-export const Users = (props: IconProps) => (
-  <svg {...base(props)}>
-    <circle cx="9" cy="8" r="3.5" />
-    <path d="M3 19c1-3.2 3.3-5 6-5s5 1.8 6 5" />
-    <path d="M16 5.2A3.5 3.5 0 0 1 16 12M21 19c-.5-1.6-1.4-2.9-2.6-3.8" />
-  </svg>
-)
 
-export const Calendar = (props: IconProps) => (
-  <svg {...base(props)}>
-    <rect x="4" y="5" width="16" height="16" rx="2" />
-    <path d="M4 9h16M8 3v4M16 3v4" />
-  </svg>
-)
 
-export const Flag = (props: IconProps) => (
-  <svg {...base(props)}>
-    <path d="M6 21V4M6 4h11l-2 4 2 4H6" />
-  </svg>
-)
 
 export const Logout = (props: IconProps) => (
   <svg {...base(props)}>

@@ -13,22 +13,16 @@ interface Props {
 export function AuthLayout({ title, subtitle, children, footer, aside }: Props) {
   return (
     <div className="min-h-[100dvh] px-4 pb-16 pt-28">
-      <div className="mx-auto grid max-w-5xl overflow-hidden rounded-bezel bg-white shadow-soft lg:grid-cols-2">
+      <div className="mx-auto grid max-w-5xl overflow-hidden rounded-bezel border border-white/[0.08] bg-surface shadow-soft lg:grid-cols-2">
         {/* 좌측 브랜드 패널 */}
-        <div className="relative hidden overflow-hidden bg-ink p-10 lg:flex lg:flex-col lg:justify-between">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-brand/30 blur-3xl"
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-coin/20 blur-3xl"
-          />
+        <div className="relative hidden overflow-hidden border-r border-white/[0.06] bg-canvas p-10 lg:flex lg:flex-col lg:justify-between">
+          <div aria-hidden className="orb -left-16 -top-16 h-64 w-64 animate-float-orb" />
+          <div aria-hidden className="orb -bottom-20 -right-10 h-64 w-64" />
           <Link to="/" className="relative flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-[15px] font-bold text-ink">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-[15px] font-bold text-brand-ink">
               i
             </span>
-            <span className="font-display text-xl font-semibold tracking-tight text-white">
+            <span className="font-display text-xl font-semibold tracking-tight text-ink">
               Investory
             </span>
           </Link>
@@ -39,7 +33,7 @@ export function AuthLayout({ title, subtitle, children, footer, aside }: Props) 
         <div className="p-8 sm:p-12">
           <div className="lg:hidden">
             <Link to="/" className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-[15px] font-bold text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-[15px] font-bold text-brand-ink">
                 i
               </span>
               <span className="font-display text-xl font-semibold tracking-tight">Investory</span>

@@ -14,13 +14,13 @@ export function Field({ label, error, hint, id, className = '', ...rest }: Props
       <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
       <input
         id={fieldId}
-        className={`w-full rounded-2xl border bg-white px-4 py-3 text-[15px] text-ink outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/10 ${
-          error ? 'border-rose-400' : 'border-line'
+        className={`w-full rounded-2xl border bg-elevated px-4 py-3 text-[15px] text-ink outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15 ${
+          error ? 'border-rose-400/70' : 'border-line'
         } ${className}`}
         {...rest}
       />
       {error ? (
-        <span className="mt-1.5 block text-xs text-rose-500">{error}</span>
+        <span className="mt-1.5 block text-xs text-rose-300">{error}</span>
       ) : hint ? (
         <span className="mt-1.5 block text-xs text-muted">{hint}</span>
       ) : null}

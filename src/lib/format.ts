@@ -31,10 +31,10 @@ export function formatPercent(value: number): string {
   return `${sign}${Math.abs(value).toFixed(1)}%`
 }
 
-/** 손익 부호에 따른 색상 유틸 클래스 */
+/** 손익 부호에 따른 색상 유틸 클래스 (다크 배경용 gain/loss 토큰) */
 export function pnlTone(value: number): string {
-  if (value > 0) return 'text-rose-600'
-  if (value < 0) return 'text-blue-600'
+  if (value > 0) return 'text-gain'
+  if (value < 0) return 'text-loss'
   return 'text-muted'
 }
 

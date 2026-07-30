@@ -15,16 +15,17 @@ interface CommonProps {
   className?: string
 }
 
+// 다크 테마 기준. ink 가 밝은 색이 되었으므로 `bg-ink text-white` 조합은 쓸 수 없다.
 const variantStyles: Record<Variant, string> = {
-  primary: 'bg-ink text-white hover:bg-black',
-  soft: 'bg-brand-soft text-brand hover:bg-brand-soft/80',
-  ghost: 'bg-white/70 text-ink ring-1 ring-black/[0.06] hover:bg-white',
+  primary: 'bg-brand text-brand-ink shadow-glow hover:bg-brand/90 disabled:opacity-50',
+  soft: 'bg-brand-soft text-brand hover:bg-brand-soft/70 disabled:opacity-50',
+  ghost: 'bg-white/[0.04] text-ink ring-1 ring-white/[0.08] hover:bg-white/[0.08] disabled:opacity-50',
 }
 
 const iconBg: Record<Variant, string> = {
-  primary: 'bg-white/15 text-white',
+  primary: 'bg-brand-ink/15 text-brand-ink',
   soft: 'bg-brand/15 text-brand',
-  ghost: 'bg-black/5 text-ink',
+  ghost: 'bg-white/[0.06] text-ink',
 }
 
 const sizeStyles: Record<Size, string> = {

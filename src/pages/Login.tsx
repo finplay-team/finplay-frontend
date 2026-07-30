@@ -1,11 +1,12 @@
-// 로그인 페이지 — mock 인증 후 원래 경로 또는 랭킹으로 이동, 데모 계정 안내 포함
+// TODO(4차): Login 실연동 재작성 예정 (현재는 실 API 로그인만 최소 연결)
+// 로그인 페이지 — 실제 /api/auth/login 으로 인증하고 원래 경로 또는 거래 화면으로 이동
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { AuthLayout } from '../components/AuthLayout'
-import { SocialLogin } from '../components/SocialLogin'
 import { Button } from '../components/ui/Button'
 import { Field } from '../components/ui/Field'
 import { useAuth } from '../auth/AuthContext'
+import { toUserMessage } from '../lib/errorMessages'
 
 interface LocationState {
   from?: string
@@ -15,7 +16,7 @@ export function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as LocationState | null)?.from ?? '/rankings'
+  const from = (location.state as LocationState | null)?.from ?? '/trade'
 
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
@@ -32,25 +33,19 @@ export function Login() {
       await login(form.email, form.password)
       navigate(from, { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '로그인 중 오류가 발생했습니다.')
+      // 이 화면에서는 401 이 "다시 로그인" 이 아니라 자격 증명 오류다.
+      setError(
+        toUserMessage(err, { UNAUTHORIZED: '이메일 또는 비밀번호가 올바르지 않습니다.' }),
+      )
     } finally {
       setLoading(false)
     }
   }
 
-  const fillDemo = (kind: 'user' | 'admin') => {
-    setForm(
-      kind === 'user'
-        ? { email: 'user@investory.app', password: 'demo1234' }
-        : { email: 'admin@investory.app', password: 'admin1234' },
-    )
-    setError('')
-  }
-
   return (
     <AuthLayout
       title="다시 오신 걸 환영합니다"
-      subtitle="이메일로 로그인하고 오늘의 순위와 기록을 확인하세요."
+      subtitle="이메일로 로그인하고 계좌와 매매 기록을 확인하세요."
       aside={<LoginAside />}
       footer={
         <>
@@ -63,7 +58,7 @@ export function Login() {
     >
       <form onSubmit={onSubmit} noValidate className="space-y-4">
         {error && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
             {error}
           </div>
         )}
@@ -71,7 +66,7 @@ export function Login() {
           label="이메일"
           name="email"
           type="email"
-          placeholder="you@investory.app"
+          placeholder="you@example.com"
           value={form.email}
           onChange={update('email')}
           autoComplete="email"
@@ -89,26 +84,6 @@ export function Login() {
           {loading ? '로그인 중…' : '로그인'}
         </Button>
       </form>
-
-      <SocialLogin mode="login" />
-
-      <div className="mt-6 rounded-2xl border border-line bg-canvas p-4">
-        <p className="text-xs font-medium text-ink">데모 계정으로 빠르게 둘러보기</p>
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={() => fillDemo('user')}
-            className="flex-1 rounded-xl bg-white px-3 py-2 text-xs text-ink ring-1 ring-black/[0.06] transition-all hover:ring-brand/40"
-          >
-            일반 유저
-          </button>
-          <button
-            onClick={() => fillDemo('admin')}
-            className="flex-1 rounded-xl bg-white px-3 py-2 text-xs text-ink ring-1 ring-black/[0.06] transition-all hover:ring-brand/40"
-          >
-            관리자
-          </button>
-        </div>
-      </div>
     </AuthLayout>
   )
 }
@@ -116,14 +91,13 @@ export function Login() {
 function LoginAside() {
   return (
     <div>
-      <h2 className="font-display text-3xl font-semibold leading-tight text-white">
-        순위는 참고일 뿐,
+      <h2 className="font-display text-3xl font-semibold leading-tight text-ink">
+        결과보다 먼저,
         <br />
-        중요한 건 습관입니다
+        판단을 남기세요
       </h2>
-      <p className="mt-6 max-w-xs text-sm leading-relaxed text-white/70">
-        실현손익 랭킹과 미실현까지 포함한 AI 리포트를 나란히 보며, 숫자 뒤에 가려진 투자 습관을
-        점검하세요.
+      <p className="mt-6 max-w-xs text-sm leading-relaxed text-muted">
+        실제 거래일 시세로 매매하고, 체결 기록과 계좌 수익률을 나란히 보며 습관을 점검하세요.
       </p>
     </div>
   )
