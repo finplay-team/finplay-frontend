@@ -5,11 +5,29 @@ import { Eyebrow } from '../ui/Eyebrow'
 import { Reveal } from '../ui/Reveal'
 
 /** 전부 실제 계약에서 나온 값이다. 사용자 수·수익률 같은 만들어낸 수치는 두지 않는다. */
-const facts = [
-  { label: '시드머니', value: '1,000만원' },
-  { label: '거래 종목', value: '주식 16' },
-  { label: '주문 유형', value: '시장가' },
-  { label: '시세', value: '1분봉 재생' },
+const accounts = [
+  {
+    title: '주식 계좌',
+    accent: 'brand' as const,
+    tone: 'text-brand',
+    facts: [
+      { label: '시드머니', value: '1,000만원' },
+      { label: '종목', value: '16' },
+      { label: '거래 시간', value: '09:00–15:30' },
+      { label: '시세', value: '1분봉 재생' },
+    ],
+  },
+  {
+    title: '코인 계좌',
+    accent: 'coin' as const,
+    tone: 'text-coin',
+    facts: [
+      { label: '시드머니', value: '1,000만원' },
+      { label: '종목', value: '12' },
+      { label: '거래 시간', value: '24시간' },
+      { label: '시세', value: '빗썸 실시간' },
+    ],
+  },
 ]
 
 export function Hero() {
@@ -25,7 +43,7 @@ export function Hero() {
 
       <div className="relative mx-auto max-w-5xl text-center">
         <Reveal>
-          <Eyebrow>주식 교육형 모의투자</Eyebrow>
+          <Eyebrow>주식·코인 교육형 모의투자</Eyebrow>
         </Reveal>
 
         <Reveal delay={80}>
@@ -56,22 +74,34 @@ export function Hero() {
         </Reveal>
       </div>
 
-      {/* 서비스 사실 요약 */}
-      <Reveal delay={320} className="relative mx-auto mt-20 max-w-2xl">
-        <Card accent="brand">
-          <dl className="grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
-            {facts.map((f) => (
-              <div key={f.label} className="px-5 py-6 text-center">
-                <dt className="text-[10px] uppercase tracking-eyebrow text-muted">{f.label}</dt>
-                <dd className="mt-2 font-display text-lg font-semibold text-ink tabular">
-                  {f.value}
-                </dd>
+      {/* 듀얼 계좌 미리보기 — 가입 시 두 계좌가 동시에 생긴다 */}
+      <Reveal delay={320} className="relative mx-auto mt-20 max-w-4xl">
+        <div className="grid gap-4 md:grid-cols-2">
+          {accounts.map((account) => (
+            <Card key={account.title} accent={account.accent}>
+              <div className="px-6 py-6">
+                <p className={`font-display text-lg font-semibold ${account.tone}`}>
+                  {account.title}
+                </p>
+                <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4">
+                  {account.facts.map((f) => (
+                    <div key={f.label}>
+                      <dt className="text-[10px] uppercase tracking-eyebrow text-muted">
+                        {f.label}
+                      </dt>
+                      <dd className="mt-1.5 font-display text-base font-semibold text-ink tabular">
+                        {f.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
-            ))}
-          </dl>
-        </Card>
+            </Card>
+          ))}
+        </div>
         <p className="mt-5 text-center text-xs text-muted">
-          가입하면 가상 시드머니 1,000만원이 지급된 주식 계좌가 바로 생성됩니다.
+          가입하면 각각 1,000만원이 지급된 주식·코인 계좌가 동시에 생성됩니다. 두 계좌 사이 이체는
+          없습니다.
         </p>
       </Reveal>
     </section>

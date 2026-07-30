@@ -1,8 +1,9 @@
-// 주식 계좌 요약·보유 종목·체결 내역(커서 페이징)을 보여주는 포트폴리오 화면
+// 시장(주식/코인)별 계좌 요약·보유 종목·체결 내역(커서 페이징)을 보여주는 포트폴리오 화면
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
+import { MarketTabs } from '../components/ui/MarketTabs'
 import { useInstruments } from '../hooks/useInstruments'
 import { useStockStream } from '../hooks/useStockStream'
 import { formatDateTime, ratioToPercent } from '../lib/datetime'
@@ -12,9 +13,11 @@ import { sideLabels } from '../lib/labels'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { getTrades } from '../services/tradeService'
-import type { AccountSummary, Holding, OrderSide, Trade } from '../services/types'
+import type { AccountSummary, Holding, Market, OrderSide, Trade } from '../services/types'
 
 const TRADE_PAGE_SIZE = 20
+/** 코인은 분 tick 이 없어 자체 주기로 계좌를 다시 읽는다. */
+const CRYPTO_ACCOUNT_REFRESH_MS = 15_000
 
 /** 부호를 붙인 정확한 원화 금액. formatPnl 은 만 단위로 축약해 표의 손익 표시에는 쓸 수 없다. */
 function signedKRW(value: number): string {
@@ -49,7 +52,11 @@ function SideChip({ side }: { side: OrderSide }) {
 }
 
 export function Portfolio() {
-  const { marketStatus, sourceTradingDate, lastMessageAt } = useStockStream()
+  const [market, setMarket] = useState<Market>('STOCK')
+  const isCrypto = market === 'CRYPTO'
+
+  // 코인 탭에서는 주식 SSE 를 붙잡아 둘 이유가 없다.
+  const { marketStatus, sourceTradingDate, lastMessageAt } = useStockStream({ enabled: !isCrypto })
   const { index } = useInstruments()
 
   const [refreshNonce, setRefreshNonce] = useState(0)
@@ -62,14 +69,29 @@ export function Portfolio() {
   // 클라이언트가 스트림 가격으로 평가액을 다시 계산하면 서버의 시세 유효기간 정책과 어긋난다.
   const minuteTick = Math.floor((lastMessageAt ?? 0) / 60_000)
 
+  const [cryptoTick, setCryptoTick] = useState(0)
+  useEffect(() => {
+    if (!isCrypto) return
+    const timer = setInterval(() => setCryptoTick((n) => n + 1), CRYPTO_ACCOUNT_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [isCrypto])
+
+  // 두 계좌는 완전히 분리돼 있다. 새 응답이 오기 전까지 앞 시장의 잔고·보유·체결을 그대로 두면 안 된다.
+  useEffect(() => {
+    setAccount(null)
+    setHoldings(null)
+    setAccountError(null)
+    setTrades([])
+    setTradesLoaded(false)
+    setNextCursor(null)
+    setHasNext(false)
+  }, [market])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const [summary, list] = await Promise.all([
-          getAccountSummary('STOCK'),
-          getHoldings('STOCK'),
-        ])
+        const [summary, list] = await Promise.all([getAccountSummary(market), getHoldings(market)])
         if (cancelled) return
         setAccount(summary)
         setHoldings(list)
@@ -81,7 +103,7 @@ export function Portfolio() {
     return () => {
       cancelled = true
     }
-  }, [minuteTick, refreshNonce])
+  }, [market, minuteTick, cryptoTick, refreshNonce])
 
   const [trades, setTrades] = useState<Trade[]>([])
   const [tradesLoaded, setTradesLoaded] = useState(false)
@@ -96,7 +118,7 @@ export function Portfolio() {
     setTradesLoading(true)
     void (async () => {
       try {
-        const page = await getTrades({ market: 'STOCK', limit: TRADE_PAGE_SIZE })
+        const page = await getTrades({ market, limit: TRADE_PAGE_SIZE })
         if (cancelled) return
         setTrades(page.content)
         setNextCursor(page.nextCursor)
@@ -114,14 +136,14 @@ export function Portfolio() {
     return () => {
       cancelled = true
     }
-  }, [refreshNonce])
+  }, [market, refreshNonce])
 
   const loadMoreTrades = useCallback(async () => {
     if (!nextCursor || tradesLoading) return
     setTradesLoading(true)
     try {
       const page = await getTrades({
-        market: 'STOCK',
+        market,
         cursor: nextCursor,
         limit: TRADE_PAGE_SIZE,
       })
@@ -134,7 +156,7 @@ export function Portfolio() {
     } finally {
       setTradesLoading(false)
     }
-  }, [nextCursor, tradesLoading])
+  }, [market, nextCursor, tradesLoading])
 
   const instrumentName = useCallback(
     (instrumentId: number) => index?.byId.get(instrumentId)?.name ?? `#${instrumentId}`,
@@ -143,12 +165,13 @@ export function Portfolio() {
 
   const holdingsEmpty = holdings !== null && holdings.length === 0
   const marketLine = useMemo(() => {
+    if (isCrypto) return '24시간 거래 · 빗썸 실시세 기준 평가'
     const status =
       marketStatus === 'OPEN' ? '장 운영 중' : marketStatus === 'CLOSED' ? '장 마감' : '장 상태 확인 중'
     return sourceTradingDate
       ? `${status} · ${sourceTradingDate} 장 재생 중`
       : `${status} · 재생할 거래일이 아직 준비되지 않았습니다`
-  }, [marketStatus, sourceTradingDate])
+  }, [isCrypto, marketStatus, sourceTradingDate])
 
   return (
     <div className="relative min-h-[100dvh] px-4 pb-24 pt-28 md:pt-32">
@@ -160,8 +183,9 @@ export function Portfolio() {
           <div>
             <Eyebrow>포트폴리오</Eyebrow>
             <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
-              내 주식 계좌
+              {isCrypto ? '내 코인 계좌' : '내 주식 계좌'}
             </h1>
+            <MarketTabs market={market} onChange={setMarket} className="mt-5" />
             <p className="mt-3 text-sm text-muted">{marketLine}</p>
           </div>
           <Button variant="ghost" onClick={() => setRefreshNonce((n) => n + 1)}>
@@ -170,8 +194,10 @@ export function Portfolio() {
         </header>
 
         {/* 2. 계좌 요약 */}
-        <Card className="mt-8" accent="brand" innerClassName="p-6 md:p-8">
-          <h2 className="text-sm font-semibold text-ink">계좌 요약</h2>
+        <Card className="mt-8" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-6 md:p-8">
+          <h2 className="text-sm font-semibold text-ink">
+            계좌 요약 · 주식과 코인 계좌는 완전히 분리됩니다
+          </h2>
           {accountError ? (
             <p className="mt-4 text-sm text-loss">{accountError}</p>
           ) : (

@@ -66,6 +66,13 @@ export const Chart = (props: IconProps) => (
   </svg>
 )
 
+export const Coin = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M14.5 9.5A2.5 2.5 0 0 0 12 8h-1.5M9.5 12h3M9.5 15h2.5a2.5 2.5 0 0 0 2.5-1.5M11 8v8" />
+  </svg>
+)
+
 export const Check = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="m5 12 4.5 4.5L19 7" />

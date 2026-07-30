@@ -5,12 +5,13 @@ interface Props {
   children: ReactNode
   className?: string
   innerClassName?: string
-  /** 좌측 상단 민트 글로우 (코인 시장 제거로 시장별 액센트는 없어졌다) */
-  accent?: 'brand' | 'none'
+  /** 좌측 상단 글로우 — 시장별 액센트(brand=주식/민트, coin=코인/앰버) */
+  accent?: 'brand' | 'coin' | 'none'
 }
 
 const accentGlow: Record<NonNullable<Props['accent']>, string> = {
   brand: 'before:bg-brand/10',
+  coin: 'before:bg-coin/15',
   none: 'before:hidden',
 }
 

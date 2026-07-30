@@ -30,6 +30,8 @@
 - [x] 소셜 로그인 버튼 (`SocialLogin.tsx`)
 - [x] 고객센터 1:1 문의 폼 (FAQ는 유지)
 - [x] `mockDb.ts` 전체 삭제 + 코인 시장 UI 제거 (`landing/SplitAccounts.tsx` 포함)
+  - ↳ **코인 UI는 2026-07-31 복원됨** (이슈 #1 / PR #3). 백엔드 `crypto-real` 프로필로 실데이터가
+    나오면서 D3 전제가 바뀌었다. 시장 탭·`coin` 토큰·`SplitAccounts`·Hero 듀얼 계좌 복원.
 - [x] AI 습관 분석 (`landing/AiHabit.tsx` — 백엔드에 습관·리포트 엔드포인트 없음)
 - [x] 죽은 아이콘 정리 (`Trophy`·`Target`·`Flag`·`Calendar`·`Users`·`Notebook`·`Coin`·`Menu`·`Sparkle`)
 - [x] `lib/format.ts` 다크 토큰 전환(`pnlTone`) + 죽은 `formatDate` 제거

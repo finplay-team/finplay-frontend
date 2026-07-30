@@ -2,6 +2,7 @@
 import { Hero } from '../components/landing/Hero'
 import { ReplayStream } from '../components/landing/ReplayStream'
 import { MarketOrders } from '../components/landing/MarketOrders'
+import { SplitAccounts } from '../components/landing/SplitAccounts'
 import { CommunityIntro } from '../components/landing/CommunityIntro'
 import { TechHighlights } from '../components/landing/TechHighlights'
 import { CTA } from '../components/landing/CTA'
@@ -11,6 +12,7 @@ export function Landing() {
     <>
       <Hero />
       <ReplayStream />
+      <SplitAccounts />
       <MarketOrders />
       <CommunityIntro />
       <TechHighlights />
