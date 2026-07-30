@@ -226,8 +226,9 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
   "주식·코인 계좌 분리"가 섹션 존재 이유라 코인 제거(D3)와 함께 사라졌고, `AiHabit` 은 백엔드에
   습관 분석·AI 리포트 엔드포인트가 없어 투자일기와 같은 규칙으로 제거했다. `Hero` 의 듀얼 계좌
   미리보기도 주식 단일 카드로 바꿨고, 깨진 `랭킹 둘러보기`(`/rankings`) CTA 는 `/support` 로 돌렸다.
-- ⚠️ **`TechHighlights` 문구는 아직 낡았다** — Kafka 랭킹 컨슈머·투자일기 파이프라인·코인 실시간을
-  언급한다. 코드는 컴파일되지만 내용이 사실과 다르므로 랜딩 재작성 담당이 문구를 고쳐야 한다.
+- ~~⚠️ **`TechHighlights` 문구는 아직 낡았다**~~ → **2026-07-31 해결** (이슈 #2). Kafka·투자일기 언급은
+  랜딩 재작성 때 사라졌고, 마지막으로 남아 있던 "Redis 시세 저장소"를 이번에 고쳤다.
+  아래 "5차 — 브라우저 시각 검증" 절 참조.
 - **`lib/format.ts` 에서 `formatDate(iso)` 를 지웠다.** 소비자가 0개였고 `new Date(iso)` 로 오프셋 없는
   백엔드 문자열을 파싱하는 함정이었다. 날짜·시각 표시는 `lib/datetime.ts` 가 단독으로 책임진다.
   `formatPercent` 는 계속 **퍼센트**를 받는다 — 비율 ×100 은 `ratioToPercent` 한 곳에서만 한다.
@@ -268,3 +269,67 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
 - 종목 28개로 확충 (주식 16 — LG화학은 거래정지 예시 / 코인 12). openPrices·livePrices 동기 시드.
 - 내정보 계좌 카드 = 버튼 → navigate('/portfolio', {state:{market}}). Portfolio가 location.state.market으로 초기 탭 선택.
 - 매매 내역 행 = 버튼 → TradeDetailModal (z-50, 배경 클릭 닫기): 단가·수량·금액·수수료 + 연결된 투자일기·AI 복기 표시.
+
+---
+
+# 5차 — 브라우저 시각 검증 (2026-07-31, 이슈 #2)
+
+`checklist.md` G섹션의 "남음"은 전부 **Chrome 확장이 안 붙어서** 미실행 상태였다. 이번에는
+확장 대신 별도 Chrome 을 CDP(포트 9333)로 띄우고 puppeteer-core 로 몰아서 실제 화면을 봤다.
+백엔드는 `SPRING_PROFILES_ACTIVE=local,crypto-real` 로 기동했다 (코인 실데이터).
+
+## 하네스에서 배운 것 (다음 사람이 같은 데서 막히지 않도록)
+
+- **창이 가려지면 랜딩이 통째로 빈 화면으로 찍힌다.** 백그라운드/가려진 창은
+  `document.visibilityState === 'hidden'` 이 되고, 그러면 IntersectionObserver 가 초기 엔트리를
+  전달하지 않아 `.reveal` 이 29개 전부 `opacity: 0` 으로 남는다. **코드 버그가 아니다.**
+  Chrome 을 `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  --disable-features=CalculateNativeWinOcclusion` 로 띄우면 해결된다.
+- 백엔드 `bootRun` 은 `.env` 를 자동으로 읽지 않는다. `set -a; . ./.env; set +a` 를 먼저 해야
+  `JWT_SECRET` 미해결로 죽지 않는다. Docker Desktop 이 떠 있어야 compose 가 뜬다.
+
+## 이번에 고친 것 (전부 브라우저에서 재현·재검증)
+
+- **`CandleChart` 가 좁은 화면에서 통째로 축소됐다.** `viewBox="0 0 640 260"` + `w-full h-auto` 는
+  SVG 좌표계를 컨테이너 폭에 맞춰 균일 축소한다 → 390px 에서 배율 0.44, 차트 높이 115px,
+  축 라벨 4.4px 로 읽을 수 없었다. `preserveAspectRatio="none"` 은 `h-auto` 때문에 실제로는
+  가로 왜곡을 만들지 않았고, 진짜 원인은 **배율 자체**였다.
+  → `ResizeObserver` 로 컨테이너 실제 CSS 폭을 재서 `viewBox` 를 그 픽셀 크기로 잡는다
+  (1 유저단위 = 1 CSS 픽셀). 라벨은 항상 10px 로 렌더된다. 좁은 폭에서는 높이 0.72배, 봉 60개로 줄인다.
+- **모바일 메뉴가 닫히지 않았다.** `<nav>` 에 스태킹 컨텍스트가 없어서 풀스크린 오버레이(`z-30`)가
+  pill 위에 깔렸다 → `elementFromPoint` 가 X 버튼 자리에서 오버레이를 반환하고, 클릭해도 안 닫혔다.
+  링크를 눌러 이동하는 것 말고는 빠져나갈 방법이 없었다(배경 스크롤도 잠긴 상태). → `nav` 에
+  `relative z-40`. Esc 로도 닫히게 했다.
+- **768~1000px 구간에서 상단 내비가 완전히 깨졌다.** `md:flex` 로 펼치는데 그 폭에서는 메뉴·지갑·
+  닉네임이 전부 2~3줄로 접혔다("포트 / 폴리 / 오"). 태블릿 세로(834px)가 정확히 이 구간이다.
+  → 펼침 기준을 `lg` 로 올리고 각 항목에 `whitespace-nowrap`. 1024px 이상은 기존과 동일하다.
+- **한국어 줄바꿈이 어절 중간에서 끊겼다.** 390px 히어로에서 "실제로 있었던 하 / 루를,",
+  "1,000 / 만원". → `index.css` 전역에 `word-break: keep-all; overflow-wrap: break-word;`.
+  히어로는 `13vw` → `11vw` 로 낮췄다.
+- **문구 오류** (코드는 정상, 내용이 사실과 다름):
+  - `TechHighlights` "Redis 시세 저장소 / 최신 가격은 Redis에 두고 읽습니다" → **주식은 Redis 를
+    쓰지 않는다.** 백엔드 `PriceQueryService` 는 주식을 `StockPriceProvider`(→ MySQL `stock_candles`),
+    코인을 `PriceStore`(Redis)로 나눠 위임한다. "시장별로 나눈 시세 경로"로 다시 썼다.
+  - `Support` FAQ "코인도 거래할 수 있나요? → **아니요.**" 코인 복원(PR #3) 이후 명백히 틀린 답이다.
+    실제로 브라우저에서 BTC 0.01 시장가 매수가 체결됐다. 전면 교체.
+  - 코인 복원 뒤에도 "주식 계좌만 생긴다"로 남아 있던 곳을 모두 갱신: `index.html` title·description,
+    `Footer`, `CTA`, `MarketOrders`, `Signup`(약관 문구·좌측 패널), `Support` 퀵헬프.
+  - 수수료 문구에 코인 0.05% 를 추가했다 (`OrderExecutionService.CRYPTO_FEE_RATE` 확인).
+
+## 미적 다듬기 (이슈 밖 추가 범위 — 표현만 손대고 정보는 그대로)
+
+- 랜딩 섹션 리듬을 `py-24 md:py-36` → `py-20 md:py-28` 로 통일. 스크롤 중 빈 구간이 줄었다.
+- `.reveal` 이동을 4rem → 1.75rem, blur 12px → 8px, 0.8s → 0.65s. "화면이 한참 비어 보이는" 느낌을 줄였다.
+- `prefers-reduced-motion: reduce` 에서 `.reveal` 뿐 아니라 **모든 애니메이션**(orb 부유, pulse)을 멈춘다.
+- 카드 `.lift` 호버(-3px), `:focus-visible` 민트 링, 내비 현재 메뉴 강조.
+- `.skeleton` 자리표시 도입 → 거래 종목 목록·커뮤니티 목록 로딩.
+- 커뮤니티 빈 상태에 아이콘·설명·"첫 글 쓰기" CTA. **없는 숫자·랭킹·후기는 만들지 않았다.**
+- 폼 오류 색을 `text-gain`(=상승 적색, 시세용 토큰) → `text-rose-300`(Signup·Field 와 동일)으로 통일.
+
+## 남은 것 / 다음 사람에게
+
+- **`MyPage` 는 아직 주식 계좌만 보여준다.** 코드에 `// 코인이 제거된 화면이라 ... (D3)` 주석이 그대로 있고
+  최근 체결 내역도 `market: 'STOCK'` 고정이라, 코인 매매가 내정보에서 보이지 않는다. 라벨이
+  "주식 계좌 요약"이라 거짓말은 아니지만 코인 복원 이후 남은 구멍이다. 별도 이슈가 맞다.
+- 주식 SSE 의 **가격 갱신**은 이번에도 미확인이다 (검증 시각 02:30~03:10 KST, 장외).
+  연결·스냅샷·하트비트는 확인했다. 자세한 범위는 `checklist.md` G섹션에 적었다.
