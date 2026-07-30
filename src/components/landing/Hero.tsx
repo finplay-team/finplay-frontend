@@ -32,7 +32,7 @@ const accounts = [
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden px-4 pb-24 pt-36 md:pt-44">
+    <section className="relative overflow-hidden px-4 pb-20 pt-32 md:pb-28 md:pt-40">
       {/* 은은한 민트 글로우 오브 */}
       <div aria-hidden className="orb -left-24 top-10 h-80 w-80 animate-float-orb" />
       <div
@@ -47,7 +47,8 @@ export function Hero() {
         </Reveal>
 
         <Reveal delay={80}>
-          <h1 className="mt-6 font-display text-[13vw] font-bold leading-[0.95] tracking-tight sm:text-6xl md:text-7xl">
+          {/* 모바일에서 13vw 는 어절이 두 줄로 접혀 리듬이 깨진다 (줄바꿈 규칙은 index.css 전역) */}
+          <h1 className="mt-6 font-display text-[11vw] font-bold leading-[1.08] tracking-tight sm:text-6xl sm:leading-[0.95] md:text-7xl">
             실제로 있었던 하루를,
             <br />
             <span className="text-brand">지금처럼</span> 매매한다
@@ -56,9 +57,10 @@ export function Hero() {
 
         <Reveal delay={160}>
           <p className="mx-auto mt-7 max-w-xl text-balance text-base leading-relaxed text-muted md:text-lg">
-            과거 거래일의 1분봉을 순서대로 다시 공개해, 실제 장이 열린 것처럼 움직입니다. 가상
-            시드머니 <span className="font-semibold text-ink">1,000만원</span>으로 부담 없이 시장가
-            매매를 연습해 보세요.
+            주식은 과거 거래일의 1분봉을 순서대로 다시 공개해 실제 장이 열린 것처럼 움직이고,
+            코인은 빗썸 실시간 시세를 그대로 씁니다. 계좌마다 가상 시드머니{' '}
+            <span className="font-semibold text-ink">1,000만원</span>으로 부담 없이 시장가 매매를
+            연습해 보세요.
           </p>
         </Reveal>
 
@@ -75,10 +77,10 @@ export function Hero() {
       </div>
 
       {/* 듀얼 계좌 미리보기 — 가입 시 두 계좌가 동시에 생긴다 */}
-      <Reveal delay={320} className="relative mx-auto mt-20 max-w-4xl">
+      <Reveal delay={320} className="relative mx-auto mt-16 max-w-4xl">
         <div className="grid gap-4 md:grid-cols-2">
           {accounts.map((account) => (
-            <Card key={account.title} accent={account.accent}>
+            <Card key={account.title} accent={account.accent} className="lift">
               <div className="px-6 py-6">
                 <p className={`font-display text-lg font-semibold ${account.tone}`}>
                   {account.title}

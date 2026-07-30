@@ -17,6 +17,10 @@
     font-feature-settings: 'ss01', 'cv01';
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* 한국어는 어절 중간에서 끊으면 읽기 어렵다 — 좁은 화면에서 "하 / 루를," 같은 줄바꿈을 막는다.
+       한 어절이 줄보다 길 때만 예외적으로 끊는다. */
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
 
   /* 숫자는 등폭 정렬로 표 가독성 확보 */

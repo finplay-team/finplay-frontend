@@ -1,11 +1,11 @@
 // 라이브러리 없이 인라인 SVG 로 1분봉을 그리는 캔들 차트 (빈 배열은 오류가 아니라 정상 상태다)
+import { useEffect, useRef, useState } from 'react'
 import { formatHhMm } from '../lib/datetime'
 import type { Candle } from '../services/types'
 
 interface CandleChartProps {
   candles: Candle[]
-  /** viewBox 단위. 실제 폭은 CSS(width:100%)가 결정한다. */
-  width?: number
+  /** 데스크톱 기준 차트 높이(px). 좁은 폭에서는 자동으로 낮아진다. */
   height?: number
   /** 꼬리에서 잘라 그릴 최대 봉 수 */
   maxBars?: number
@@ -13,34 +13,67 @@ interface CandleChartProps {
   className?: string
 }
 
-const PAD = { top: 8, right: 44, bottom: 20, left: 8 }
+const PAD = { top: 8, right: 52, bottom: 20, left: 8 }
+/** 이 폭 아래에서는 차트를 낮추고 봉 수를 줄인다 (모바일). */
+const NARROW_PX = 480
+
+/**
+ * 컨테이너의 실제 CSS 폭을 잰다.
+ * viewBox 를 고정하고 CSS 로 늘리면 SVG 좌표계가 통째로 확대·축소돼
+ * 좁은 화면에서 축 라벨이 4px 까지 줄어든다 → 1 유저단위 = 1 CSS 픽셀로 고정한다.
+ */
+function useElementWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    setWidth(el.getBoundingClientRect().width)
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return { ref, width }
+}
 
 export function CandleChart({
   candles,
-  width = 640,
   height = 260,
   maxBars = 120,
   emptyMessage = '표시할 분봉이 없습니다.',
   className = '',
 }: CandleChartProps) {
-  const bars = candles.slice(-maxBars)
+  const { ref, width: boxWidth } = useElementWidth<HTMLDivElement>()
+
+  // 첫 페인트에는 폭을 아직 모른다. 자리만 잡아 두고 측정 후 그린다.
+  if (boxWidth === 0) {
+    return <div ref={ref} className={`w-full ${className}`} style={{ height }} />
+  }
+
+  const narrow = boxWidth < NARROW_PX
+  const width = Math.round(boxWidth)
+  const chartH = narrow ? Math.round(height * 0.72) : height
+  // 좁은 화면에서 120봉을 그리면 봉 하나가 2px 미만이 된다.
+  const bars = candles.slice(narrow ? -Math.min(maxBars, 60) : -maxBars)
   const n = bars.length
   const plotW = width - PAD.left - PAD.right
-  const plotH = height - PAD.top - PAD.bottom
+  const plotH = chartH - PAD.top - PAD.bottom
 
   if (n === 0) {
     return (
-      <div className={`w-full ${className}`}>
+      <div ref={ref} className={`w-full ${className}`}>
         <svg
-          viewBox={`0 0 ${width} ${height}`}
-          preserveAspectRatio="none"
-          className="h-auto w-full"
+          viewBox={`0 0 ${width} ${chartH}`}
+          width="100%"
+          height={chartH}
           role="img"
           aria-label="1분봉 차트 (데이터 없음)"
         >
           <text
             x={width / 2}
-            y={height / 2}
+            y={chartH / 2}
             textAnchor="middle"
             fontSize={13}
             fill="currentColor"
@@ -69,11 +102,11 @@ export function CandleChart({
   const gridValues = [hi, (lo + hi) / 2, lo]
 
   return (
-    <div className={`w-full ${className}`}>
+    <div ref={ref} className={`w-full ${className}`}>
       <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        className="h-auto w-full"
+        viewBox={`0 0 ${width} ${chartH}`}
+        width="100%"
+        height={chartH}
         role="img"
         aria-label="1분봉 차트"
       >
@@ -129,7 +162,7 @@ export function CandleChart({
 
         <text
           x={PAD.left}
-          y={height - 6}
+          y={chartH - 6}
           fontSize={10}
           fill="currentColor"
           className="text-muted tabular"
@@ -138,7 +171,7 @@ export function CandleChart({
         </text>
         <text
           x={PAD.left + plotW}
-          y={height - 6}
+          y={chartH - 6}
           textAnchor="end"
           fontSize={10}
           fill="currentColor"
