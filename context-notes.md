@@ -339,3 +339,32 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
     어느 호출에서 왔는지로 태깅한다 — 백엔드가 `market` 을 주면 이 태깅은 지워도 된다.
 - 주식 SSE 의 **가격 갱신**은 이번에도 미확인이다 (검증 시각 02:30~03:10 KST, 장외).
   연결·스냅샷·하트비트는 확인했다. 자세한 범위는 `checklist.md` G섹션에 적었다.
+
+## 장중 재검증에서 얻은 운영 지식 (2026-07-31 오전)
+
+**주식 배치는 순수 cron 이고 따라잡기(catch-up)가 없다.** 백엔드 스케줄러 두 개가 이렇게 걸려 있다.
+
+```java
+// KisHistoricalCandleCollector      평일 08:10 KST — 직전 영업일 분봉 수집
+@Scheduled(cron = "0 10 8 * * MON-FRI", zone = "Asia/Seoul")
+// StockReplaySessionScheduler       평일 08:40 KST — 재생세션 READY/FAILED 확정
+@Scheduled(cron = "0 40 8 * * MON-FRI", zone = "Asia/Seoul")
+```
+
+`@PostConstruct` 도 `ApplicationReadyEvent` 핸들러도 없다. **그 두 시각에 서버가 떠 있지 않았으면 그날은
+아무 일도 일어나지 않는다.** 실제로 이 날 08:44 에 기동했더니 `stock_replay_sessions`·`stock_candles`·
+`market_data_imports` 세 테이블이 전부 0행이었고, 09:00 이 지나도 계속 CLOSED 였다 —
+`getMarketStatus()` 가 `findReadySession(오늘).isPresent()` 로 판정하기 때문이다.
+
+되살리는 방법은 `POST /api/dev/stock-replay-imports` (`local` 프로필 전용, 본문 없음). 대상 거래일은
+배치와 똑같이 직전 영업일로 고정돼 있고, 수집과 세션 확정을 한 번에 한다. 16종 순차 KIS 호출이라
+**실측 108초** 걸렸다. `.env` 에 `KIS_APP_KEY`·`KIS_APP_SECRET` 이 있어야 한다.
+
+판정은 `preparationStatus` 가 아니라 **`collectedKisCandleCount`** 로 한다. READY 인데 0건이면 재생할
+원본이 없는 깨진 상태다.
+
+**다중 기기 로그인은 버그가 아니라 설계다.** 같은 계정으로 동시 로그인이 되는 것을 확인했는데,
+`AuthService.login()` 에 `// 기존 Refresh Token은 폐기하지 않고 행을 추가만 한다 (다중 기기 로그인 유지,
+폐기는 재발급·로그아웃 소관)` 이라고 명시돼 있다. `refresh_tokens` 가 세션당 한 행이고, 전체 폐기
+(`revokeAllActiveByUserId`)는 이메일 변경 때만 부른다 — "변경하면 모든 기기에서 로그아웃" 문구 자체가
+다중 세션을 전제한다. 다만 **"내 로그인 기기 목록 / 특정 세션만 끊기" 가 없다** — 필요하면 백엔드 이슈감이다.
