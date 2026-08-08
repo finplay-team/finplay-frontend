@@ -1,6 +1,6 @@
 // 종목 목록·시세·분봉 조회 서비스. 주문·거래 응답에 symbol·name 이 없어 모듈 스코프 캐시 조인이 필수다
 import { api } from '../lib/apiClient'
-import type { Candle, Instrument, Market, PriceResponse } from './types'
+import type { Candle, CandleInterval, Instrument, Market, PriceResponse } from './types'
 
 export interface InstrumentIndex {
   byId: Map<number, Instrument>
@@ -54,13 +54,19 @@ export function getPrice(instrumentId: number): Promise<PriceResponse> {
   return api.get<PriceResponse>(`/instruments/${instrumentId}/price`)
 }
 
-/** interval 은 항상 '1m'. 200 [] 은 오류가 아니라 정상 응답이다(장 준비 전 등). */
+/**
+ * 캔들 조회. `interval` 은 **대소문자를 구분하는 4값**이며 `1m`(분)과 `1M`(월)이 다르다.
+ * 200 [] 은 오류가 아니라 정상 응답이다(재생세션 미준비, 09:01 이전 등).
+ *
+ * 응답은 어떤 interval 이든 최대 200개다. 주식 `1m` 은 미마감 분봉을 제외하지만
+ * 집계(`1d`·`1w`·`1M`)는 진행 중 버킷을 포함한다 — 정반대이므로 화면 문구를 하나로 쓰면 안 된다.
+ */
 export function getCandles(
   instrumentId: number,
-  p?: { from?: string; to?: string; signal?: AbortSignal },
+  p?: { interval?: CandleInterval; from?: string; to?: string; signal?: AbortSignal },
 ): Promise<Candle[]> {
   return api.get<Candle[]>(`/instruments/${instrumentId}/candles`, {
-    query: { interval: '1m', from: p?.from, to: p?.to },
+    query: { interval: p?.interval ?? '1m', from: p?.from, to: p?.to },
     signal: p?.signal,
   })
 }

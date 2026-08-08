@@ -1,5 +1,5 @@
 // 커뮤니티 게시글 상세·수정·삭제와 댓글 목록·작성·삭제를 담당하는 페이지
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { Button, LinkButton } from '../components/ui/Button'
@@ -7,6 +7,7 @@ import { Card } from '../components/ui/Card'
 import { formatDateTime } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import {
+  countComments,
   createComment,
   deleteComment,
   deletePost,
@@ -28,6 +29,16 @@ function isEdited(post: Post): boolean {
   return post.updatedAt !== post.createdAt
 }
 
+/**
+ * 부모·자식 어느 쪽이든 제거한다. 부모를 지우면 서버가 자식까지 CASCADE 로 지우므로
+ * 화면에서도 가지째 걷어내야 서버 상태와 어긋나지 않는다.
+ */
+function removeComment(list: Comment[], commentId: number): Comment[] {
+  return list
+    .filter((c) => c.commentId !== commentId)
+    .map((c) => ({ ...c, replies: c.replies.filter((r) => r.commentId !== commentId) }))
+}
+
 export function CommunityPost() {
   const params = useParams()
   const postId = Number(params.postId)
@@ -43,6 +54,8 @@ export function CommunityPost() {
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
+  /** 수정 시 함께 재전송할 종목 태그. 빠뜨리면 서버가 태그를 해제한다. */
+  const [editInstrumentId, setEditInstrumentId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
@@ -55,6 +68,17 @@ export function CommunityPost() {
   const [commentError, setCommentError] = useState<string | null>(null)
   const [armedCommentId, setArmedCommentId] = useState<number | null>(null)
   const [commentDeleteError, setCommentDeleteError] = useState<string | null>(null)
+  /** 답글 대상 부모 댓글 id. null 이면 일반 댓글이다. */
+  const [replyTo, setReplyTo] = useState<number | null>(null)
+
+  /** 대댓글 404 처럼 목록이 낡았을 때 서버 상태로 다시 맞춘다. */
+  const reloadComments = useCallback(async () => {
+    try {
+      setComments(await getComments(postId))
+    } catch {
+      // 재조회 실패는 위에서 이미 문구를 띄운 뒤라 조용히 넘긴다.
+    }
+  }, [postId])
 
   useEffect(() => {
     if (!Number.isInteger(postId) || postId <= 0) {
@@ -73,6 +97,7 @@ export function CommunityPost() {
         setComments(c)
         setEditTitle(p.title)
         setEditContent(p.content)
+        setEditInstrumentId(p.instrumentId)
       })
       .catch((e: unknown) => {
         if (cancelled) return
@@ -90,16 +115,75 @@ export function CommunityPost() {
   // authorId 가 없어 닉네임 비교가 유일한 신호다. 최종 권위는 서버의 403 FORBIDDEN 이다.
   const isMine = post !== null && member !== null && post.authorNickname === member.nickname
 
+  /** 댓글 한 줄. 부모와 대댓글이 같은 모양이라 한 함수로 그린다(isReply 는 답글 버튼 유무만 가른다). */
+  const renderComment = (c: Comment, isReply: boolean) => {
+    const mine = member !== null && c.authorNickname === member.nickname
+    const armed = armedCommentId === c.commentId
+    return (
+      <>
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="text-xs text-muted">
+            <span className="text-ink/80">{c.authorNickname}</span>
+            <span className="px-2 text-muted/50">·</span>
+            <span className="tabular">{formatDateTime(c.createdAt)}</span>
+          </p>
+          <span className="flex flex-none items-center gap-3 text-xs">
+            {/* 대댓글에 답글을 달면 400 이므로 부모에만 버튼을 둔다. */}
+            {!isReply && (
+              <button
+                onClick={() => setReplyTo(replyTo === c.commentId ? null : c.commentId)}
+                className="text-muted transition-colors duration-300 hover:text-brand"
+              >
+                {replyTo === c.commentId ? '답글 취소' : '답글'}
+              </button>
+            )}
+            {mine &&
+              (armed ? (
+                <span className="flex items-center gap-2">
+                  {/* 부모를 지우면 남의 대댓글까지 함께 사라지므로 그 사실을 미리 알린다. */}
+                  <span className="text-muted">
+                    {!isReply && c.replies.length > 0 ? '답글까지 함께 삭제됩니다.' : '정말 삭제할까요?'}
+                  </span>
+                  <button
+                    onClick={() => handleCommentDelete(c.commentId)}
+                    className="rounded-full bg-brand px-3 py-1 font-medium text-brand-ink"
+                  >
+                    삭제
+                  </button>
+                  <button
+                    onClick={() => setArmedCommentId(null)}
+                    className="rounded-full bg-white/[0.06] px-3 py-1 text-ink"
+                  >
+                    취소
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={() => setArmedCommentId(c.commentId)}
+                  className="text-muted transition-colors duration-300 hover:text-brand"
+                >
+                  삭제
+                </button>
+              ))}
+          </span>
+        </div>
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink/90">{c.content}</p>
+      </>
+    )
+  }
+
   const handleSave = async (e: FormEvent) => {
     e.preventDefault()
     if (saving || !editTitle.trim() || !editContent.trim()) return
     setSaving(true)
     setEditError(null)
     try {
-      // PATCH 는 전체 교체라 두 필드를 항상 함께 보낸다.
+      // PATCH 는 전체 교체다. instrumentId 를 빠뜨리면 서버가 기존 종목 태그를 해제하므로
+      // 제목만 고치는 경우에도 현재 태그를 그대로 다시 실어 보낸다.
       const updated = await updatePost(postId, {
         title: editTitle.trim(),
         content: editContent.trim(),
+        instrumentId: editInstrumentId,
       })
       setPost(updated)
       setEditing(false)
@@ -144,17 +228,36 @@ export function CommunityPost() {
     setCommentSubmitting(true)
     setCommentError(null)
     try {
-      const created = await createComment(postId, { content: commentInput.trim() })
+      const created = await createComment(postId, {
+        content: commentInput.trim(),
+        parentCommentId: replyTo,
+      })
       // createdAt 오름차순이라 새 댓글은 항상 마지막이다.
-      setComments((prev) => [...prev, created])
+      // 대댓글이면 최상위가 아니라 해당 부모의 replies 끝에 붙어야 서버 구조와 같아진다.
+      setComments((prev) =>
+        replyTo === null
+          ? [...prev, created]
+          : prev.map((c) =>
+              c.commentId === replyTo ? { ...c, replies: [...c.replies, created] } : c,
+            ),
+      )
       setCommentInput('')
+      setReplyTo(null)
     } catch (err: unknown) {
+      // 여기서의 404 는 "부모 댓글이 없거나 다른 게시물 소속"이라는 뜻이다.
+      // 게시물이 사라진 것이 아니므로 절대 setGone(true) 하면 안 된다 — 글 전체가 날아간다.
       if (isApiErrorCode(err, 'NOT_FOUND')) {
-        setGone(true)
+        setCommentError('답글을 달려던 댓글이 이미 삭제되었습니다. 목록을 새로 불러왔습니다.')
+        setReplyTo(null)
+        void reloadComments()
         return
       }
       setCommentError(
-        toUserMessage(err, { VALIDATION_ERROR: '댓글 내용을 다시 확인해 주세요.' }),
+        toUserMessage(err, {
+          VALIDATION_ERROR: replyTo === null
+            ? '댓글 내용을 다시 확인해 주세요.'
+            : '대댓글에는 다시 답글을 달 수 없습니다.',
+        }),
       )
     } finally {
       setCommentSubmitting(false)
@@ -165,11 +268,12 @@ export function CommunityPost() {
     setCommentDeleteError(null)
     try {
       await deleteComment(commentId)
-      setComments((prev) => prev.filter((c) => c.commentId !== commentId))
+      // 부모를 지우면 서버가 자식 대댓글까지 CASCADE 로 지운다 → 화면에서도 가지째 걷어낸다.
+      setComments((prev) => removeComment(prev, commentId))
     } catch (err: unknown) {
       if (isApiErrorCode(err, 'NOT_FOUND')) {
         // 이미 지워진 댓글이므로 목록에서만 치운다.
-        setComments((prev) => prev.filter((c) => c.commentId !== commentId))
+        setComments((prev) => removeComment(prev, commentId))
         return
       }
       setCommentDeleteError(
@@ -333,13 +437,15 @@ export function CommunityPost() {
         {/* 댓글 — 페이지네이션이 없어 전부 렌더한다. */}
         <section className="mt-10">
           <h2 className="font-display text-lg font-semibold text-ink">
-            댓글 <span className="text-brand tabular">{comments.length}</span>
+            댓글 <span className="text-brand tabular">{countComments(comments)}</span>
           </h2>
 
           <Card className="mt-4" innerClassName="p-6">
             <form onSubmit={handleCommentSubmit} className="space-y-3">
               <div className="mb-1 flex items-baseline justify-between">
-                <span className="text-sm font-medium text-ink">댓글 남기기</span>
+                <span className="text-sm font-medium text-ink">
+                  {replyTo === null ? '댓글 남기기' : '답글 남기기'}
+                </span>
                 <span className="text-xs text-muted tabular">
                   {commentInput.length}/{COMMENT_MAX}
                 </span>
@@ -352,10 +458,22 @@ export function CommunityPost() {
                 placeholder="댓글을 입력해 주세요"
                 className={`${inputClass} resize-y leading-relaxed`}
               />
+              {replyTo !== null && (
+                <p className="flex items-center gap-2 text-xs text-brand">
+                  답글을 다는 중입니다.
+                  <button
+                    type="button"
+                    onClick={() => setReplyTo(null)}
+                    className="rounded-full bg-white/[0.06] px-2 py-0.5 text-ink"
+                  >
+                    일반 댓글로
+                  </button>
+                </p>
+              )}
               {commentError && <p className="text-sm text-rose-300">{commentError}</p>}
               <div className="flex justify-end">
                 <Button type="submit" disabled={commentSubmitting || !commentInput.trim()}>
-                  {commentSubmitting ? '등록 중…' : '댓글 등록'}
+                  {commentSubmitting ? '등록 중…' : replyTo === null ? '댓글 등록' : '답글 등록'}
                 </Button>
               </div>
             </form>
@@ -367,49 +485,23 @@ export function CommunityPost() {
             <p className="py-10 text-center text-sm text-muted">아직 댓글이 없습니다.</p>
           ) : (
             <ul className="mt-4 divide-y divide-line rounded-2xl border border-line bg-surface">
-              {comments.map((c) => {
-                const mine = member !== null && c.authorNickname === member.nickname
-                const armed = armedCommentId === c.commentId
-                return (
-                  <li key={c.commentId} className="px-5 py-4">
-                    <div className="flex items-baseline justify-between gap-4">
-                      <p className="text-xs text-muted">
-                        <span className="text-ink/80">{c.authorNickname}</span>
-                        <span className="px-2 text-muted/50">·</span>
-                        <span className="tabular">{formatDateTime(c.createdAt)}</span>
-                      </p>
-                      {mine &&
-                        (armed ? (
-                          <span className="flex flex-none items-center gap-2 text-xs">
-                            <span className="text-muted">정말 삭제할까요?</span>
-                            <button
-                              onClick={() => handleCommentDelete(c.commentId)}
-                              className="rounded-full bg-brand px-3 py-1 font-medium text-brand-ink"
-                            >
-                              삭제
-                            </button>
-                            <button
-                              onClick={() => setArmedCommentId(null)}
-                              className="rounded-full bg-white/[0.06] px-3 py-1 text-ink"
-                            >
-                              취소
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => setArmedCommentId(c.commentId)}
-                            className="flex-none text-xs text-muted transition-colors duration-300 hover:text-brand"
-                          >
-                            삭제
-                          </button>
-                        ))}
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink/90">
-                      {c.content}
-                    </p>
-                  </li>
-                )
-              })}
+              {comments.map((c) => (
+                <li key={c.commentId} className="px-5 py-4">
+                  {renderComment(c, false)}
+
+                  {/*
+                    대댓글은 부모 안에 중첩한다. 중첩은 1단계뿐이라 자식의 replies 는 항상 비어 있어
+                    재귀를 돌 필요가 없다. 답글 버튼도 자식에는 달지 않는다(달면 400 이다).
+                  */}
+                  {c.replies.length > 0 && (
+                    <ul className="mt-3 space-y-3 border-l border-line pl-4">
+                      {c.replies.map((r) => (
+                        <li key={r.commentId}>{renderComment(r, true)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
             </ul>
           )}
         </section>

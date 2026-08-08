@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom'
 import { ArrowUpRight } from './icons'
 
 type Variant = 'primary' | 'ghost' | 'soft'
-type Size = 'md' | 'lg'
+/** sm 은 표·목록 행 안의 액션용이다 (미체결 주문 정정·취소 등). md 는 행에서 너무 크다. */
+type Size = 'sm' | 'md' | 'lg'
 
 interface CommonProps {
   children: ReactNode
@@ -29,6 +30,7 @@ const iconBg: Record<Variant, string> = {
 }
 
 const sizeStyles: Record<Size, string> = {
+  sm: 'px-3.5 py-1.5 text-xs',
   md: 'px-5 py-2.5 text-sm',
   lg: 'px-6 py-3.5 text-[15px]',
 }

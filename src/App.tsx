@@ -11,6 +11,10 @@ import { Portfolio } from './pages/Portfolio'
 import { Community } from './pages/Community'
 import { CommunityPost } from './pages/CommunityPost'
 import { MyPage } from './pages/MyPage'
+import { Journal } from './pages/Journal'
+import { Rankings } from './pages/Rankings'
+import { News } from './pages/News'
+import { Feedback } from './pages/Feedback'
 import { Support } from './pages/Support'
 import { NotFound } from './pages/NotFound'
 
@@ -58,6 +62,38 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <CommunityPost />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/journal"
+            element={
+              <ProtectedRoute>
+                <Journal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/news"
+            element={
+              <ProtectedRoute>
+                <News />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/feedback"
+            element={
+              <ProtectedRoute>
+                <Feedback />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rankings"
+            element={
+              <ProtectedRoute>
+                <Rankings />
               </ProtectedRoute>
             }
           />

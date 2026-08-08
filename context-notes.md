@@ -368,3 +368,270 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
 폐기는 재발급·로그아웃 소관)` 이라고 명시돼 있다. `refresh_tokens` 가 세션당 한 행이고, 전체 폐기
 (`revokeAllActiveByUserId`)는 이메일 변경 때만 부른다 — "변경하면 모든 기기에서 로그아웃" 문구 자체가
 다중 세션을 전제한다. 다만 **"내 로그인 기기 목록 / 특정 세션만 끊기" 가 없다** — 필요하면 백엔드 이슈감이다.
+
+---
+
+# 6차 스코프 — 2차 MVP 화면 보강 + 랜딩 비주얼 (2026-08-08)
+
+여기서부터가 현재 작업이다. 위쪽과 충돌하면 **이 섹션이 우선**이다.
+
+## 대전제 (사용자 확정)
+
+**백엔드에 없는 내용을 프론트에서 만들어 채우지 않는다. 프론트로 대체한다는 선택지는 없다.
+백엔드에 문제가 있으면 백엔드 자체부터 고친다 — 우리는 백엔드 부트캠프 팀이다.**
+
+이 원칙은 4차의 "백엔드에 없는 기능은 화면에서 제거한다"를 한 단계 강화한 것이다. 4차는 "없으면 지운다"였고,
+6차는 **"결함이면 백엔드를 고친다"** 다. 프론트에서 우회 코드로 덮으면 결함이 계약에 남아 다음 소비자가
+같은 함정을 다시 밟는다. → 결함 목록은 `docs/backend-issues.md`에 도메인별로 분리해 적는다.
+
+이 원칙에 걸려 실제로 폐기한 것이 있다. 랜딩 `ReplayScrub` 초안이 시드 고정 PRNG로 캔들 OHLC를
+만들어 그렸다. "예시 도형"이라 주석을 달았지만 없는 시세를 만든 것이므로 전면 폐기했다.
+랜딩은 비인증 공개 페이지라 시세 API(Bearer 필수)를 붙일 수도 없다. → **390분 눈금 사다리**로 교체했고
+이 섹션이 쓰는 데이터는 "09:00~15:30 = 390분" 하나뿐이다.
+
+## D8. 백엔드 레포는 로컬에 없다 — GitHub이 정본이다
+
+`C:\Users\user\orca\workspaces\tradeclass-api\chore-sse`는 **빈 디렉터리**다. 4차 노트가 적어 둔
+`C:\Users\user\Desktop\tradeclass-api`도 지금은 없다. 실제 정본은 **`finplay-team/finplay`** 이고
+`gh api repos/finplay-team/finplay/contents/docs/...`로 읽는다 (레포 이름이 `tradeclass-api`가 아니다).
+
+PowerShell에서 `gh --jq`에 `+`나 문자열 연결을 쓰면 인자가 쪼개져 `accepts 1 arg(s), received 2`가 난다.
+`gh api ... | ConvertFrom-Json`으로 받아 PowerShell에서 다루는 편이 안전하다.
+
+## D9. 계약 문서는 `api-contracts.md`만으로 부족하다 — spec.md까지 받아야 한다
+
+`api-contracts.md`(164KB)가 `docs/specs/012-ai-feedback/spec.md`의 §C-4·C-5를 수십 번 참조하는데
+그 파일을 안 받으면 상태 판정 순서와 게이트 판정식을 알 수 없다. 실제로 첫 추출이 그 부분을
+"문서에 명시 없음"으로 남겼고, upstream spec을 받아서야 채웠다.
+→ `.backend-docs/upstream/`에 spec 정본을 받아 두는 절차를 먼저 밟는다 (gitignore 대상, 필요 시 재수신).
+
+**내 지시가 틀렸던 사례를 남긴다.** 에이전트에게 `peerComparison`이 3상태라고 알려줬는데(PRD 산문에서
+3개만 언급된다) spec.md:332 기준 열거형 `PostSellFeedbackStatus`는 **4상태**(`READY`·`NOT_YET`·
+`INSUFFICIENT_SAMPLE`·`NO_EVENT`)다. 에이전트가 정본을 근거로 내 지시를 반박한 것이 맞았다.
+→ PRD 산문을 계약 근거로 쓰지 않는다. 열거형은 spec.md가 정본이다.
+
+## D10. AI 피드백에는 하나의 boolean 게이트로 묶으면 안 되는 구간이 있다
+
+`postSellFlow`·`counterfactuals`는 **시각** 게이트(그 체결의 서비스 날짜 15:30)이고
+`peerComparison`은 **행 존재** 게이트다. 축이 다르므로 장 마감 배치가 15:30보다 늦게 돌면
+`postSellFlow=READY` + `peerComparison=NOT_YET` 구간이 실존한다(spec.md:1366이 15:31 조회로 명시).
+→ 섹션별 `status`를 각각 읽어 따로 렌더한다.
+
+또 `EMPTY`·`UNAVAILABLE`에서도 `items`가 채워진다. `status !== 'READY'`로 빈 상태를 그리는
+자연스러운 구현이 **목록을 통째로 잃는다.** 그리고 서술은 재생성이 성공할 때만 게이트가 닫히므로
+같은 `tradeId`를 다시 조회하면 `narrative` 문장이 바뀔 수 있다 → 로컬 영구 캐시 금지.
+
+## D11. 랜딩 색·폰트는 유지한다 (바이올렛 추가 취소)
+
+사용자가 "안 어울리면 바꿔도 된다"고 했고 내가 처음엔 보색(딥 바이올렛) 추가를 추천했지만 **취소했다.**
+단조로움의 원인이 색이 아니라 **모션이 1종류**였기 때문이다 — 섹션 7개가 전부 같은 `py-20` + 가운데
+정렬 헤더 + 카드 그리드 + `.reveal` 페이드업이었다. 색을 늘리면 "차별점"이라는 목표와 반대로 브랜드가 흐려진다.
+→ `tailwind.config.js` **변경 0건.** 민트 하나를 광도·투명도 단계로 쓰고 코인은 기존 앰버를 유지했다.
+
+해법은 **결정적 순간 하나를 만들고 나머지를 조용하게** 두는 것이다. 그 하나가 `ReplayScrub`이고,
+유리(glass)를 장식이 아니라 기능으로 쓴다 — 카드 뒤로 눈금이 실제로 비쳐 보이는 자리에만 둔다.
+
+`.bezel`이 이미 유리 표면(`bg-white/[0.04]` + `backdrop-blur-sm` + `ring-white/[0.06]`)이라
+liquid-glass는 새로 만드는 것이 아니라 확장이었다.
+
+## D12. motionsites.ai는 디자인 라이브러리가 아니다
+
+**AI 프롬프트 갤러리**다(Lovable·Bolt·Cursor용, Pricing 페이지 별도). 카드마다 `Copy full prompt`가
+있고 프롬프트 본문은 DOM에 없어 스크레이핑으로 못 얻는다. 색·폰트를 안 베끼기로 했으므로 어차피
+**기법 이름만 참고**하면 목적은 달성된다 — Liquid Glass 계열, Orbis(애스트로넛), Nimbus Sticky Cards.
+
+## D13. 스크롤 연동 눈금은 DOM이 아니라 반복 배경으로 그린다
+
+390개 `<span>`에 `flex-1`을 주면 **358px 폭에서 서브픽셀이 되어 눈금이 통째로 사라진다**(모바일에서
+실제로 사라졌다). 반복 배경(`background-size: calc(100% / N) 100%`)은 폭에 비례해 스케일되므로
+좁은 화면에서는 촘촘한 띠로 열화되며 사라지지 않는다. DOM 390개 → 4개로도 줄었다.
+
+공개 구간은 **요소 폭을 줄이지 않고 `clip-path: inset()`으로 잘라낸다.** 폭을 줄이면 배경 타일 기준이
+같이 줄어 미공개 레이어와 눈금이 어긋난다.
+
+duty(눈금 두께)를 `%`로 두면 좁은 폭에서 같이 소멸한다. **정시 눈금만 고정 `1.5px`**로 두면
+어느 폭에서도 선이 살아 시간 구조가 읽힌다.
+
+## D14. 3D 마스코트는 SVG 기본선으로 먼저 만들었다
+
+`.glb`(Tripo/Meshy 산출물)가 도착하지 않았다. `three` + `@react-three/fiber` + `drei`는 번들
+**~600KB gzip**이라 의존성 3개짜리 앱에서 큰 결정이고, 당시 메모리 부족으로 `npm install`도 위험했다.
+→ `Mascot.tsx`를 SVG로 만들어 의존성 0KB로 같은 역할(시선 유도)을 하게 했다. 커서 추적은
+`pointermove` + rAF, `(hover: hover)`와 `prefers-reduced-motion`을 먼저 검사한다.
+**바깥에 노출하는 props는 `className` 하나뿐**이라 3D 도착 시 이 파일만 교체하면 된다.
+
+## 이 환경의 운영 지식 (다음 사람이 같은 데서 막히지 않도록)
+
+### 병렬 에이전트는 이 머신에서 4개가 상한이다
+
+16GB RAM에서 에이전트 4개 + node를 동시에 돌리자 여유가 0.8GB로 떨어지고
+`node`가 **"The paging file is too small for this operation to complete"**로 죽었다.
+계약 추출 에이전트 4개 중 **1개(order/LMT·WATCH)가 산출물 없이 유실**됐다.
+
+병렬의 진짜 병목은 토큰이 아니라 **파일 충돌**이다. 도메인 6개가 `services/types.ts`·`App.tsx`·`Nav.tsx`
+셋을 공유하므로, 계약 추출(읽기 전용, 각자 자기 파일만 씀)은 병렬이 이득이지만
+화면 구현은 **메인이 `types.ts`를 먼저 한 번에 정의한 뒤** 나눠야 한다.
+랜딩처럼 토큰·리듬·모션이 서로 물린 작업은 병렬이 명확히 손해다.
+
+### 메모리 도둑은 Serena였다 (제거함)
+
+java 프로세스 5개(최대 1.7GB, 합 2.6GB)가 전부 **Serena가 띄운 Eclipse JDT 언어서버**였고
+**같은 워크스페이스 해시**(`c6f07a3d7be7606230e85b03ac8a3a17`)를 가리키고 있었다. 세션마다 새로 띄우고
+회수하지 않는 누수다. IntelliJ·Docker·백엔드가 아니었다 — 확인해 보니 Docker 데몬은 꺼져 있었고
+MySQL은 네이티브(`mysqld`)였고 **8080은 리스닝조차 아니었다**(백엔드 서버가 안 떠 있었다).
+
+사용자 요청으로 제거했다. `claude mcp remove serena` → `.claude.json`에서 삭제
+(백업 `.claude.json.bak-20260808-serena`), 언어서버 5개 종료, `~/.serena/language_servers` 2GB 삭제.
+`memories` 폴더가 비어 있어 잃은 사용자 데이터는 없다.
+**여유 메모리 0.8GB → 6.1GB.**
+
+### claude-mem 훅이 프롬프트를 차단하는 교착이 있다
+
+`UserPromptSubmit operation blocked by hook` + `claude-mem worker unreachable for N consecutive hooks`가
+뜨면 **사용자 메시지가 에이전트에 도달하지 않는다**(이번에 최소 2개 유실됐고 카운터가 141까지 갔다).
+
+크래시가 아니라 **자기 자신을 막는 교착**이다. 로그가 이 4단계를 무한 반복한다.
+
+```
+Port in use, waiting for worker to become healthy
+Port in use but worker not responding to health checks
+Port already in use, refusing to start duplicate {port=37777}
+Worker port did not open after lazy-spawn within the cold-boot wait (~15s)
+```
+
+원인은 워커(bun)가 죽었는데 **죽은 PID가 37777을 `Listen` 상태로 계속 점유**하는 것이다.
+워커가 남긴 chroma 고아 트리가 리스닝 소켓 핸들을 상속해 물고 있어서 포트가 해제되지 않고,
+claude-mem은 "포트가 이미 쓰인다"며 새 워커를 거부한다.
+
+복구 절차.
+1. `Get-NetTCPConnection -LocalPort 37777`로 점유 PID 확인 (존재하지 않는 PID면 상속 핸들이다)
+2. `--data-dir .../.claude-mem/chroma`로 뜬 chroma 고아 프로세스 종료 → 포트 해제 확인
+3. `~/.claude-mem/supervisor.json`(죽은 PID가 적혀 있다)과 `state/hook-failures.json` 초기화
+4. `~/.bun/bin/bun.exe <plugin>/scripts/worker-service.cjs` 로 재기동 → `http://localhost:37777` 200 확인
+
+`claude-mem.db`는 절대 건드리지 않는다.
+
+### 브라우저 검증은 여전히 CDP 우회다
+
+Chrome 확장은 이번에도 안 붙었다(`Browser extension is not connected`). 5차와 같은 방법을 쓴다 —
+별도 Chrome을 `--remote-debugging-port=9333`로 띄우고 `puppeteer-core`(`npm i --no-save`로
+package.json을 더럽히지 않는다)로 조작한다. 5차의 창 가림 플래그 3개는 계속 필요하다.
+검증 스크립트는 `.backend-docs/shoot.mjs`(gitignore)에 있고 데스크톱·모바일을 한 번에 돈다.
+
+`.orb`가 가로 오버플로로 검출되는 것은 **오탐**이다 — 부모 섹션에 `overflow-hidden`이 있어
+`documentElement.scrollWidth`는 초과하지 않는다. 판정은 요소 `right`가 아니라 문서 `scrollWidth`로 한다.
+
+---
+
+# 6차 후반 — 목표 1 구현과 실측 검증 (2026-08-08)
+
+## D15. 계약 문서만으로 백엔드 결함을 판정하지 않는다
+
+`docs/backend-issues.md` 초안 15건을 spec 정본으로 재검증했더니 **4건이 틀렸고 6건이 과장**이었다.
+철회한 4건(C-5·M-1·X-1·J-1)은 전부 같은 실패다 — **백엔드가 이미 의도적으로 결정하고 그 이유를
+spec 에 `(확정)`으로 적어 둔 것을, `api-contracts.md`만 보고 "결함"이라 판단했다.**
+
+- `spec013:51` "**`sourceTime`(확정)**", `:55` "그 날에 거래가 있었다는 뜻이 아니다"
+- `spec014:69` "**의도적으로 다름 — 이 차이를 테스트로 명시한다**"
+- `spec007:196` "통합 식별자·접두사 문자열 ID도 만들지 않는다"
+
+→ **`(확정)`·"의도된 차이"·"범위 제외" 문구를 먼저 찾는다.** 계약 문서는 "무엇을"이고
+spec 이 "왜"다. 왜를 모르고 결함을 신고하면 팀 신뢰를 잃는다.
+
+실제로 이슈 하나(#273)를 잘못 올렸다가 닫았다. "코인 뉴스 0건"이라 신고했는데 23:21 사이클에
+275건이 정상 적재됐다. **건수만 비교하고 `created_at` 분포를 안 봤다** — 주식이 8/4부터 누적
+1,571건인 것과 코인이 첫 수집 전 0건인 것을 "같은 사이클에서 코인만 실패"로 잘못 읽었다.
+적재 관련 신고는 반드시 `created_at` 분포까지 본다.
+
+## D16. 병렬 에이전트는 공유 파일을 먼저 확정하면 통한다
+
+투자일기·랭킹·AI 피드백을 에이전트 3개로 동시에 만들었고 **첫 통합 빌드가 타입 에러 0으로 통과**했다.
+성립 조건은 이랬다.
+
+- **메인이 `types.ts`를 먼저 전부 정의한다.** 도메인 6개가 같은 파일을 건드리므로 이걸 안 하면 충돌한다
+- **에이전트는 새 파일만 소유한다.** `App.tsx`·`Nav.tsx`·기존 페이지 배선은 전부 메인이 한다
+- **에이전트에게 빌드를 시키지 않는다.** `tsc -b`의 `tsbuildinfo`와 vite 의 `dist`를 공유해 서로 깨진다
+- 계약 추출 문서(`docs/backend-contracts/`)를 스펙으로 준다. 그래야 같은 함정을 다시 밟지 않는다
+
+AI 피드백 타입은 `services/types.ts`가 아니라 **`services/feedbackTypes.ts`로 분리**했다.
+post-sell 응답의 중첩이 깊어 공용 파일이 비대해지고, 병렬 작업 충돌도 피할 수 있다.
+
+## D17. 화면 배치는 "목적이 다른 것을 겹치지 않는다"
+
+처음에 브리핑·뉴스 요약·변동 원인 카드를 전부 거래 화면에 넣었다가 전면 재배치했다.
+매매하러 온 사람의 흐름을 끊고, 뉴스를 보려는 사람은 거래 화면에 들어가 종목을 골라야만 볼 수 있었다.
+
+- `/news` — 시장 브리핑 + 종목 칩 선택 → 그 종목의 요약·기사
+- `/feedback` — 매도 체결 선택 → 복기
+- 거래 화면 — **변동 원인 카드만.** "지금 보는 이 차트가 왜 움직였나"라 차트 바로 아래가 제자리다
+
+포트폴리오 체결 행의 복기 확장은 남겼다. 체결을 보다 바로 여는 경로도 유효하고,
+`/feedback`은 "복기만 몰아 보는" 다른 진입점이다.
+
+## D18. 예약분은 서버가 빼 주지 않는다 (지정가 도입의 최대 함정)
+
+`availableCash`·`availableQuantity`를 **서버가 주지 않는 것이 확정 정책**이다.
+클라이언트가 `cashBalance - reservedCash`, `quantity - reservedQuantity`로 직접 계산해야 한다.
+안 빼면 화면이 실제보다 많은 주문가능액을 표시하고 사용자가 409를 맞는다(실측 확인).
+
+`GET /api/accounts/summary`의 `totalValue`도 `reservedCash`를 빼지 않는다.
+
+## D19. 지정가는 "접수 = 미체결"이 아니다
+
+서버는 생성 시점에 즉시체결을 판정하지 않고 무조건 `PENDING`으로 만든 뒤 다음 가격 틱에서 체결한다.
+코인은 시세가 초 단위라 **매수 지정가를 현재가보다 높게 걸면 사실상 즉시 체결**된다.
+화면이 "접수됨 · 아직 체결되지 않았습니다"라고 단정하면 몇 초 뒤 목록에서 사라진 것이 버그로 읽힌다.
+→ 입력 단계에서 미리 경고하고, 접수 결과에서는 **체결 여부를 단정하지 않는다.**
+
+`Idempotency-Key` 해시 필드 목록이 문서에 없어(MUST-VERIFY) 키를 `limitPrice`까지 종속시키고,
+응답의 `limitPrice`·`quantity`를 요청과 대조해 조용한 replay 를 막는다.
+
+## D20. 검증은 "응답이 오는가"가 아니라 "내용이 의미 있는가"다
+
+매도 직후 AI 복기를 처음 검증할 때 응답 200과 필드 존재만 확인하고 통과시켰다.
+실제 화면은 "231,000원에 매수해 231,000원에 매도했습니다. 수익률은 -0.03%입니다"가 전부였고
+원인 분석이 통째로 비어 있었다. 사용자가 지적해서야 알았다.
+
+원인은 두 가지였다 — **변동 원인 카드 0건**(임계치를 넘는 변동이 없어서. 결함 아님)과
+**보유 3초**(매수·매도를 연달아 넣어 보유 구간 자체가 없었다).
+
+→ 데이터 의존 기능은 **의미 있는 값이 나올 조건을 먼저 만들고** 검증한다.
+AI 복기는 장중(09:00~15:30)에 수십 분 보유해야 제대로 나온다.
+
+## 이 환경의 운영 지식 (추가분)
+
+### 백엔드 프로파일은 `crypto-real`이다
+
+`bithumb-real`은 존재하지 않는 이름이다(레포 전체에서 0건). 실행 설정은
+`local,oauth-real,crypto-real`이어야 코인 실시세가 붙는다. 아니면 `!crypto-real` 분기의 빈 공급자가
+활성화돼 코인 현재가가 409이고 **지정가 체결 트리거가 아예 안 돈다.**
+
+장외에 주식을 주문하려면 환경변수 `FINPLAY_DEV_STOCK_FORCE_MARKET_OPEN=true`를 준다.
+
+### 컨테이너는 Spring 이 띄운다
+
+`compose.yaml`에 `spring-boot-docker-compose`가 걸려 있어 **앱을 실행하면 MySQL·Redis 가 자동으로
+뜨고 앱을 내리면 같이 정리된다.** `docker compose up` 을 직접 칠 필요가 없다.
+포트도 충돌을 피해 매핑돼 있다(MySQL `13307`, Redis `16379`) — 로컬 네이티브 MySQL(3306)과 안 부딪힌다.
+
+WSL 터미널에서 `docker compose`가 소켓을 못 찾는 것은 Docker Desktop 의 WSL 통합이 꺼져 있어서다.
+Windows PowerShell 에서는 정상 동작한다.
+
+### 가입 인증번호는 DB 에서 못 읽는다 (해시 저장)
+
+`email_verifications.code_hash`는 `EMAIL_VERIFICATION_SECRET` 기반 **HMAC-SHA-256 hex**다.
+평문을 얻을 수 없으므로, 자동화가 필요하면 같은 방식으로 해시를 계산해 행을 덮어쓰거나
+사람이 IntelliJ 콘솔에서 읽어 준다. 후자가 낫다.
+
+### React 제어 입력은 `page.type()` 으로 값을 교체할 수 없다
+
+트리플클릭 후 타이핑해도 **기존 값 뒤에 이어붙는다.** 이것 때문에 멀쩡한 즉시체결 경고 로직을
+버그로 오판했다. native value setter + `input` 이벤트를 써야 한다.
+
+```js
+const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+setter.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true }))
+```
+
+행 전체가 `<button>`이고 라벨이 그 안의 `<span>`이면 텍스트 일치로 못 찾는다 —
+`button[aria-expanded]` 같은 속성으로 잡는다.
