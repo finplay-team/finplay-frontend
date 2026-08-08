@@ -121,9 +121,14 @@ export function MarketBriefing({ market }: Props) {
             {data.items.length > 0 && (
               <ul className="mt-4 space-y-2">
                 {/* items 에 id 가 없다. url + 발행시각을 key 로 쓴다. */}
-                {data.items.map((item) => (
+                {/*
+                  서버가 항목 id 를 주지 않는다. url+publishedAt 은 유일해 보이지만 같은 기사가
+                  여러 종목에 태그되면 그대로 겹친다(브리핑에서 실제로 중복 key 경고가 났다).
+                  목록이 재정렬되지 않으므로 인덱스를 섞어도 안전하다.
+                */}
+                {data.items.map((item, i) => (
                   <li
-                    key={`${item.url}-${item.publishedAt}`}
+                    key={`${i}-${item.url}`}
                     className="rounded-xl border border-line p-3"
                   >
                     {/* 종목 정보가 아이템에 실려 오는 것은 브리핑뿐이다 — 추가 조회 없이 이름을 붙인다. */}

@@ -15,8 +15,10 @@ const publicLinks = [
 
 /** 로그인 시 추가로 노출되는 메뉴 */
 const authLinks = [
+  { to: '/news', label: '뉴스' },
   { to: '/trade', label: '거래' },
   { to: '/portfolio', label: '포트폴리오' },
+  { to: '/feedback', label: 'AI 복기' },
   { to: '/journal', label: '투자일기' },
   { to: '/rankings', label: '랭킹' },
   { to: '/community', label: '커뮤니티' },

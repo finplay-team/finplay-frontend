@@ -13,6 +13,8 @@ import { CommunityPost } from './pages/CommunityPost'
 import { MyPage } from './pages/MyPage'
 import { Journal } from './pages/Journal'
 import { Rankings } from './pages/Rankings'
+import { News } from './pages/News'
+import { Feedback } from './pages/Feedback'
 import { Support } from './pages/Support'
 import { NotFound } from './pages/NotFound'
 
@@ -68,6 +70,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Journal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/news"
+            element={
+              <ProtectedRoute>
+                <News />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/feedback"
+            element={
+              <ProtectedRoute>
+                <Feedback />
               </ProtectedRoute>
             }
           />

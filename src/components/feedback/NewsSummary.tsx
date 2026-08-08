@@ -156,9 +156,14 @@ export function NewsSummary({ instrumentId }: Props) {
             {data.items.length > 0 && (
               <ul className="mt-4 space-y-2">
                 {/* items 에 id 가 없다. 인덱스를 key 로 쓰면 재조회 때 섞이므로 url+발행시각을 쓴다. */}
-                {data.items.map((item) => (
+                {/*
+                  서버가 항목 id 를 주지 않는다. url+publishedAt 은 유일해 보이지만 같은 기사가
+                  여러 종목에 태그되면 그대로 겹친다(브리핑에서 실제로 중복 key 경고가 났다).
+                  목록이 재정렬되지 않으므로 인덱스를 섞어도 안전하다.
+                */}
+                {data.items.map((item, i) => (
                   <li
-                    key={`${item.url}-${item.publishedAt}`}
+                    key={`${i}-${item.url}`}
                     className="rounded-xl border border-line p-3"
                   >
                     <a

@@ -23,8 +23,6 @@ import { PendingOrders } from '../components/trade/PendingOrders'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { Star } from '../components/ui/icons'
 import { PriceMoveCards } from '../components/feedback/PriceMoveCards'
-import { NewsSummary } from '../components/feedback/NewsSummary'
-import { MarketBriefing } from '../components/feedback/MarketBriefing'
 import type {
   AccountSummary,
   CandleInterval,
@@ -599,14 +597,6 @@ export function Trade() {
           )}
         </Card>
 
-        {/*
-          2-1. 개장 전 브리핑. 변동 원인 카드는 가격이 움직인 "뒤"를 설명하므로 매매 판단에 쓸 수 없고,
-          브리핑이 그 공백을 메운다 — 그래서 주문 패널보다 위, 종목을 고르기 전에 둔다.
-        */}
-        <div className="mt-6">
-          <MarketBriefing market={market} />
-        </div>
-
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           {/* 3. 종목 목록 */}
           <Card innerClassName="p-4">
@@ -777,16 +767,11 @@ export function Trade() {
             </Card>
 
             {/*
-              4-1. 종목 단위 AI 피드백. 변동 원인 카드는 reveal_time 이 지난 것만 열려서
-              "지금까지 무슨 일이 있었나"를 스포일러 없이 보여주고, 뉴스 요약이 그 근거를 잇는다.
-              선택 종목이 없으면 부를 대상이 없다.
+              4-1. 변동 원인 카드만 여기 남긴다 — 지금 보고 있는 차트의 "이 구간이 왜 움직였나"라
+              차트 바로 아래가 제자리다. 시장 브리핑과 종목 뉴스 요약은 거래 흐름을 끊으므로
+              전용 화면(/news)으로 옮겼다.
             */}
-            {selectedId !== null && (
-              <>
-                <PriceMoveCards instrumentId={selectedId} />
-                <NewsSummary instrumentId={selectedId} />
-              </>
-            )}
+            {selectedId !== null && <PriceMoveCards instrumentId={selectedId} />}
 
             {/* 5. 주문 패널 */}
             <Card accent={accent} innerClassName="p-6">
