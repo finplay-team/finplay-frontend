@@ -67,6 +67,41 @@
   .orb {
     @apply pointer-events-none absolute rounded-full bg-brand/20 blur-3xl;
   }
+
+  /* Liquid glass — 뒤에 움직이는 것(캔들·시세)이 있을 때만 쓴다. 장식으로 쓰면 흐린 회색 판일 뿐이다.
+     .bezel 과 달리 blur 를 세게 걸어 배경을 굴절시키고, 상단 1px 하이라이트로 유리 두께를 만든다. */
+  .glass {
+    @apply relative rounded-core border border-white/[0.09] bg-white/[0.055] backdrop-blur-xl;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.11),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 24px 70px -28px rgba(0, 0, 0, 0.8);
+  }
+
+  /* 유리 위를 천천히 지나가는 스페큘러 띠 — 표면이 물성을 갖게 한다.
+     ::after 를 쓰는 이유는 .glass 의 ::before 를 소비자가 쓸 수 있게 비워 두기 위함이다. */
+  .glass-sheen::after {
+    @apply pointer-events-none absolute inset-0 rounded-[inherit] content-[''];
+    background: linear-gradient(
+      105deg,
+      transparent 38%,
+      rgba(255, 255, 255, 0.07) 47%,
+      rgba(94, 234, 212, 0.05) 51%,
+      transparent 60%
+    );
+    background-size: 280% 100%;
+    animation: glass-sheen 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  @keyframes glass-sheen {
+    0%,
+    100% {
+      background-position: 130% 0;
+    }
+    55% {
+      background-position: -30% 0;
+    }
+  }
 }
 
 @layer utilities {
