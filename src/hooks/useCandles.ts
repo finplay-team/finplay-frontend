@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../lib/apiClient'
 import { getCandles } from '../services/instrumentService'
-import type { Candle, Market } from '../services/types'
+import type { Candle, CandleInterval, Market } from '../services/types'
 
 const MAX_BARS = 400
 
@@ -22,8 +22,10 @@ export function useCandles(params: {
   minuteTick?: number
   /** CRYPTO 폴링 주기. 기본 5000ms */
   pollMs?: number
+  /** 캔들 주기. 기본 '1m'. 대소문자 구분이라 '1M'(월)과 '1m'(분)이 다르다. */
+  interval?: CandleInterval
 }): UseCandlesResult {
-  const { instrumentId, market, minuteTick, pollMs = 5000 } = params
+  const { instrumentId, market, minuteTick, pollMs = 5000, interval = '1m' } = params
 
   const [candles, setCandles] = useState<Candle[]>([])
   const [loading, setLoading] = useState(false)
@@ -34,11 +36,12 @@ export function useCandles(params: {
 
   const reload = useCallback(() => setReloadNonce((n) => n + 1), [])
 
-  // 종목·시장이 바뀌면 누적 봉을 버린다. 다른 종목 봉이 섞이면 차트가 깨진다.
+  // 종목·시장·주기가 바뀌면 누적 봉을 버린다.
+  // interval 을 빼면 1m 과 1d 가 같은 sourceTime 키로 병합돼 차트가 조용히 섞인다.
   useEffect(() => {
     mapRef.current = new Map()
     setCandles([])
-  }, [instrumentId, market])
+  }, [instrumentId, market, interval])
 
   useEffect(() => {
     if (instrumentId === null) return
@@ -59,7 +62,7 @@ export function useCandles(params: {
     const load = async () => {
       if (firstLoad) setLoading(true)
       try {
-        const fetched = await getCandles(instrumentId, { signal: controller.signal })
+        const fetched = await getCandles(instrumentId, { interval, signal: controller.signal })
         if (controller.signal.aborted) return // 낡은 응답이 병합되면 안 된다
         merge(fetched)
         setError(null)
@@ -85,7 +88,7 @@ export function useCandles(params: {
       }
     }
     return () => controller.abort()
-  }, [instrumentId, market, minuteTick, pollMs, reloadNonce])
+  }, [instrumentId, market, interval, minuteTick, pollMs, reloadNonce])
 
   return { candles, loading, error, reload }
 }

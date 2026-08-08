@@ -1,4 +1,4 @@
-// 주식·코인 시장가 매매 화면 — 시장 탭으로 전환하며 시세(주식 SSE / 코인 폴링)·분봉·주문을 한 화면에서 처리한다
+// 주식·코인 매매 화면 — 시장 탭으로 전환하며 시세(주식 SSE / 코인 폴링)·캔들·시장가/지정가 주문을 한 화면에서 처리한다
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { CandleChart } from '../components/CandleChart'
@@ -17,12 +17,17 @@ import { formatKRW, formatPercent, pnlTone } from '../lib/format'
 import { sideLabels } from '../lib/labels'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
-import { placeOrder } from '../services/orderService'
+import { placeLimitOrder, placeOrder } from '../services/orderService'
 import { bumpAccount } from '../lib/accountPulse'
+import { PendingOrders } from '../components/trade/PendingOrders'
+import { useWatchlist } from '../hooks/useWatchlist'
+import { Star } from '../components/ui/icons'
 import type {
   AccountSummary,
+  CandleInterval,
   Holding,
   Instrument,
+  LimitOrderResponse,
   Market,
   OrderExecutionResponse,
   OrderSide,
@@ -180,6 +185,7 @@ export function Trade() {
 
   // 주식은 서버 분 크론에만 새 봉이 생긴다 → 분이 넘어갈 때만 재조회한다. 코인은 폴링이다.
   const minuteTick = Math.floor((lastMessageAt ?? 0) / 60_000)
+  const [interval, setInterval_] = useState<CandleInterval>('1m')
   const {
     candles,
     loading: candlesLoading,
@@ -189,6 +195,7 @@ export function Trade() {
     market,
     minuteTick,
     pollMs: CRYPTO_POLL_MS,
+    interval,
   })
 
   const [account, setAccount] = useState<AccountSummary | null>(null)
@@ -230,36 +237,78 @@ export function Trade() {
     }
   }, [market, minuteTick, accountNonce, cryptoAccountTick])
 
+  /**
+   * 매도 가능 수량. 서버가 availableQuantity 를 주지 않으므로 예약분을 직접 뺀다 —
+   * 지정가 매도로 잠긴 수량은 시장가로 중복 매도할 수 없고 409 INSUFFICIENT_QTY 가 난다.
+   */
   const held = useMemo(() => {
     if (!holdings || !selected) return 0
     const holding = holdings.find((h) => h.instrumentId === selected.instrumentId)
     if (!holding) return 0
+    const available = holding.quantity - holding.reservedQuantity
+    if (available <= 0) return 0
     // 주식은 정수 주만 주문할 수 있고, 코인은 소수 수량 그대로 매도할 수 있다.
-    return isCrypto ? holding.quantity : Math.floor(holding.quantity)
+    return isCrypto ? available : Math.floor(available)
   }, [holdings, isCrypto, selected])
 
   const [side, setSide] = useState<OrderSide>('BUY')
   const [quantity, setQuantity] = useState('')
+  /** 지정가는 코인 전용이다 — 주식에 걸면 백엔드가 400 을 낸다. */
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET')
+  const [limitPrice, setLimitPrice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [orderError, setOrderError] = useState<string | null>(null)
   const [result, setResult] = useState<OrderExecutionResponse | null>(null)
+  /** 지정가는 체결이 아니라 접수 결과다 — 시장가 체결 카드와 섞으면 사용자가 체결된 줄 안다. */
+  const [limitResult, setLimitResult] = useState<LimitOrderResponse | null>(null)
   // 성공한 주문의 키를 그대로 재사용하면 서버가 같은 체결을 재생해 두 번째 주문이 조용히 삼켜진다.
   const [successNonce, setSuccessNonce] = useState(0)
+  /** 미체결 목록을 즉시 다시 읽게 하는 신호. */
+  const [pendingNonce, setPendingNonce] = useState(0)
   // disabled 상태만으로는 빠른 더블클릭이 두 핸들러를 모두 통과한다. 동기 플래그로 한 번 더 막는다.
   const submittingRef = useRef(false)
 
-  const idempotencyKey = useIdempotencyKey([market, selectedId, side, quantity, successNonce])
+  const isLimit = isCrypto && orderType === 'LIMIT'
 
-  // 시장·종목·매매구분이 바뀌면 앞선 체결 결과와 오류는 더 이상 이 주문의 것이 아니다.
+  const watchlist = useWatchlist()
+
+  /**
+   * 서버 멱등 해시에 limitPrice 가 들어가는지 문서에 없다(MUST-VERIFY). 키를 가격까지 종속시켜
+   * 만들면 서버가 빠뜨렸더라도 키 자체가 달라 replay 경로에 들어가지 않는다.
+   */
+  const idempotencyKey = useIdempotencyKey([
+    market,
+    selectedId,
+    side,
+    quantity,
+    orderType,
+    limitPrice,
+    successNonce,
+  ])
+
+  // 주식으로 돌아오면 지정가 상태를 남겨 둘 수 없다 — 주식 지정가는 백엔드에 없다.
+  useEffect(() => {
+    if (!isCrypto) setOrderType('MARKET')
+  }, [isCrypto])
+
+  // 시장·종목·매매구분·주문유형이 바뀌면 앞선 결과와 오류는 더 이상 이 주문의 것이 아니다.
   useEffect(() => {
     setResult(null)
+    setLimitResult(null)
     setOrderError(null)
     setQuantity('')
-  }, [market, selectedId, side])
+    setLimitPrice('')
+  }, [market, selectedId, side, orderType])
 
   const quantityNumber = quantity === '' ? 0 : Number(quantity)
+  const limitPriceNumber = limitPrice === '' ? 0 : Number(limitPrice)
+  /** 지정가는 현재가가 아니라 입력한 지정가로 금액을 계산한다. */
+  const unitPrice = isLimit ? (limitPriceNumber > 0 ? limitPriceNumber : null) : currentPrice
   const estimatedAmount =
-    currentPrice !== null && quantityNumber > 0 ? currentPrice * quantityNumber : null
+    unitPrice !== null && quantityNumber > 0 ? unitPrice * quantityNumber : null
+
+  /** 서버가 availableCash 를 주지 않는다 — 예약분을 직접 빼야 실제 주문 가능 금액이다. */
+  const availableCash = account ? account.cashBalance - account.reservedCash : null
 
   const handleQuantityChange = (raw: string) => {
     if (isCrypto) {
@@ -295,11 +344,16 @@ export function Trade() {
       return '시세 서버에 연결하는 중입니다. 잠시 후 다시 시도해 주세요.'
     // 코인은 24시간 거래라 장 운영 시간 개념이 없다.
     if (!isCrypto && marketStatus !== 'OPEN') return '장 시간이 아닙니다 (09:00~15:30).'
-    if (isCrypto && snapshot === undefined) return '시세를 불러오는 중입니다.'
-    if (!snapshot || snapshot.status === 'UNAVAILABLE' || snapshot.price === null)
-      return isCrypto
-        ? '지금 이 코인의 시세를 받을 수 없습니다. 시세가 다시 들어오면 주문할 수 있습니다.'
-        : '현재 이 종목의 시세를 받을 수 없어 주문할 수 없습니다.'
+    // 지정가는 현재 시세를 필요로 하지 않는다 — 서버가 생성 시점에 즉시체결 판정을 하지 않고
+    // 예약만 잡기 때문이다. 시세가 없다고 막으면 실제로는 가능한 주문을 막는 것이 된다.
+    if (!isLimit) {
+      if (isCrypto && snapshot === undefined) return '시세를 불러오는 중입니다.'
+      if (!snapshot || snapshot.status === 'UNAVAILABLE' || snapshot.price === null)
+        return isCrypto
+          ? '지금 이 코인의 시세를 받을 수 없습니다. 시세가 다시 들어오면 주문할 수 있습니다.'
+          : '현재 이 종목의 시세를 받을 수 없어 주문할 수 없습니다.'
+    }
+    if (isLimit && limitPriceNumber <= 0) return '지정가를 입력해 주세요.'
     if (quantityNumber <= 0)
       return isCrypto ? '주문 수량을 입력해 주세요. (예: 0.001)' : '주문 수량을 1주 이상 입력해 주세요.'
     if (side === 'SELL' && held <= 0) return '보유한 수량이 없어 매도할 수 없습니다.'
@@ -317,6 +371,8 @@ export function Trade() {
     estimatedAmount,
     held,
     isCrypto,
+    isLimit,
+    limitPriceNumber,
     marketStatus,
     quantityNumber,
     selected,
@@ -336,19 +392,36 @@ export function Trade() {
       setSubmitting(true)
       setOrderError(null)
       setResult(null)
+      setLimitResult(null)
       try {
-        const execution = await placeOrder(
-          {
-            market,
-            instrumentId: selected.instrumentId,
-            side,
-            orderType: 'MARKET',
-            // 코인 소수 수량은 입력 문자열 그대로 보낸다 (Number 변환은 지수 표기로 깨질 수 있다).
-            quantity: isCrypto ? quantity : String(quantityNumber),
-          },
-          idempotencyKey,
-        )
-        setResult(execution)
+        if (isLimit) {
+          // 지정가는 체결이 아니라 PENDING 접수다. 예약분이 응답에 실려 오지 않아 계좌를 다시 읽는다.
+          const accepted = await placeLimitOrder(
+            {
+              market: 'CRYPTO',
+              instrumentId: selected.instrumentId,
+              side,
+              quantity,
+              limitPrice,
+            },
+            idempotencyKey,
+          )
+          setLimitResult(accepted)
+          setPendingNonce((n) => n + 1)
+        } else {
+          const execution = await placeOrder(
+            {
+              market,
+              instrumentId: selected.instrumentId,
+              side,
+              orderType: 'MARKET',
+              // 코인 소수 수량은 입력 문자열 그대로 보낸다 (Number 변환은 지수 표기로 깨질 수 있다).
+              quantity: isCrypto ? quantity : String(quantityNumber),
+            },
+            idempotencyKey,
+          )
+          setResult(execution)
+        }
         setSuccessNonce((n) => n + 1)
         setAccountNonce((n) => n + 1) // 잔고·보유는 스트림이 아니라 직접 다시 읽어야 갱신된다
         bumpAccount() // 상단 내비의 지갑처럼 이 화면 밖에 있는 소비자에게도 알린다
@@ -356,13 +429,32 @@ export function Trade() {
         // 같은 본문 재시도는 키를 유지해야 서버가 원래 응답을 재생한다.
         // 충돌은 우리 키 관리가 어긋난 경우이므로 자동 재시도 없이 키만 회전시킨다.
         if (isApiErrorCode(e, 'IDEMPOTENCY_CONFLICT')) setSuccessNonce((n) => n + 1)
-        setOrderError(toUserMessage(e, ORDER_ERROR_MESSAGES[market]))
+        // 서버 멱등 해시가 limitPrice 를 빼먹어 다른 주문의 응답이 재생된 경우다. 성공으로 보여주면 안 된다.
+        if (e instanceof Error && e.message === 'IDEMPOTENT_REPLAY_MISMATCH') {
+          setSuccessNonce((n) => n + 1)
+          setOrderError(
+            '직전 주문과 응답이 일치하지 않아 주문을 취소했습니다. 미체결 목록을 확인한 뒤 다시 시도해 주세요.',
+          )
+        } else {
+          setOrderError(toUserMessage(e, ORDER_ERROR_MESSAGES[market]))
+        }
       } finally {
         submittingRef.current = false
         setSubmitting(false)
       }
     },
-    [disableReason, idempotencyKey, isCrypto, market, quantity, quantityNumber, selected, side],
+    [
+      disableReason,
+      idempotencyKey,
+      isCrypto,
+      isLimit,
+      limitPrice,
+      market,
+      quantity,
+      quantityNumber,
+      selected,
+      side,
+    ],
   )
 
   const stale = isCrypto
@@ -392,7 +484,7 @@ export function Trade() {
         <header>
           <Eyebrow>거래</Eyebrow>
           <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
-            {isCrypto ? '코인 시장가 매매' : '주식 시장가 매매'}
+            {isCrypto ? '코인 매매' : '주식 시장가 매매'}
           </h1>
 
           <MarketTabs market={market} onChange={setMarket} className="mt-5" />
@@ -461,20 +553,34 @@ export function Trade() {
           {accountError ? (
             <p className="text-sm text-loss">{accountError}</p>
           ) : (
-            <dl className="grid grid-cols-2 gap-6 md:grid-cols-4">
-              <Stat label="총 평가자산" value={account ? formatKRW(account.totalValue) : '—'} />
-              <Stat label="주문가능 현금" value={account ? formatKRW(account.cashBalance) : '—'} />
-              <Stat
-                label="평가손익"
-                value={account ? signedKRW(account.unrealizedPnl) : '—'}
-                tone={account ? pnlTone(account.unrealizedPnl) : 'text-ink'}
-              />
-              <Stat
-                label="수익률"
-                value={account ? formatPercent(ratioToPercent(account.returnRate)) : '—'}
-                tone={account ? pnlTone(account.returnRate) : 'text-ink'}
-              />
-            </dl>
+            <>
+              <dl className="grid grid-cols-2 gap-6 md:grid-cols-4">
+                <Stat label="총 평가자산" value={account ? formatKRW(account.totalValue) : '—'} />
+                {/* 서버는 availableCash 를 주지 않는다 — 예약분을 뺀 값이 실제 주문 가능액이다. */}
+                <Stat
+                  label="주문가능 현금"
+                  value={availableCash !== null ? formatKRW(availableCash) : '—'}
+                />
+                <Stat
+                  label="평가손익"
+                  value={account ? signedKRW(account.unrealizedPnl) : '—'}
+                  tone={account ? pnlTone(account.unrealizedPnl) : 'text-ink'}
+                />
+                <Stat
+                  label="수익률"
+                  value={account ? formatPercent(ratioToPercent(account.returnRate)) : '—'}
+                  tone={account ? pnlTone(account.returnRate) : 'text-ink'}
+                />
+              </dl>
+              {/* 예약이 있을 때만 알린다 — 총 현금과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
+              {account !== null && account.reservedCash > 0 && (
+                <p className="mt-4 text-xs leading-relaxed text-muted">
+                  현금 {formatKRW(account.cashBalance)} 중{' '}
+                  <span className="tabular text-coin">{formatKRW(account.reservedCash)}</span>이
+                  미체결 지정가 매수로 예약돼 있습니다. 주문을 취소하면 즉시 돌아옵니다.
+                </p>
+              )}
+            </>
           )}
         </Card>
 
@@ -507,13 +613,16 @@ export function Trade() {
                   const activeTone = isCrypto
                     ? 'bg-coin-soft ring-1 ring-coin/40'
                     : 'bg-brand-soft ring-1 ring-brand/40'
+                  const starred = watchlist.has(instrument.instrumentId)
+                  const starBusy = watchlist.busy.has(instrument.instrumentId)
                   return (
-                    <li key={instrument.instrumentId}>
+                    // ★ 를 행 버튼 안에 넣으면 버튼 중첩이라 유효하지 않은 HTML 이다 → 형제로 둔다.
+                    <li key={instrument.instrumentId} className="flex items-center gap-0.5">
                       <button
                         type="button"
                         onClick={() => setSelectedId(instrument.instrumentId)}
                         aria-current={active}
-                        className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors duration-300 ${
+                        className={`flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors duration-300 ${
                           active ? activeTone : 'hover:bg-white/[0.04]'
                         }`}
                       >
@@ -544,10 +653,29 @@ export function Trade() {
                           )}
                         </span>
                       </button>
+                      {/*
+                        관심목록은 거래 가능 여부를 검사하지 않는 것이 계약이다.
+                        거래정지 종목도 담을 수 있어야 하므로 tradable 로 막지 않는다.
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => void watchlist.toggle(instrument.instrumentId)}
+                        disabled={starBusy || watchlist.items === null}
+                        aria-pressed={starred}
+                        aria-label={`${instrument.name} 관심목록 ${starred ? '해제' : '등록'}`}
+                        className={`flex-none rounded-full p-2 transition-colors duration-300 disabled:opacity-40 ${
+                          starred ? 'text-brand' : 'text-muted hover:text-ink'
+                        }`}
+                      >
+                        <Star width={16} height={16} fill={starred ? 'currentColor' : 'none'} />
+                      </button>
                     </li>
                   )
                 })}
               </ul>
+            )}
+            {watchlist.error && (
+              <p className="mt-2 px-3 text-xs text-rose-300">{watchlist.error}</p>
             )}
           </Card>
 
@@ -576,27 +704,94 @@ export function Trade() {
                 </div>
               </div>
 
-              <div className="mt-5">
-                <CandleChart candles={candles} emptyMessage={emptyChartMessage} />
+              {/* 봉 주기 전환 — 백엔드가 대소문자를 구분하므로 '1m'(분)과 '1M'(월)을 섞지 않는다 */}
+              <div className="mt-4 flex items-center gap-1">
+                {(
+                  [
+                    ['1m', '분'],
+                    ['1d', '일'],
+                    ['1w', '주'],
+                    ['1M', '월'],
+                  ] as const
+                ).map(([value, label]) => {
+                  const active = interval === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setInterval_(value)}
+                      aria-pressed={active}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors duration-300 ${
+                        active
+                          ? 'bg-white/[0.1] text-ink ring-1 ring-white/[0.14]'
+                          : 'text-muted hover:text-ink'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="mt-3">
+                <CandleChart
+                  candles={candles}
+                  interval={interval}
+                  emptyMessage={emptyChartMessage}
+                />
               </div>
               {candlesError && (
                 <p className="mt-3 text-xs text-loss">{toUserMessage(candlesError)}</p>
               )}
-              <p className="mt-3 text-xs text-muted">
-                {isCrypto
-                  ? '1분봉입니다. 진행 중인 분봉도 포함되어 5초마다 마지막 봉이 제자리에서 갱신됩니다.'
-                  : '1분봉입니다. 마감되지 않은 분봉은 공개되지 않아 새 봉은 매분 한 박자 늦게 추가됩니다.'}
+              <p className="mt-3 text-xs leading-relaxed text-muted">
+                {interval === '1m'
+                  ? isCrypto
+                    ? '1분봉입니다. 진행 중인 분봉도 포함되어 5초마다 마지막 봉이 제자리에서 갱신됩니다.'
+                    : '1분봉입니다. 마감되지 않은 분봉은 공개되지 않아 새 봉은 매분 한 박자 늦게 추가됩니다.'
+                  : // 집계봉은 1m 과 반대로 진행 중 버킷을 포함하고, 거래일이 없는 구간은 아예 빠진다.
+                    '집계봉입니다. 진행 중인 봉도 포함되며, 거래가 없던 구간은 봉 자체가 없어 사이가 비어 보일 수 있습니다.'}
               </p>
             </Card>
 
             {/* 5. 주문 패널 */}
             <Card accent={accent} innerClassName="p-6">
               <h2 className="font-display text-xl font-semibold text-ink">주문</h2>
-              <p className="mt-1 text-xs text-muted">
-                시장가 주문만 지원합니다. 주문하면 즉시 체결되고 수수료는 서버가 계산합니다.
+              <p className="mt-1 text-xs leading-relaxed text-muted">
+                {isLimit
+                  ? '지정한 가격에 도달하면 체결됩니다. 접수 시점에는 체결되지 않고 현금·수량이 예약됩니다.'
+                  : isCrypto
+                    ? '시장가는 즉시 체결됩니다. 수수료는 서버가 계산합니다.'
+                    : '시장가 주문만 지원합니다. 주문하면 즉시 체결되고 수수료는 서버가 계산합니다.'}
               </p>
 
-              <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+              {/* 주문 유형 — 지정가는 코인 전용이라 주식 탭에서는 아예 보이지 않는다. */}
+              {isCrypto && (
+                <div className="mt-4 flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
+                  {(
+                    [
+                      ['MARKET', '시장가'],
+                      ['LIMIT', '지정가'],
+                    ] as const
+                  ).map(([value, label]) => {
+                    const active = orderType === value
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setOrderType(value)}
+                        aria-pressed={active}
+                        className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
+                          active ? 'bg-coin-soft text-coin ring-1 ring-coin/40' : 'text-muted hover:text-ink'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="mt-4 space-y-4">
                 <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
                   {(['BUY', 'SELL'] as OrderSide[]).map((value) => {
                     const active = side === value
@@ -641,7 +836,7 @@ export function Trade() {
                       </span>
                     ) : (
                       <span className="text-xs text-muted tabular">
-                        주문가능 {account ? formatKRW(account.cashBalance) : '—'}
+                        주문가능 {availableCash !== null ? formatKRW(availableCash) : '—'}
                       </span>
                     )}
                   </div>
@@ -672,9 +867,46 @@ export function Trade() {
                   )}
                 </div>
 
+                {isLimit && (
+                  <div>
+                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                      <label htmlFor="order-limit-price" className="text-sm font-medium text-ink">
+                        지정가 (원)
+                      </label>
+                      {currentPrice !== null && (
+                        <button
+                          type="button"
+                          onClick={() => setLimitPrice(String(currentPrice))}
+                          className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-brand transition-colors hover:bg-white/[0.1]"
+                        >
+                          현재가 {formatPrice(currentPrice)}
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      id="order-limit-price"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="0"
+                      value={limitPrice}
+                      onChange={(e) => setLimitPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+                      className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-coin focus:ring-4 focus:ring-coin/15"
+                    />
+                    <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                      {side === 'BUY'
+                        ? '현재가가 지정가 이하로 내려오면 체결됩니다.'
+                        : '현재가가 지정가 이상으로 올라오면 체결됩니다.'}{' '}
+                      체결가는 지정가로 고정됩니다.
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-1.5 rounded-2xl bg-elevated px-4 py-3 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted">예상 주문금액 (추정)</span>
+                    <span className="text-muted">
+                      {isLimit ? '예약 금액 (지정가 기준)' : '예상 주문금액 (추정)'}
+                    </span>
                     <span className="font-medium text-ink tabular">
                       {estimatedAmount !== null ? formatKRW(estimatedAmount) : '—'}
                     </span>
@@ -688,8 +920,9 @@ export function Trade() {
                     </div>
                   )}
                   <p className="pt-1 text-xs leading-relaxed text-muted">
-                    현재가 × 수량으로 계산한 추정치입니다. 실제 체결가와 수수료는 체결 시점에 서버가
-                    확정합니다.
+                    {isLimit
+                      ? '지정가 × 수량으로 계산한 예약 금액입니다. 접수하면 이 금액이 예약되고, 체결가는 지정가로 고정됩니다.'
+                      : '현재가 × 수량으로 계산한 추정치입니다. 실제 체결가와 수수료는 체결 시점에 서버가 확정합니다.'}
                   </p>
                 </div>
 
@@ -699,7 +932,11 @@ export function Trade() {
                   className="w-full"
                   disabled={submitting || disableReason !== null}
                 >
-                  {submitting ? '주문 처리 중' : `${sideLabels[side]} 주문`}
+                  {submitting
+                    ? '주문 처리 중'
+                    : isLimit
+                      ? `지정가 ${sideLabels[side]} 접수`
+                      : `${sideLabels[side]} 주문`}
                 </Button>
               </form>
 
@@ -707,6 +944,32 @@ export function Trade() {
                 <p className="mt-3 text-xs leading-relaxed text-muted">{disableReason}</p>
               )}
               {orderError && <p className="mt-3 text-sm text-loss">{orderError}</p>}
+
+              {/* 지정가는 체결이 아니라 접수다 — 시장가 체결 카드와 문구를 분명히 구분한다. */}
+              {limitResult && (
+                <div className="mt-5 rounded-2xl border border-coin/30 bg-coin-soft/40 p-4">
+                  <p className="text-sm font-medium text-coin">
+                    지정가 {sideLabels[limitResult.side]} 주문이 접수되었습니다. 아직 체결되지
+                    않았습니다.
+                  </p>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                    <div>
+                      <dt className="text-muted">지정가</dt>
+                      <dd className="mt-0.5 text-ink tabular">
+                        {formatPrice(limitResult.limitPrice)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">수량</dt>
+                      <dd className="mt-0.5 text-ink tabular">{formatQty(limitResult.quantity)}</dd>
+                    </div>
+                  </dl>
+                  <p className="mt-3 text-[11px] leading-relaxed text-muted">
+                    체결 알림이 아직 제공되지 않아, 아래 미체결 목록이 5초마다 갱신되며 체결되면
+                    목록에서 사라집니다.
+                  </p>
+                </div>
+              )}
 
               {result && (
                 <div
@@ -759,6 +1022,23 @@ export function Trade() {
                 </div>
               )}
             </Card>
+
+            {/*
+              6. 미체결 지정가 주문 — 주식 지정가는 백엔드에 없어서(주식은 재생 데이터라 "이 가격
+              도달 시" 조건이 성립하지 않는다) 코인 탭에서만 보여준다. 주식에서 항상 빈 목록을
+              띄우면 기능이 고장난 것처럼 읽힌다.
+            */}
+            {isCrypto && (
+              <PendingOrders
+                market={market}
+                refreshNonce={pendingNonce}
+                onChanged={() => {
+                  // 예약분 변화가 응답에 실려 오지 않아 계좌·보유를 반드시 다시 읽어야 한다.
+                  setAccountNonce((n) => n + 1)
+                  bumpAccount()
+                }}
+              />
+            )}
           </div>
         </div>
       </div>

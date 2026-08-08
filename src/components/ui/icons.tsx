@@ -29,6 +29,16 @@ export const ArrowRight = (props: IconProps) => (
 
 
 
+/**
+ * 관심목록 토글용. 등록 상태는 호출부에서 `fill="currentColor"` 로 채워 표현한다
+ * (별도 아이콘을 두 개 만들지 않는다).
+ */
+export const Star = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3.6l2.6 5.3 5.8.85-4.2 4.1 1 5.75L12 16.9l-5.2 2.7 1-5.75-4.2-4.1 5.8-.85z" />
+  </svg>
+)
+
 export const Layers = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="m12 4 8 4-8 4-8-4 8-4Z" />

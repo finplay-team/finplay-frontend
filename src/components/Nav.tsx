@@ -4,7 +4,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { getAccountSummary } from '../services/accountService'
 import { getAccountRevision, subscribeAccount } from '../lib/accountPulse'
-import type { AccountSummary } from '../services/types'
 import { formatManEok } from '../lib/format'
 import { LinkButton } from './ui/Button'
 import { Logout } from './ui/icons'
@@ -29,7 +28,7 @@ export function Nav() {
   const navigate = useNavigate()
 
   const isAuthenticated = status !== 'anonymous'
-  const [wallet, setWallet] = useState<AccountSummary | null>(null)
+  const [wallet, setWallet] = useState<{ totalValue: number; availableCash: number } | null>(null)
   const accountRevision = useSyncExternalStore(subscribeAccount, getAccountRevision)
 
   // 라우트 변경 시 모바일 메뉴 닫기
@@ -62,9 +61,17 @@ export function Nav() {
       return
     }
     let cancelled = false
-    getAccountSummary('STOCK')
-      .then((s) => {
-        if (!cancelled) setWallet(s)
+    // 주식만 읽으면 코인에서 매매해도 내비 숫자가 안 움직여 "가능 현금 1,000만"이 계속 남는다.
+    // 두 계좌를 합산한다 — 수익률은 표시하지 않으므로 분모가 어긋나는 문제(4차 결정)가 없다.
+    Promise.all([getAccountSummary('STOCK'), getAccountSummary('CRYPTO')])
+      .then(([stock, crypto]) => {
+        if (cancelled) return
+        setWallet({
+          totalValue: stock.totalValue + crypto.totalValue,
+          // 예약분을 빼야 실제 주문 가능액이다. 서버는 availableCash 를 주지 않는다.
+          availableCash:
+            stock.cashBalance - stock.reservedCash + (crypto.cashBalance - crypto.reservedCash),
+        })
       })
       .catch(() => {
         if (!cancelled) setWallet(null)
@@ -130,7 +137,7 @@ export function Nav() {
                   <span className="flex flex-col leading-tight">
                     <span className="text-[10px] uppercase tracking-eyebrow text-muted">가능 현금</span>
                     <span className="text-sm font-medium text-brand tabular">
-                      {formatManEok(wallet.cashBalance)}
+                      {formatManEok(wallet.availableCash)}
                     </span>
                   </span>
                 </Link>
@@ -226,7 +233,7 @@ export function Nav() {
                   <span className="flex flex-col text-right leading-tight">
                     <span className="text-[10px] uppercase tracking-eyebrow text-muted">가능 현금</span>
                     <span className="text-base font-medium text-brand tabular">
-                      {formatManEok(wallet.cashBalance)}
+                      {formatManEok(wallet.availableCash)}
                     </span>
                   </span>
                 </Link>
