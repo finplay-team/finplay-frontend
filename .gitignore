@@ -26,3 +26,15 @@ yarn-error.log*
 # env 백업까지 확실히 제외 (.env.example 은 추적한다)
 .env.*
 !.env.example
+
+# 에이전트 하네스가 만든 디렉터리 (impeccable 설치 산출물)
+.codex/
+.cursor/
+.gemini/
+.grok/
+.opencode/
+.pi/
+
+# 백엔드 문서 사본·스크린샷·일회성 검증 스크립트 (스크래치)
+# 계약 추출 결과물만 docs/backend-contracts/ 로 옮겨 추적한다
+.backend-docs/
