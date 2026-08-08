@@ -313,6 +313,18 @@ export function Trade() {
   /** 서버가 availableCash 를 주지 않는다 — 예약분을 직접 빼야 실제 주문 가능 금액이다. */
   const availableCash = account ? account.cashBalance - account.reservedCash : null
 
+  /**
+   * 지금 넣은 지정가가 이미 체결 조건을 만족하는가.
+   * 서버는 생성 시점에 즉시체결을 판정하지 않고 무조건 PENDING 으로 만든 뒤 다음 가격 틱에서 체결한다.
+   * 코인은 시세가 초 단위로 들어와 사실상 즉시 체결되는데, 화면이 "접수됨 · 아직 체결되지 않음"만
+   * 보여주면 몇 초 뒤 미체결 목록에서 사라진 것이 버그로 읽힌다 → 넣기 전에 미리 알린다.
+   */
+  const fillsImmediately =
+    isLimit &&
+    currentPrice !== null &&
+    limitPriceNumber > 0 &&
+    (side === 'BUY' ? currentPrice <= limitPriceNumber : currentPrice >= limitPriceNumber)
+
   const handleQuantityChange = (raw: string) => {
     if (isCrypto) {
       // 코인은 소수 수량이다. 숫자와 소수점 하나만 남기고 소수 8자리로 자른다.
@@ -922,6 +934,14 @@ export function Trade() {
                         : '현재가가 지정가 이상으로 올라오면 체결됩니다.'}{' '}
                       체결가는 지정가로 고정됩니다.
                     </p>
+                    {fillsImmediately && (
+                      <p className="mt-2 rounded-xl bg-coin-soft px-3 py-2 text-[11px] leading-relaxed text-coin">
+                        지금 현재가({formatPrice(currentPrice as number)}) 기준으로 이미 체결 조건을
+                        만족합니다. 접수 직후 바로 체결되어 미체결 목록에 남지 않고, 정정·취소도 할 수
+                        없습니다. 미체결로 두려면 {side === 'BUY' ? '현재가보다 낮게' : '현재가보다 높게'}{' '}
+                        입력해 주세요.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -972,8 +992,7 @@ export function Trade() {
               {limitResult && (
                 <div className="mt-5 rounded-2xl border border-coin/30 bg-coin-soft/40 p-4">
                   <p className="text-sm font-medium text-coin">
-                    지정가 {sideLabels[limitResult.side]} 주문이 접수되었습니다. 아직 체결되지
-                    않았습니다.
+                    지정가 {sideLabels[limitResult.side]} 주문이 접수되었습니다.
                   </p>
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                     <div>
@@ -987,9 +1006,14 @@ export function Trade() {
                       <dd className="mt-0.5 text-ink tabular">{formatQty(limitResult.quantity)}</dd>
                     </div>
                   </dl>
+                  {/*
+                    "아직 체결되지 않았습니다"로 단정하면 안 된다 — 체결은 서버의 다음 가격 틱에서
+                    일어나고 응답 시점에는 결과를 알 수 없다. 접수 사실만 말하고 확인처를 알려 준다.
+                  */}
                   <p className="mt-3 text-[11px] leading-relaxed text-muted">
-                    체결 알림이 아직 제공되지 않아, 아래 미체결 목록이 5초마다 갱신되며 체결되면
-                    목록에서 사라집니다.
+                    체결 여부는 접수 응답에 담기지 않습니다. 체결 조건을 이미 만족했다면 곧바로 체결되고,
+                    아니면 아래 미체결 목록에 남습니다. 목록은 5초마다 갱신되며 체결되면 사라지고
+                    체결 내역으로 옮겨집니다.
                   </p>
                 </div>
               )}
