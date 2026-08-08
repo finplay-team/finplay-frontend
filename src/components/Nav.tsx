@@ -17,6 +17,8 @@ const publicLinks = [
 const authLinks = [
   { to: '/trade', label: '거래' },
   { to: '/portfolio', label: '포트폴리오' },
+  { to: '/journal', label: '투자일기' },
+  { to: '/rankings', label: '랭킹' },
   { to: '/community', label: '커뮤니티' },
   { to: '/me', label: '내정보' },
 ]

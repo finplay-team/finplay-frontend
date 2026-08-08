@@ -8,6 +8,7 @@ import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
 import { createPost, getPosts } from '../services/communityService'
+import { useInstruments } from '../hooks/useInstruments'
 import type { PostPage } from '../services/types'
 
 const PAGE_SIZE = 10
@@ -36,12 +37,24 @@ export function Community() {
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  /** 작성 폼에서 고른 종목. null 이면 미태그로 보낸다. */
+  const [formInstrumentId, setFormInstrumentId] = useState<number | null>(null)
+  /** 목록 필터. null 이면 전체. */
+  const [filterInstrumentId, setFilterInstrumentId] = useState<number | null>(null)
+
+  const { index } = useInstruments()
+  /**
+   * 태그 후보는 거래 가능한 종목만 둔다 — 서버가 tradable=false 를 400 으로 막는데
+   * 그 400 이 "없는 종목"과 코드가 같아 사용자에게 이유를 설명할 수 없기 때문이다.
+   * (필터에는 이 제한이 없다. 필터는 조회 조건일 뿐이라 검증하지 않는다.)
+   */
+  const taggable = index ? [...index.byId.values()].filter((i) => i.tradable) : []
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setLoadError(null)
-    getPosts({ page, size: PAGE_SIZE })
+    getPosts({ page, size: PAGE_SIZE, instrumentId: filterInstrumentId })
       .then((res) => {
         if (!cancelled) setData(res)
       })
@@ -56,7 +69,7 @@ export function Community() {
     return () => {
       cancelled = true
     }
-  }, [page, reloadKey])
+  }, [page, reloadKey, filterInstrumentId])
 
   const canSubmit = title.trim().length > 0 && content.trim().length > 0 && !submitting
 
@@ -66,16 +79,23 @@ export function Community() {
     setSubmitting(true)
     setFormError(null)
     try {
-      await createPost({ title: title.trim(), content: content.trim() })
+      await createPost({
+        title: title.trim(),
+        content: content.trim(),
+        instrumentId: formInstrumentId,
+      })
       setTitle('')
       setContent('')
+      setFormInstrumentId(null)
       setFormOpen(false)
       // 새 글은 최신순 목록의 첫 페이지에 있다.
       if (page !== 0) setPage(0)
       else setReloadKey((k) => k + 1)
     } catch (err: unknown) {
       setFormError(
-        toUserMessage(err, { VALIDATION_ERROR: '제목과 내용을 다시 확인해 주세요.' }),
+        toUserMessage(err, {
+          VALIDATION_ERROR: '제목·내용 또는 선택한 종목을 다시 확인해 주세요.',
+        }),
       )
     } finally {
       setSubmitting(false)
@@ -140,6 +160,27 @@ export function Community() {
                 />
               </div>
 
+              <div>
+                <label htmlFor="post-instrument" className="mb-1.5 block text-sm font-medium text-ink">
+                  종목 태그 <span className="font-normal text-muted">(선택, 1개)</span>
+                </label>
+                <select
+                  id="post-instrument"
+                  value={formInstrumentId ?? ''}
+                  onChange={(e) =>
+                    setFormInstrumentId(e.target.value === '' ? null : Number(e.target.value))
+                  }
+                  className={inputClass}
+                >
+                  <option value="">태그 없음</option>
+                  {taggable.map((i) => (
+                    <option key={i.instrumentId} value={i.instrumentId}>
+                      {i.name} ({i.symbol})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* gain(=상승 적색) 은 시세용 토큰이다. 폼 오류는 Signup·Field 와 같은 rose 를 쓴다 */}
               {formError && <p className="text-sm text-rose-300">{formError}</p>}
 
@@ -196,12 +237,52 @@ export function Community() {
             </Card>
           )}
 
+          {/*
+            종목 필터는 조회 조건일 뿐이라 서버가 검증하지 않는다 —
+            없는 종목을 넣어도 400 이 아니라 빈 목록이 온다. 그래서 거래정지 종목도 후보에 남긴다.
+          */}
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">종목 필터</span>
+            <select
+              value={filterInstrumentId ?? ''}
+              onChange={(e) => {
+                setFilterInstrumentId(e.target.value === '' ? null : Number(e.target.value))
+                setPage(0)
+              }}
+              className="rounded-full border border-line bg-elevated px-3 py-1.5 text-xs text-ink outline-none focus:border-brand"
+            >
+              <option value="">전체</option>
+              {(index ? [...index.byId.values()] : []).map((i) => (
+                <option key={i.instrumentId} value={i.instrumentId}>
+                  {i.name} ({i.symbol})
+                </option>
+              ))}
+            </select>
+            {filterInstrumentId !== null && (
+              <button
+                onClick={() => {
+                  setFilterInstrumentId(null)
+                  setPage(0)
+                }}
+                className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs text-ink transition-colors hover:bg-white/[0.1]"
+              >
+                필터 해제
+              </button>
+            )}
+          </div>
+
           {!loading &&
             !loadError &&
             data?.content.map((post) => (
               <Link key={post.postId} to={`/community/${post.postId}`} className="block">
                 <Card className="transition-transform duration-500 ease-spring hover:-translate-y-0.5">
                   <div className="p-6">
+                    {/* symbol·name 이 응답에 함께 와서 종목 캐시 조인 없이 배지를 그릴 수 있다. */}
+                    {post.instrumentId !== null && (
+                      <span className="mb-2 inline-block rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-brand">
+                        {post.instrumentName} · {post.instrumentSymbol}
+                      </span>
+                    )}
                     <h2 className="font-display text-lg font-semibold text-ink">{post.title}</h2>
                     <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">
                       {toExcerpt(post.content)}

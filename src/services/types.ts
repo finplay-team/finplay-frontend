@@ -408,14 +408,127 @@ export interface PortfolioTotal {
   realizedPnl: Decimal
 }
 
+/* ---------- 투자일기 (JOUR-001~006) ---------- */
+
+export type JournalType = 'BUY' | 'SELL'
+
+/**
+ * GET /api/journal 항목 — 6필드 고정. 매수·매도 회고를 한 목록으로 병합해 준다.
+ *
+ * 통합 journalId 가 **목록에는 없다.** 항목의 유일 키는 journalType + 해당 타입의 체결 ID이며
+ * React key 는 `${journalType}-${buyTradeId ?? sellTradeId}` 로 조합해야 한다.
+ * 종목·가격·수량·실현손익은 이 응답에 **없다** — 필요하면 GET /api/trades 와 체결 ID로 조인한다.
+ * updatedAt === createdAt 이면 미수정이다(별도 isEdited 플래그가 없다).
+ */
+export interface JournalListItem {
+  journalType: JournalType
+  /** journalType === 'BUY' 일 때만 값. SELL 항목은 null */
+  buyTradeId: number | null
+  /** journalType === 'SELL' 일 때만 값. BUY 항목은 null */
+  sellTradeId: number | null
+  content: string
+  createdAt: LocalDateTimeString
+  updatedAt: LocalDateTimeString
+}
+
+/**
+ * cursor 형식은 `{createdAt}_{체결 ID}`. 정렬은 createdAt 내림차순 + 동시각 체결 ID 내림차순이며
+ * updatedAt 기준이 아니다(수정한 오래된 항목이 위로 튀지 않는다).
+ * limit 기본 20, 1~100, **클램핑 없이 400** — GET /api/rankings 와 정반대다.
+ * 요청 시장의 계좌가 없으면 404 다. 빈 목록(200)과 다르므로 뭉개면 안 된다.
+ */
+export interface JournalPage {
+  content: JournalListItem[]
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+/**
+ * GET /api/journal/buy/{buyTradeId} — 5필드 고정. 경로 변수는 회고 PK 가 아니라 **체결 ID** 다.
+ * journalId 는 매수·매도 테이블의 AUTO_INCREMENT 가 별개라 두 타입 간 값이 겹칠 수 있다 → 단독 키 금지.
+ */
+export interface BuyJournalDetail {
+  journalId: number
+  buyTradeId: number
+  content: string
+  createdAt: LocalDateTimeString
+  updatedAt: LocalDateTimeString
+}
+
+/** GET /api/journal/sell/{sellTradeId} — 매수 상세와 완전 대칭이다. */
+export interface SellJournalDetail {
+  journalId: number
+  sellTradeId: number
+  content: string
+  createdAt: LocalDateTimeString
+  updatedAt: LocalDateTimeString
+}
+
+/**
+ * 작성·수정 공통 본문. content 는 @NotBlank + 최대 5000자이며 서버가 트림하지 않는다.
+ * POST 201 응답에는 updatedAt 이 **없고**, PATCH 200 응답에만 있다.
+ * PATCH 는 upsert 가 아니라 회고가 없으면 404 다.
+ */
+export interface JournalWriteRequest {
+  content: string
+}
+
+/* ---------- 랭킹 (RANK-001·002) ---------- */
+
+/**
+ * GET /api/rankings 항목. userId 가 없어 "내 순위 하이라이트"는 nickname 문자열 비교뿐이다.
+ * nickname 은 마스킹 없이 전체 노출되므로 클라이언트에서 임의로 가리면 /rankings/me 와 대조가 깨진다.
+ */
+export interface RankingEntry {
+  /**
+   * 동점자는 공동 순위이고 다음 순위를 건너뛴다(1,1,3).
+   * **배열 인덱스와 다르며 값이 중복된다** — index+1 로 그리거나 React key 로 쓰면 안 된다.
+   */
+  rank: number
+  nickname: string
+  /** 금액이다. 이 도메인에는 scale-4 비율 필드가 하나도 없어 ratioToPercent 를 쓸 대상이 없다. */
+  realizedPnl: Decimal
+}
+
+/**
+ * GET /api/rankings?market=&limit= — 2단 구조이고 커서 필드가 없다.
+ * limit 은 이 API 만 **클램핑**된다(생략·0 이하 → 10, 51 이상 → 50). 다른 목록의 400 정책과 정반대라
+ * 공용 클램프 유틸을 공유하면 서버 기본값 10 이 가려진다.
+ */
+export interface RankingList {
+  market: Market
+  content: RankingEntry[]
+}
+
+/**
+ * GET /api/rankings/me?market= — **flat 구조다**(content 래핑 없음). 목록과 형태가 다르다.
+ * 매도 이력이 없으면 rank 만 null 이고 nickname·realizedPnl(0)은 항상 값이 있다 —
+ * rank === null 을 "응답이 비었다"로 해석해 빈 상태를 그리면 정보를 버리게 된다.
+ * realizedPnl 은 Redis ZSET score 기반이라 GET /api/accounts/summary 의 값과 순간적으로 어긋날 수 있다.
+ */
+export interface MyRanking {
+  market: Market
+  rank: number | null
+  nickname: string
+  realizedPnl: Decimal
+}
+
 /* ---------- 커뮤니티 ---------- */
 
-/** 목록도 content 를 전부 포함한다. authorId 가 없어 소유 판정은 authorNickname 비교뿐이다. */
+/**
+ * 목록도 content 를 전부 포함한다. authorId 가 없어 소유 판정은 authorNickname 비교뿐이다.
+ * 종목 태그 3필드는 항상 셋 다 값이거나 셋 다 null 이며, symbol·name 이 함께 오므로
+ * 배지를 그리는 데 instrumentService 캐시 조인이 필요 없다.
+ */
 export interface Post {
   postId: number
   authorNickname: string
   title: string
   content: string
+  /** 태그된 종목. 게시물당 최대 1개이며 미태그면 null */
+  instrumentId: number | null
+  instrumentSymbol: string | null
+  instrumentName: string | null
   createdAt: LocalDateTimeString
   updatedAt: LocalDateTimeString
 }
@@ -429,26 +542,50 @@ export interface PostPage {
   hasNext: boolean
 }
 
-/** title 최대 100자, content 최대 5000자 */
+/** title 최대 100자, content 최대 5000자. instrumentId 는 선택이며 미태그면 생략한다. */
 export interface PostCreateRequest {
   title: string
   content: string
+  instrumentId?: number | null
 }
-/** PATCH 는 부분 수정이 아니라 전체 교체 — 두 필드 모두 필수 */
+
+/**
+ * PATCH 는 부분 수정이 아니라 전체 교체 — 두 필드 모두 필수.
+ *
+ * **instrumentId 를 생략하거나 null 로 보내면 기존 태그가 해제된다(계약 명시).**
+ * 제목만 고치는 요청도 태그를 지우므로 수정 폼은 기존 post.instrumentId 를 초기값으로 실어
+ * 반드시 함께 재전송해야 한다. 변경 이력이 없어 되돌릴 수 없다.
+ */
 export interface PostUpdateRequest {
   title: string
   content: string
+  instrumentId?: number | null
 }
 
-/** GET /api/community/posts/{id}/comments — bare array, createdAt 오름차순, 페이지네이션·수정·대댓글·좋아요 없음 */
+/**
+ * GET /api/community/posts/{id}/comments — bare array, 페이지네이션·수정 API 없음.
+ * 최상위 배열에는 **부모 댓글만** 들어가고 대댓글은 각 부모의 replies 에 중첩된다.
+ * 정렬은 양쪽 모두 createdAt 오름차순 + commentId 오름차순이다.
+ * 중첩은 1단계뿐이라 **대댓글의 replies 는 항상 빈 배열**이고, 대댓글에 답글을 달면 400 이다.
+ * 부모를 삭제하면 자식 대댓글도 CASCADE 로 함께 사라진다(타인 것이라도).
+ */
 export interface Comment {
   commentId: number
   authorNickname: string
   content: string
   createdAt: LocalDateTimeString
+  /** 부모 댓글은 null, 대댓글은 부모의 commentId */
+  parentCommentId: number | null
+  /** 부모와 완전히 같은 Comment 타입이다(축소 타입이 아니다). 자식이 없으면 [] */
+  replies: Comment[]
 }
 
-/** content 최대 1000자 */
+/**
+ * content 최대 1000자. parentCommentId 를 주면 그 댓글의 대댓글이 된다.
+ * 부모가 이미 대댓글이면 400, 존재하지 않거나 다른 게시물 소속이면 404 다 —
+ * 이 404 를 "게시물이 사라졌다"로 해석하면 안 된다.
+ */
 export interface CommentCreateRequest {
   content: string
+  parentCommentId?: number | null
 }

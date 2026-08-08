@@ -1,5 +1,5 @@
-// 시장(주식/코인)별 계좌 요약·보유 종목·체결 내역(커서 페이징)을 보여주는 포트폴리오 화면
-import { useCallback, useEffect, useMemo, useState } from 'react'
+// 시장(주식/코인)별 계좌 요약·보유 종목·미체결 지정가·체결 내역(커서 페이징)을 보여주는 포트폴리오 화면
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
@@ -13,6 +13,10 @@ import { sideLabels } from '../lib/labels'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { getTrades } from '../services/tradeService'
+import { PendingOrders } from '../components/trade/PendingOrders'
+import { bumpAccount } from '../lib/accountPulse'
+import { PostSellFeedback } from '../components/feedback/PostSellFeedback'
+import { JournalEditor } from '../components/journal/JournalEditor'
 import type { AccountSummary, Holding, Market, OrderSide, Trade } from '../services/types'
 
 const TRADE_PAGE_SIZE = 20
@@ -60,6 +64,10 @@ export function Portfolio() {
   const { index } = useInstruments()
 
   const [refreshNonce, setRefreshNonce] = useState(0)
+  /** 복기를 펼친 체결 id. 한 번에 하나만 연다 — 여러 개를 열면 post-sell 요청이 동시에 쌓인다. */
+  const [openTradeId, setOpenTradeId] = useState<number | null>(null)
+  /** 회고 작성 폼을 연 체결 id. 목록에 회고 유무가 없어 작성/수정을 미리 알 수 없다. */
+  const [journalTradeId, setJournalTradeId] = useState<number | null>(null)
 
   const [account, setAccount] = useState<AccountSummary | null>(null)
   const [holdings, setHoldings] = useState<Holding[] | null>(null)
@@ -174,7 +182,7 @@ export function Portfolio() {
   }, [isCrypto, marketStatus, sourceTradingDate])
 
   return (
-    <div className="relative min-h-[100dvh] px-4 pb-24 pt-28 md:pt-32">
+    <div className="relative min-h-[100dvh] overflow-hidden px-4 pb-24 pt-28 md:pt-32">
       <div className="orb -top-24 right-1/4 h-72 w-72 animate-float-orb" aria-hidden />
 
       <div className="relative mx-auto max-w-5xl">
@@ -284,6 +292,16 @@ export function Portfolio() {
                             </td>
                             <td className="px-4 py-3 text-right text-ink tabular">
                               {formatQty(holding.quantity)}
+                              {/*
+                                예약 수량을 알리지 않으면 사용자가 전량 매도를 시도해 409 를 맞는다.
+                                서버는 availableQuantity 를 주지 않아 직접 빼서 보여줘야 한다.
+                              */}
+                              {holding.reservedQuantity > 0 && (
+                                <span className="mt-0.5 block text-[10px] font-normal text-coin">
+                                  예약 {formatQty(holding.reservedQuantity)} · 매도가능{' '}
+                                  {formatQty(holding.quantity - holding.reservedQuantity)}
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-right text-ink tabular">
                               {formatKRW(holding.averagePrice)}
@@ -327,7 +345,32 @@ export function Portfolio() {
           )}
         </section>
 
-        {/* 4. 체결 내역 */}
+        {/*
+          4. 미체결 지정가 — 보유(가진 것)와 체결(끝난 것) 사이가 "진행 중인 것"의 자리다.
+          주식 지정가는 백엔드에 없어 코인 탭에서만 보여준다.
+        */}
+        {isCrypto && (
+          <section className="mt-12">
+            <h2 className="font-display text-2xl font-semibold text-ink">미체결 주문</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              지정가로 접수했지만 아직 체결되지 않은 주문입니다. 여기서 가격·수량을 정정하거나
+              취소할 수 있습니다.
+            </p>
+            <div className="mt-5">
+              <PendingOrders
+                market={market}
+                refreshNonce={refreshNonce}
+                onChanged={() => {
+                  // 예약분 변화가 응답에 실려 오지 않아 계좌·보유를 다시 읽어야 한다.
+                  setRefreshNonce((n) => n + 1)
+                  bumpAccount()
+                }}
+              />
+            </div>
+          </section>
+        )}
+
+        {/* 5. 체결 내역 */}
         <section className="mt-12">
           <h2 className="font-display text-2xl font-semibold text-ink">체결 내역</h2>
           <p className="mt-2 text-sm text-muted">
@@ -348,18 +391,20 @@ export function Portfolio() {
                     <th className="px-4 py-3 text-right font-medium">거래금액</th>
                     <th className="px-4 py-3 text-right font-medium">수수료</th>
                     <th className="px-4 py-3 text-right font-medium">실현손익</th>
+                    <th className="px-4 py-3 text-right font-medium">복기</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
                   {trades.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={9} className="px-4 py-8 text-center text-muted">
                         {tradesLoaded ? '아직 체결된 거래가 없습니다.' : '체결 내역을 불러오는 중입니다.'}
                       </td>
                     </tr>
                   ) : (
                     trades.map((trade) => (
-                      <tr key={trade.tradeId}>
+                      <Fragment key={trade.tradeId}>
+                      <tr>
                         <td className="px-4 py-3 text-muted tabular">
                           {formatDateTime(trade.executedAt)}
                         </td>
@@ -388,7 +433,65 @@ export function Portfolio() {
                         >
                           {trade.realizedPnl === null ? '—' : signedKRW(trade.realizedPnl)}
                         </td>
+                        <td className="px-4 py-3 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setOpenTradeId(openTradeId === trade.tradeId ? null : trade.tradeId)
+                              setJournalTradeId(null)
+                            }}
+                          >
+                            {openTradeId === trade.tradeId ? '접기' : '보기'}
+                          </Button>
+                        </td>
                       </tr>
+
+                      {openTradeId === trade.tradeId && (
+                        <tr>
+                          <td colSpan={9} className="bg-canvas/40 px-4 py-5">
+                            <div className="space-y-4">
+                              {/*
+                                매도 직후 피드백은 2차에서 주식 전용이라 코인 체결에는 부르지 않는다
+                                (부르면 400 이 온다). 매수 체결도 대상이 아니다.
+                              */}
+                              {trade.side === 'SELL' && !isCrypto && (
+                                <PostSellFeedback tradeId={trade.tradeId} />
+                              )}
+
+                              {/*
+                                투자일기 작성 진입점. GET /api/journal 은 이미 쓴 회고만 돌려주므로
+                                아직 안 쓴 체결은 이 자리에서만 시작할 수 있다.
+                                작성인지 수정인지 목록만으로는 알 수 없어 먼저 작성으로 시도하고,
+                                409 면 에디터가 "이미 있다"고 알린다(임의로 덮어쓰지 않는다).
+                              */}
+                              {journalTradeId === trade.tradeId ? (
+                                <JournalEditor
+                                  journalType={trade.side === 'BUY' ? 'BUY' : 'SELL'}
+                                  tradeId={trade.tradeId}
+                                  mode="create"
+                                  onSaved={() => setJournalTradeId(null)}
+                                  onCancel={() => setJournalTradeId(null)}
+                                />
+                              ) : (
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setJournalTradeId(trade.tradeId)}
+                                  >
+                                    {trade.side === 'BUY' ? '매수 일기 쓰기' : '매도 회고 쓰기'}
+                                  </Button>
+                                  <LinkButton to="/journal" variant="ghost" size="sm">
+                                    내 투자일기
+                                  </LinkButton>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))
                   )}
                 </tbody>
