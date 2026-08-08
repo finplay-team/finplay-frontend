@@ -2,6 +2,77 @@
 
 ---
 
+# 6차 스코프 — 2차 MVP 화면 보강 + 랜딩 비주얼 (2026-08-08, 진행 중)
+
+배경·결정 근거는 `context-notes.md`의 "6차 스코프" 섹션에 있다. 먼저 읽는다.
+
+**대전제 (사용자 확정 2026-08-08).** 백엔드에 없는 내용을 프론트에서 만들어 채우지 않는다.
+프론트로 대체하는 선택지는 없다. 백엔드에 문제가 있으면 백엔드부터 고친다 — 우리는 백엔드 팀이다.
+→ 백엔드 결함 목록은 `docs/backend-issues.md`, 계약 정본 추출은 `docs/backend-contracts/`.
+
+## A. 백엔드 계약 추출 (병렬 에이전트)
+- [x] 백엔드 레포 위치 정정 — 로컬 `workspaces/tradeclass-api/chore-sse`는 **빈 디렉터리**.
+      정본은 GitHub `finplay-team/finplay` (gh api로 수신)
+- [x] `docs/backend-contracts/journal-ranking.md` — JOUR-001~006, RANK-001~002
+- [x] `docs/backend-contracts/community-candle.md` — COM-004~005, MKT-009
+- [x] `docs/backend-contracts/ai-feedback.md` — FEED-006~011 (+ spec.md 정본으로 §C-4·C-5 보강)
+- [ ] **`lmt-watch.md` — LMT-001~005 + WATCH-001~003 (에이전트 유실, 재실행 필요)**
+      ↳ order 계약이 없으면 `docs/backend-issues.md`의 `X-1`(limit 정책 불일치) 범위가 확정되지 않고
+        전체 백엔드 결함 파악이 반쪽이다. **이것이 다음 세션 1순위다.**
+- [x] upstream spec 정본 수신 → `.backend-docs/upstream/` (gitignore, 필요 시 재수신)
+
+## B. 화면 갭 분석 (완료 — 요청 목록 전부 미구현 확인)
+- [x] AI 피드백 6종 / 투자일기 6종 / 랭킹 2종 / 지정가 5종 / 관심목록 3종 / 커뮤니티 고도화 2종 — **전부 없음**
+- [x] 추가 발견 — MKT-009 일·주·월봉 미노출, PORT-003 `getOrders()` 필수 `market` 누락(호출부 0개)
+
+## C. 랜딩 비주얼 (완료)
+- [x] `impeccable` 설치 (global). `taste-skill`은 `skills-lock.json`대로 이미 있어 미설치
+- [x] motionsites.ai 조사 — **디자인/코드 라이브러리가 아니라 AI 프롬프트 갤러리**(유료 Pricing 존재).
+      기법 이름만 참고: Liquid Glass 계열, Orbis(애스트로넛), Nimbus Sticky Cards
+- [x] 색 방침 — **바이올렛 보색 추가 취소.** 민트 하나를 광도·투명도로 쓰고 코인은 기존 앰버 유지.
+      토큰 값 변경 0건 (`tailwind.config.js` 미수정)
+- [x] `.glass` / `.glass-sheen` 프리미티브 (`index.css`) — 뒤에 움직이는 것이 있을 때만 사용
+- [x] `hooks/useScrollProgress.ts` — sticky 구간 진행도, `prefers-reduced-motion`이면 1 고정
+- [x] `components/landing/ReplayScrub.tsx` — 스크롤 = 장중 시간축. `ReplayStream.tsx` 대체·삭제
+- [x] `components/landing/Mascot.tsx` — SVG 애스트로넛, 커서 추적. 의존성 0KB
+- [x] `components/landing/MascotTutorial.tsx` — 시작 3단계 안내
+- [x] `pages/Landing.tsx` 재배선
+
+### C-1. 랜딩에서 지킨 것 (사용자 지적 반영)
+- [x] **가짜 캔들 데이터 제거.** 초안이 시드 PRNG로 OHLC를 만들어 그렸다 — 없는 시세를 만든 것이라
+      전면 폐기하고 **390분 눈금 사다리**로 교체. 이 섹션이 쓰는 데이터는 "09:00~15:30 = 390분" 하나뿐
+- [x] 카드 문구 전부 백엔드 실동작 근거 (FEED-009 전장 구간 한정 / FEED-006 `reveal_time` 게이트 /
+      MKT-002 기록된 가격 체결 / FEED-007·010·011 서비스 날짜 15:30 개방)
+
+## D. 랜딩 검증 (완료 — 실측)
+- [x] `npm run build` 통과, 타입 에러 0, 88 모듈, JS gzip **87.63KB** (Three.js 미도입으로 증가 없음)
+- [x] Chrome 확장 여전히 안 붙음 → CDP(9333) + `puppeteer-core --no-save` 우회 (5차와 동일)
+- [x] 데스크톱 1440×900 · 모바일 390×844 배치 촬영 (스크럽 진행도 8%·45%·95% + 이후 섹션 전부)
+- [x] 콘솔 에러 0건, 페이지 가로 스크롤 0 (`.orb` 오버플로 경고는 부모 `overflow-hidden`에 갇힌 오탐)
+
+### D-1. 검증에서 고친 것 (전부 재현 → 수정 → 재검증)
+- [x] **모바일에서 눈금 사다리가 통째로 사라짐** — DOM 390개에 `flex-1`은 358px 폭에서 서브픽셀이 되어
+      소멸한다. → 반복 배경(`background-size: calc(100%/N)`) + `clip-path`로 교체, DOM 390개 → 4개
+- [x] **모바일에서 정시 눈금이 안 보임** — duty를 `%`로 두면 좁은 폭에서 같이 소멸.
+      → 정시만 고정 `1.5px`로 바꿔 어느 폭에서도 시간 구조가 읽힌다
+- [x] 모바일 제목이 내비 뒤로 잘림 + 카드가 화면 밖으로 넘침 → `pt-24` 확보 + 카드 2×2 그리드
+- [x] 닫힌 카드 본문이 `opacity 0.18`로 남아 대비 기준 미달 → 껍데기만 남기고 내용은 완전히 감춤
+- [x] 말풍선이 헬멧을 덮고 `3단계|면`이 어절 중간에서 끊김 → 일반 흐름으로 이동 + 단어를 span에 통째로
+- [x] 시계 숫자 겹침은 **버그 아님** — Space Grotesk `1` 글리프의 가로 막대. 2배 확대·폰트 로드 상태로 확인
+
+## E. 남은 것 (다음 세션)
+- [ ] **A의 `lmt-watch.md` 재추출 (1순위)** — LMT/WATCH를 에이전트 2개로 분리 권장.
+      하나로 묶었을 때 가장 무거웠고(`015-limit-order` spec 48KB + plan 82KB) 그게 유실 원인으로 보인다
+- [ ] `docs/backend-issues.md`에 order·watchlist 도메인 절 추가 → 그 뒤 GitHub 이슈 등록 (승인 대기)
+- [ ] 목표 1 구현 착수 — 순서는 지정가·관심목록 → 투자일기·랭킹 → AI 피드백 → 커뮤니티 고도화
+- [ ] `services/types.ts` 신규 타입은 **메인이 한 번에 정의**한 뒤 화면을 병렬로 나눈다
+      (도메인 6개가 같은 파일을 건드려 병렬 충돌이 나는 구조다)
+- [ ] 프론트 자체 버그 8건 수정 (`docs/backend-issues.md` 말미 표)
+- [ ] 랜딩 커밋 (승인 대기)
+- [ ] 3D 마스코트 — `.glb` 도착 시 `Mascot.tsx`만 교체. 미도착 상태
+
+---
+
 # 4차 스코프 — 실백엔드 연동 (2026-07-30, 진행 중)
 
 배경·결정 근거는 `context-notes.md`의 "4차 스코프" 섹션에 있다. 먼저 읽는다.

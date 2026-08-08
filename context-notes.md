@@ -368,3 +368,155 @@ Flyway 마이그레이션 시드는 **기각**: `service_date`가 "요청 시점
 폐기는 재발급·로그아웃 소관)` 이라고 명시돼 있다. `refresh_tokens` 가 세션당 한 행이고, 전체 폐기
 (`revokeAllActiveByUserId`)는 이메일 변경 때만 부른다 — "변경하면 모든 기기에서 로그아웃" 문구 자체가
 다중 세션을 전제한다. 다만 **"내 로그인 기기 목록 / 특정 세션만 끊기" 가 없다** — 필요하면 백엔드 이슈감이다.
+
+---
+
+# 6차 스코프 — 2차 MVP 화면 보강 + 랜딩 비주얼 (2026-08-08)
+
+여기서부터가 현재 작업이다. 위쪽과 충돌하면 **이 섹션이 우선**이다.
+
+## 대전제 (사용자 확정)
+
+**백엔드에 없는 내용을 프론트에서 만들어 채우지 않는다. 프론트로 대체한다는 선택지는 없다.
+백엔드에 문제가 있으면 백엔드 자체부터 고친다 — 우리는 백엔드 부트캠프 팀이다.**
+
+이 원칙은 4차의 "백엔드에 없는 기능은 화면에서 제거한다"를 한 단계 강화한 것이다. 4차는 "없으면 지운다"였고,
+6차는 **"결함이면 백엔드를 고친다"** 다. 프론트에서 우회 코드로 덮으면 결함이 계약에 남아 다음 소비자가
+같은 함정을 다시 밟는다. → 결함 목록은 `docs/backend-issues.md`에 도메인별로 분리해 적는다.
+
+이 원칙에 걸려 실제로 폐기한 것이 있다. 랜딩 `ReplayScrub` 초안이 시드 고정 PRNG로 캔들 OHLC를
+만들어 그렸다. "예시 도형"이라 주석을 달았지만 없는 시세를 만든 것이므로 전면 폐기했다.
+랜딩은 비인증 공개 페이지라 시세 API(Bearer 필수)를 붙일 수도 없다. → **390분 눈금 사다리**로 교체했고
+이 섹션이 쓰는 데이터는 "09:00~15:30 = 390분" 하나뿐이다.
+
+## D8. 백엔드 레포는 로컬에 없다 — GitHub이 정본이다
+
+`C:\Users\user\orca\workspaces\tradeclass-api\chore-sse`는 **빈 디렉터리**다. 4차 노트가 적어 둔
+`C:\Users\user\Desktop\tradeclass-api`도 지금은 없다. 실제 정본은 **`finplay-team/finplay`** 이고
+`gh api repos/finplay-team/finplay/contents/docs/...`로 읽는다 (레포 이름이 `tradeclass-api`가 아니다).
+
+PowerShell에서 `gh --jq`에 `+`나 문자열 연결을 쓰면 인자가 쪼개져 `accepts 1 arg(s), received 2`가 난다.
+`gh api ... | ConvertFrom-Json`으로 받아 PowerShell에서 다루는 편이 안전하다.
+
+## D9. 계약 문서는 `api-contracts.md`만으로 부족하다 — spec.md까지 받아야 한다
+
+`api-contracts.md`(164KB)가 `docs/specs/012-ai-feedback/spec.md`의 §C-4·C-5를 수십 번 참조하는데
+그 파일을 안 받으면 상태 판정 순서와 게이트 판정식을 알 수 없다. 실제로 첫 추출이 그 부분을
+"문서에 명시 없음"으로 남겼고, upstream spec을 받아서야 채웠다.
+→ `.backend-docs/upstream/`에 spec 정본을 받아 두는 절차를 먼저 밟는다 (gitignore 대상, 필요 시 재수신).
+
+**내 지시가 틀렸던 사례를 남긴다.** 에이전트에게 `peerComparison`이 3상태라고 알려줬는데(PRD 산문에서
+3개만 언급된다) spec.md:332 기준 열거형 `PostSellFeedbackStatus`는 **4상태**(`READY`·`NOT_YET`·
+`INSUFFICIENT_SAMPLE`·`NO_EVENT`)다. 에이전트가 정본을 근거로 내 지시를 반박한 것이 맞았다.
+→ PRD 산문을 계약 근거로 쓰지 않는다. 열거형은 spec.md가 정본이다.
+
+## D10. AI 피드백에는 하나의 boolean 게이트로 묶으면 안 되는 구간이 있다
+
+`postSellFlow`·`counterfactuals`는 **시각** 게이트(그 체결의 서비스 날짜 15:30)이고
+`peerComparison`은 **행 존재** 게이트다. 축이 다르므로 장 마감 배치가 15:30보다 늦게 돌면
+`postSellFlow=READY` + `peerComparison=NOT_YET` 구간이 실존한다(spec.md:1366이 15:31 조회로 명시).
+→ 섹션별 `status`를 각각 읽어 따로 렌더한다.
+
+또 `EMPTY`·`UNAVAILABLE`에서도 `items`가 채워진다. `status !== 'READY'`로 빈 상태를 그리는
+자연스러운 구현이 **목록을 통째로 잃는다.** 그리고 서술은 재생성이 성공할 때만 게이트가 닫히므로
+같은 `tradeId`를 다시 조회하면 `narrative` 문장이 바뀔 수 있다 → 로컬 영구 캐시 금지.
+
+## D11. 랜딩 색·폰트는 유지한다 (바이올렛 추가 취소)
+
+사용자가 "안 어울리면 바꿔도 된다"고 했고 내가 처음엔 보색(딥 바이올렛) 추가를 추천했지만 **취소했다.**
+단조로움의 원인이 색이 아니라 **모션이 1종류**였기 때문이다 — 섹션 7개가 전부 같은 `py-20` + 가운데
+정렬 헤더 + 카드 그리드 + `.reveal` 페이드업이었다. 색을 늘리면 "차별점"이라는 목표와 반대로 브랜드가 흐려진다.
+→ `tailwind.config.js` **변경 0건.** 민트 하나를 광도·투명도 단계로 쓰고 코인은 기존 앰버를 유지했다.
+
+해법은 **결정적 순간 하나를 만들고 나머지를 조용하게** 두는 것이다. 그 하나가 `ReplayScrub`이고,
+유리(glass)를 장식이 아니라 기능으로 쓴다 — 카드 뒤로 눈금이 실제로 비쳐 보이는 자리에만 둔다.
+
+`.bezel`이 이미 유리 표면(`bg-white/[0.04]` + `backdrop-blur-sm` + `ring-white/[0.06]`)이라
+liquid-glass는 새로 만드는 것이 아니라 확장이었다.
+
+## D12. motionsites.ai는 디자인 라이브러리가 아니다
+
+**AI 프롬프트 갤러리**다(Lovable·Bolt·Cursor용, Pricing 페이지 별도). 카드마다 `Copy full prompt`가
+있고 프롬프트 본문은 DOM에 없어 스크레이핑으로 못 얻는다. 색·폰트를 안 베끼기로 했으므로 어차피
+**기법 이름만 참고**하면 목적은 달성된다 — Liquid Glass 계열, Orbis(애스트로넛), Nimbus Sticky Cards.
+
+## D13. 스크롤 연동 눈금은 DOM이 아니라 반복 배경으로 그린다
+
+390개 `<span>`에 `flex-1`을 주면 **358px 폭에서 서브픽셀이 되어 눈금이 통째로 사라진다**(모바일에서
+실제로 사라졌다). 반복 배경(`background-size: calc(100% / N) 100%`)은 폭에 비례해 스케일되므로
+좁은 화면에서는 촘촘한 띠로 열화되며 사라지지 않는다. DOM 390개 → 4개로도 줄었다.
+
+공개 구간은 **요소 폭을 줄이지 않고 `clip-path: inset()`으로 잘라낸다.** 폭을 줄이면 배경 타일 기준이
+같이 줄어 미공개 레이어와 눈금이 어긋난다.
+
+duty(눈금 두께)를 `%`로 두면 좁은 폭에서 같이 소멸한다. **정시 눈금만 고정 `1.5px`**로 두면
+어느 폭에서도 선이 살아 시간 구조가 읽힌다.
+
+## D14. 3D 마스코트는 SVG 기본선으로 먼저 만들었다
+
+`.glb`(Tripo/Meshy 산출물)가 도착하지 않았다. `three` + `@react-three/fiber` + `drei`는 번들
+**~600KB gzip**이라 의존성 3개짜리 앱에서 큰 결정이고, 당시 메모리 부족으로 `npm install`도 위험했다.
+→ `Mascot.tsx`를 SVG로 만들어 의존성 0KB로 같은 역할(시선 유도)을 하게 했다. 커서 추적은
+`pointermove` + rAF, `(hover: hover)`와 `prefers-reduced-motion`을 먼저 검사한다.
+**바깥에 노출하는 props는 `className` 하나뿐**이라 3D 도착 시 이 파일만 교체하면 된다.
+
+## 이 환경의 운영 지식 (다음 사람이 같은 데서 막히지 않도록)
+
+### 병렬 에이전트는 이 머신에서 4개가 상한이다
+
+16GB RAM에서 에이전트 4개 + node를 동시에 돌리자 여유가 0.8GB로 떨어지고
+`node`가 **"The paging file is too small for this operation to complete"**로 죽었다.
+계약 추출 에이전트 4개 중 **1개(order/LMT·WATCH)가 산출물 없이 유실**됐다.
+
+병렬의 진짜 병목은 토큰이 아니라 **파일 충돌**이다. 도메인 6개가 `services/types.ts`·`App.tsx`·`Nav.tsx`
+셋을 공유하므로, 계약 추출(읽기 전용, 각자 자기 파일만 씀)은 병렬이 이득이지만
+화면 구현은 **메인이 `types.ts`를 먼저 한 번에 정의한 뒤** 나눠야 한다.
+랜딩처럼 토큰·리듬·모션이 서로 물린 작업은 병렬이 명확히 손해다.
+
+### 메모리 도둑은 Serena였다 (제거함)
+
+java 프로세스 5개(최대 1.7GB, 합 2.6GB)가 전부 **Serena가 띄운 Eclipse JDT 언어서버**였고
+**같은 워크스페이스 해시**(`c6f07a3d7be7606230e85b03ac8a3a17`)를 가리키고 있었다. 세션마다 새로 띄우고
+회수하지 않는 누수다. IntelliJ·Docker·백엔드가 아니었다 — 확인해 보니 Docker 데몬은 꺼져 있었고
+MySQL은 네이티브(`mysqld`)였고 **8080은 리스닝조차 아니었다**(백엔드 서버가 안 떠 있었다).
+
+사용자 요청으로 제거했다. `claude mcp remove serena` → `.claude.json`에서 삭제
+(백업 `.claude.json.bak-20260808-serena`), 언어서버 5개 종료, `~/.serena/language_servers` 2GB 삭제.
+`memories` 폴더가 비어 있어 잃은 사용자 데이터는 없다.
+**여유 메모리 0.8GB → 6.1GB.**
+
+### claude-mem 훅이 프롬프트를 차단하는 교착이 있다
+
+`UserPromptSubmit operation blocked by hook` + `claude-mem worker unreachable for N consecutive hooks`가
+뜨면 **사용자 메시지가 에이전트에 도달하지 않는다**(이번에 최소 2개 유실됐고 카운터가 141까지 갔다).
+
+크래시가 아니라 **자기 자신을 막는 교착**이다. 로그가 이 4단계를 무한 반복한다.
+
+```
+Port in use, waiting for worker to become healthy
+Port in use but worker not responding to health checks
+Port already in use, refusing to start duplicate {port=37777}
+Worker port did not open after lazy-spawn within the cold-boot wait (~15s)
+```
+
+원인은 워커(bun)가 죽었는데 **죽은 PID가 37777을 `Listen` 상태로 계속 점유**하는 것이다.
+워커가 남긴 chroma 고아 트리가 리스닝 소켓 핸들을 상속해 물고 있어서 포트가 해제되지 않고,
+claude-mem은 "포트가 이미 쓰인다"며 새 워커를 거부한다.
+
+복구 절차.
+1. `Get-NetTCPConnection -LocalPort 37777`로 점유 PID 확인 (존재하지 않는 PID면 상속 핸들이다)
+2. `--data-dir .../.claude-mem/chroma`로 뜬 chroma 고아 프로세스 종료 → 포트 해제 확인
+3. `~/.claude-mem/supervisor.json`(죽은 PID가 적혀 있다)과 `state/hook-failures.json` 초기화
+4. `~/.bun/bin/bun.exe <plugin>/scripts/worker-service.cjs` 로 재기동 → `http://localhost:37777` 200 확인
+
+`claude-mem.db`는 절대 건드리지 않는다.
+
+### 브라우저 검증은 여전히 CDP 우회다
+
+Chrome 확장은 이번에도 안 붙었다(`Browser extension is not connected`). 5차와 같은 방법을 쓴다 —
+별도 Chrome을 `--remote-debugging-port=9333`로 띄우고 `puppeteer-core`(`npm i --no-save`로
+package.json을 더럽히지 않는다)로 조작한다. 5차의 창 가림 플래그 3개는 계속 필요하다.
+검증 스크립트는 `.backend-docs/shoot.mjs`(gitignore)에 있고 데스크톱·모바일을 한 번에 돈다.
+
+`.orb`가 가로 오버플로로 검출되는 것은 **오탐**이다 — 부모 섹션에 `overflow-hidden`이 있어
+`documentElement.scrollWidth`는 초과하지 않는다. 판정은 요소 `right`가 아니라 문서 `scrollWidth`로 한다.
