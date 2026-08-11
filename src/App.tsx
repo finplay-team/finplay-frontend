@@ -3,6 +3,7 @@ import { Route, Routes, useLocation } from 'react-router-dom'
 import { Nav } from './components/Nav'
 import { Footer } from './components/Footer'
 import { ProtectedRoute } from './auth/ProtectedRoute'
+import { RequireTutorial } from './auth/RequireTutorial'
 import { Landing } from './pages/Landing'
 import { Signup } from './pages/Signup'
 import { Login } from './pages/Login'
@@ -15,6 +16,7 @@ import { Journal } from './pages/Journal'
 import { Rankings } from './pages/Rankings'
 import { News } from './pages/News'
 import { Feedback } from './pages/Feedback'
+import { Tutorial } from './pages/Tutorial'
 import { Support } from './pages/Support'
 import { NotFound } from './pages/NotFound'
 
@@ -32,11 +34,25 @@ export default function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/support" element={<Support />} />
+          {/*
+            튜토리얼은 그 자체가 강제 이동 목적지라 RequireTutorial 로 감싸면 안 된다(무한 리다이렉트).
+            로그인만 필요하다.
+          */}
+          <Route
+            path="/tutorial"
+            element={
+              <ProtectedRoute>
+                <Tutorial />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/trade"
             element={
               <ProtectedRoute>
-                <Trade />
+                <RequireTutorial>
+                  <Trade />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -44,7 +60,9 @@ export default function App() {
             path="/portfolio"
             element={
               <ProtectedRoute>
-                <Portfolio />
+                <RequireTutorial>
+                  <Portfolio />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -53,7 +71,9 @@ export default function App() {
             path="/community"
             element={
               <ProtectedRoute>
-                <Community />
+                <RequireTutorial>
+                  <Community />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -61,7 +81,9 @@ export default function App() {
             path="/community/:postId"
             element={
               <ProtectedRoute>
-                <CommunityPost />
+                <RequireTutorial>
+                  <CommunityPost />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -69,7 +91,9 @@ export default function App() {
             path="/journal"
             element={
               <ProtectedRoute>
-                <Journal />
+                <RequireTutorial>
+                  <Journal />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -77,7 +101,9 @@ export default function App() {
             path="/news"
             element={
               <ProtectedRoute>
-                <News />
+                <RequireTutorial>
+                  <News />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -85,7 +111,9 @@ export default function App() {
             path="/feedback"
             element={
               <ProtectedRoute>
-                <Feedback />
+                <RequireTutorial>
+                  <Feedback />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -93,7 +121,9 @@ export default function App() {
             path="/rankings"
             element={
               <ProtectedRoute>
-                <Rankings />
+                <RequireTutorial>
+                  <Rankings />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
@@ -101,7 +131,9 @@ export default function App() {
             path="/me"
             element={
               <ProtectedRoute>
-                <MyPage />
+                <RequireTutorial>
+                  <MyPage />
+                </RequireTutorial>
               </ProtectedRoute>
             }
           />
