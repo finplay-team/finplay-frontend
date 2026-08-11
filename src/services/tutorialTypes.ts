@@ -52,6 +52,57 @@ export interface SyntheticPriceSeriesResponse {
   prices: number[]
 }
 
+/* ---------- 2단계 코인 전용: 가상 가격 세션·교육 지정가 (030) ---------- */
+
+export type PracticePriceSessionStatus = 'ACTIVE' | 'COMPLETED'
+
+/**
+ * 사용자·종목당 ACTIVE 세션 1개만 허용된다. 매 tick 당 결정적 ±1% 변동(seed 는 노출되지 않는다).
+ * tick 99 에 도달하면 status 가 COMPLETED 로 전이하고 그 세션의 미체결 주문은 서버가 자동 취소한다.
+ */
+export interface PracticePriceSessionResponse {
+  sessionId: number
+  instrumentId: number
+  status: PracticePriceSessionStatus
+  generatorVersion: number
+  startPrice: Decimal
+  currentTick: number
+  currentPrice: Decimal
+  tickSeconds: number
+  totalTicks: number
+  createdAt: LocalDateTimeString
+  completedAt: LocalDateTimeString | null
+}
+
+/**
+ * quantity 는 1단계 의도(PracticeIntentionResponse.quantity)와 반드시 같아야 한다 —
+ * 026 chain 해석이 buyTrade 수량과 intention 수량의 일치를 요구한다. side 는 서버가 BUY로 고정한다.
+ */
+export interface PracticeLimitOrderCreateRequest {
+  practicePriceSessionId: number
+  instrumentId: number
+  /** 문자열로 보낸다 (부동소수 오차 회피, orderService 의 지정가 주문과 같은 규칙) */
+  quantity: string
+  limitPrice: string
+}
+
+/**
+ * order 도메인의 LimitOrderResponse 와 같은 모양을 재사용한다. 생성 응답의 status 는 항상
+ * PENDING 이다 — 체결은 세션 tick 진행에서만 일어나고 이 응답에는 반영되지 않는다(체결 감지는
+ * orderService.getOrders 로 별도 확인해야 한다).
+ */
+export interface PracticeLimitOrderResponse {
+  orderId: number
+  market: 'CRYPTO'
+  instrumentId: number
+  side: 'BUY'
+  orderType: 'LIMIT'
+  status: 'PENDING'
+  quantity: Decimal
+  limitPrice: Decimal
+  requestedAt: LocalDateTimeString
+}
+
 /* ---------- 3단계: 가격 관찰·복기 (holding 기준, 026) ---------- */
 
 export type PracticeEvidenceType = 'CLOSER_TO_BOUNDARY' | 'TIMED_REPETITION'

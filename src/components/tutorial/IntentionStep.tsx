@@ -4,6 +4,7 @@ import type { FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
+import { CoinPriceSessionBuyStep } from './CoinPriceSessionBuyStep'
 import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { formatKRW } from '../../lib/format'
@@ -69,8 +70,11 @@ export function IntentionStep({
   /** 아직 의도를 안 만들었으면 null — 부모(Tutorial.tsx)가 상태를 들고 있는다(페이지 이동해도 안 날아가게). */
   intention: PracticeIntentionResponse | null
   onIntentionCreated: (intention: PracticeIntentionResponse) => void
-  /** 실제 매수 체결 성공 시 호출 — 부모가 진행 상태를 다시 읽도록 트리거한다. */
-  onBought: (execution: OrderExecutionResponse) => void
+  /**
+   * 실제 매수 체결 성공 시 호출 — 부모가 진행 상태를 다시 읽도록 트리거한다.
+   * 코인 지정가 체결 경로(CoinPriceSessionBuyStep)는 체결 정보를 따로 갖고 있지 않아 인자 없이 부른다.
+   */
+  onBought: (execution?: OrderExecutionResponse) => void
 }) {
   const isCrypto = favorite.market === 'CRYPTO'
   const unit = isCrypto ? '개' : '주'
@@ -133,6 +137,8 @@ export function IntentionStep({
   const [buying, setBuying] = useState(false)
   const [execution, setExecution] = useState<OrderExecutionResponse | null>(null)
   const [successNonce, setSuccessNonce] = useState(0)
+  // 코인은 가상 가격 세션·지정가 체결이라 execution(시장가 체결 결과)이 없다 — 체결 여부만 따로 기억한다.
+  const [cryptoFilled, setCryptoFilled] = useState(false)
 
   const loadReferenceData = useCallback(() => {
     // 순수 참고용 미니 차트라 실패해도 조용히 생략한다(evidence 판정과 무관).
@@ -310,7 +316,27 @@ export function IntentionStep({
               </p>
             </div>
 
-            {execution === null ? (
+            {isCrypto ? (
+              cryptoFilled ? (
+                <div className="mt-5 rounded-xl bg-elevated p-4">
+                  <p className="text-sm font-semibold text-ink">
+                    {intention.quantity.toLocaleString('ko-KR')}
+                    {unit} 지정가 매수를 체결했습니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-5">
+                  <CoinPriceSessionBuyStep
+                    instrumentId={favorite.instrumentId}
+                    quantity={intention.quantity}
+                    onFilled={() => {
+                      setCryptoFilled(true)
+                      onBought()
+                    }}
+                  />
+                </div>
+              )
+            ) : execution === null ? (
               <div className="mt-5 rounded-xl bg-elevated p-4">
                 <p className="text-sm font-semibold text-ink">매수 확인</p>
                 <p className="mt-2 tabular text-sm text-ink">
@@ -321,11 +347,9 @@ export function IntentionStep({
                       ? formatKRW(priceInfo.price)
                       : '조회 중…'}
                 </p>
-                {market === 'STOCK' && (
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted">
-                    주식은 09:00~15:30 장중에만 체결됩니다. 장 시간이 아니면 매수 버튼을 눌렀을 때 안내됩니다.
-                  </p>
-                )}
+                <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                  주식은 09:00~15:30 장중에만 체결됩니다. 장 시간이 아니면 매수 버튼을 눌렀을 때 안내됩니다.
+                </p>
                 {buyError && <p className="mt-2 text-sm text-rose-300">{buyError}</p>}
                 <Button type="button" className="mt-3" disabled={buying} onClick={() => void handleBuy()}>
                   {buying ? '매수하는 중…' : `${intention.quantity.toLocaleString('ko-KR')}${unit} 시장가로 매수`}
