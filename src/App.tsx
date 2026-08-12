@@ -7,6 +7,7 @@ import { RequireTutorial } from './auth/RequireTutorial'
 import { Landing } from './pages/Landing'
 import { Signup } from './pages/Signup'
 import { Login } from './pages/Login'
+import { OAuthCallback } from './pages/OAuthCallback'
 import { Trade } from './pages/Trade'
 import { Portfolio } from './pages/Portfolio'
 import { Community } from './pages/Community'
@@ -23,7 +24,10 @@ import { NotFound } from './pages/NotFound'
 export default function App() {
   const location = useLocation()
   // 인증 페이지는 자체 풀스크린 레이아웃이라 푸터를 숨긴다
-  const hideChrome = location.pathname === '/login' || location.pathname === '/signup'
+  const hideChrome =
+    location.pathname === '/login' ||
+    location.pathname === '/signup' ||
+    location.pathname.startsWith('/oauth/')
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
@@ -33,6 +37,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/oauth/:provider/callback" element={<OAuthCallback />} />
           <Route path="/support" element={<Support />} />
           {/*
             튜토리얼은 그 자체가 강제 이동 목적지라 RequireTutorial 로 감싸면 안 된다(무한 리다이렉트).

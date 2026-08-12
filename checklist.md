@@ -2,6 +2,44 @@
 
 ---
 
+# 7차 스코프 — 카카오·네이버 OAuth 로그인 연동 (2026-08-12, 이슈 #11, 진행 중)
+
+배경·결정 근거는 `context-notes.md`의 "7차 스코프" 섹션(D21·D22)에 있다. 먼저 읽는다.
+
+## A. 준비 (완료)
+- [x] 프론트·백엔드 GitHub 이슈 전수 확인 — 겹치는 진행 중 작업 없음 확인
+- [x] 백엔드 실제 컨트롤러 코드 확인 — `OAuthAuthorizationController`·`OAuthCallbackController`·
+      `KakaoOAuthCallbackProvider`·`NaverOAuthCallbackProvider` (`C:\Users\user\Desktop\tradeclass-api`)
+- [x] 콜백 응답이 프론트로 리다이렉트하지 않는다는 것을 확인, 연동 방식 확정(D21) — 프론트 콜백 라우트
+- [x] 이슈 [#11](https://github.com/finplay-team/finplay-frontend/issues/11) 등록
+- [x] 브랜치 `namdongyeob/oauth-login` 생성 (`origin/main` 기준)
+
+## B. 코드 구현 (완료)
+- [x] `services/types.ts` — `OAuthProvider` 타입 추가
+- [x] `services/authService.ts` — `exchangeOAuthCallback(provider, code, state)`
+- [x] `auth/AuthContext.tsx` — `loginWithOAuth(provider, code, state)`
+- [x] `components/SocialLoginButtons.tsx` 신규
+- [x] `pages/OAuthCallback.tsx` 신규
+- [x] `pages/Login.tsx` 버튼 배치
+- [x] `pages/Signup.tsx` 1단계 버튼 배치
+- [x] `lib/errorMessages.ts` — OAuth 오류 코드 4종 매핑
+- [x] `App.tsx` — `/oauth/:provider/callback` 라우트 + `hideChrome` 조건
+
+## C. 검증
+- [x] `npm run build` 통과 — 타입 에러 0, 115 모듈, JS gzip 110.96KB
+- [ ] (배포 설정 완료 후) 실제 카카오/네이버 계정으로 브라우저 로그인 end-to-end 확인
+
+## D. 배포 설정 (코드 밖, 별도 진행 — 대화에서 안내함)
+
+실제 도메인(Route 53, 사용자 확인) — `https://finplay.site/`.
+
+- [x] 카카오 개발자센터 콘솔에 Redirect URI `https://finplay.site/oauth/kakao/callback` 추가 (사용자 확인 2026-08-12)
+- [x] 네이버 개발자센터 콘솔에 Callback URL을 `https://finplay.site/oauth/naver/callback`으로 교체 (사용자 확인 2026-08-12)
+- [ ] 배포 서버 `.env`의 `KAKAO_REDIRECT_URI`·`NAVER_REDIRECT_URI`를 위 값과 정확히 일치하도록 변경 — 확인 필요
+- [ ] 컨테이너 재기동 후 실제 카카오/네이버 계정으로 `https://finplay.site/login`에서 로그인 end-to-end 확인
+
+---
+
 # 6차 스코프 — 2차 MVP 화면 보강 + 랜딩 비주얼 (2026-08-08, 진행 중)
 
 배경·결정 근거는 `context-notes.md`의 "6차 스코프" 섹션에 있다. 먼저 읽는다.

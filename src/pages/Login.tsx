@@ -2,6 +2,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { AuthLayout } from '../components/AuthLayout'
+import { SocialLoginButtons } from '../components/SocialLoginButtons'
 import { Button } from '../components/ui/Button'
 import { Field } from '../components/ui/Field'
 import { useAuth } from '../auth/AuthContext'
@@ -92,6 +93,9 @@ export function Login() {
           {loading ? '로그인 중…' : '로그인'}
         </Button>
       </form>
+      <div className="mt-6">
+        <SocialLoginButtons />
+      </div>
     </AuthLayout>
   )
 }
