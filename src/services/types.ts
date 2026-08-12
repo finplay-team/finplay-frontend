@@ -93,7 +93,12 @@ export interface EmailChangeConfirmRequest {
 
 /* ---------- 종목·시세 ---------- */
 
-/** GET /api/instruments — bare array. Flyway 시드 28건 (id 1~16 STOCK, 17~28 CRYPTO). */
+/**
+ * GET /api/instruments — bare array. Flyway 시드 28건(id 1~16 STOCK, 17~28 CRYPTO) +
+ * 튜토리얼 전용 샘플 종목 6건(시장당 3개, 031). isTutorialSample 종목 중 tradable=false인
+ * 2개는 목록에 노출되지만 즐겨찾기·매수·매도 대상에서 배제된다(즐겨찾기 등록만 명시 거부, 나머지는
+ * 애초에 선택 UI에서 막는다).
+ */
 export interface Instrument {
   instrumentId: number
   market: Market
@@ -102,6 +107,7 @@ export interface Instrument {
   tickSize: Decimal
   minOrderAmount: number
   tradable: boolean
+  isTutorialSample: boolean
 }
 
 export type PriceStatus = 'AVAILABLE' | 'UNAVAILABLE'

@@ -115,19 +115,28 @@ export function FavoriteStep({ market }: { market: Market }) {
             results.map((instrument) => {
               const favorited = isFavorited(instrument.instrumentId)
               const rowBusy = busy.has(instrument.instrumentId)
+              // tradable=false 샘플 종목(031)은 목록에 보이지만 선택할 수 없다 — 숨기지 않고 버튼만 막는다.
+              const selectable = instrument.tradable
               return (
                 <li key={instrument.instrumentId} className="flex items-center justify-between gap-3 px-4 py-3">
                   <div>
-                    <p className="text-[15px] text-ink">{instrument.name}</p>
+                    <p className="text-[15px] text-ink">
+                      {instrument.name}
+                      {instrument.isTutorialSample && (
+                        <span className="ml-2 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-muted">
+                          연습용
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted">{instrument.symbol}</p>
                   </div>
                   <Button
                     variant={favorited ? 'ghost' : 'soft'}
                     size="sm"
-                    disabled={rowBusy}
+                    disabled={rowBusy || !selectable}
                     onClick={() => handleToggle(instrument.instrumentId)}
                   >
-                    {favorited ? '해제' : '즐겨찾기'}
+                    {!selectable ? '선택 불가' : favorited ? '해제' : '즐겨찾기'}
                   </Button>
                 </li>
               )

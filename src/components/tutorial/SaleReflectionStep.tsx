@@ -1,0 +1,190 @@
+// 튜토리얼 4단계(샘플 종목 전용) — 5분 안에 매도하고 복기를 남겨 실습을 완료한다
+import { useCallback, useEffect, useState } from 'react'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { parseLocalDateTime } from '../../lib/datetime'
+import { toUserMessage } from '../../lib/errorMessages'
+import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
+import { bumpAccount } from '../../lib/accountPulse'
+import { bumpTutorial } from '../../lib/tutorialPulse'
+import { getHoldings } from '../../services/holdingService'
+import { placeOrder } from '../../services/orderService'
+import { saveHoldingReflection } from '../../services/tutorialService'
+import type { Market } from '../../services/types'
+
+const REFLECTION_MAX = 2000
+
+function formatRemaining(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+export function SaleReflectionStep({
+  market,
+  instrumentId,
+  holdingId,
+  expired,
+  saleDeadlineAt,
+  sellTradeId,
+  hasObservationEvidence,
+  onCompleted,
+}: {
+  market: Market
+  instrumentId: number
+  holdingId: number
+  /** 서버 status가 EXPIRED면 true — 5분을 넘겨 매도 없이 만료됨(031 SANDBOX-007) */
+  expired: boolean
+  saleDeadlineAt: string | null
+  sellTradeId: number | null
+  /**
+   * 3단계 evidence A/B(경계 접근·시간 분산)가 이미 충족됐는지 — holding-reflections는 매도 체결과
+   * 무관하게 이 조건도 함께 요구한다(026 원칙 상속). 미충족 상태로 저장을 시도하면 매도와는 무관한
+   * 409 PRACTICE_EVIDENCE_MISSING이 나서, 매도만 확인한 사용자에게는 원인이 헷갈릴 수 있어
+   * 버튼 자체를 막고 안내한다.
+   */
+  hasObservationEvidence: boolean
+  onCompleted: () => void
+}) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const [selling, setSelling] = useState(false)
+  const [sellError, setSellError] = useState<string | null>(null)
+  const [sold, setSold] = useState(sellTradeId !== null)
+
+  const idempotencyKey = useIdempotencyKey([market, instrumentId, holdingId])
+
+  const handleSell = useCallback(async () => {
+    setSelling(true)
+    setSellError(null)
+    try {
+      const holdings = await getHoldings(market)
+      const holding = holdings.find((h) => h.instrumentId === instrumentId)
+      const sellable = holding ? Number(holding.quantity) - Number(holding.reservedQuantity) : 0
+      if (!(sellable > 0)) {
+        setSellError('매도 가능한 수량이 없습니다.')
+        return
+      }
+      await placeOrder(
+        { market, instrumentId, side: 'SELL', orderType: 'MARKET', quantity: String(sellable) },
+        idempotencyKey,
+      )
+      setSold(true)
+      bumpTutorial()
+      bumpAccount()
+    } catch (e) {
+      setSellError(toUserMessage(e))
+    } finally {
+      setSelling(false)
+    }
+  }, [market, instrumentId, idempotencyKey])
+
+  const [answer, setAnswer] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [reflectError, setReflectError] = useState<string | null>(null)
+
+  const trimmedAnswer = answer.trim()
+  const canSubmit =
+    sold &&
+    hasObservationEvidence &&
+    trimmedAnswer.length > 0 &&
+    trimmedAnswer.length <= REFLECTION_MAX &&
+    !submitting
+
+  const handleSubmit = useCallback(async () => {
+    if (trimmedAnswer.length === 0) {
+      setReflectError('내용을 입력해 주세요.')
+      return
+    }
+    setSubmitting(true)
+    setReflectError(null)
+    try {
+      await saveHoldingReflection(holdingId, trimmedAnswer)
+      bumpTutorial()
+      onCompleted()
+    } catch (e) {
+      setReflectError(
+        toUserMessage(e, {
+          PRACTICE_EVIDENCE_MISSING: '아직 관찰 조건(3단계)을 채우지 못했습니다. 가격을 다시 확인해 주세요.',
+          PRACTICE_SANDBOX_TIME_EXPIRED: '5분이 지나 만료됐습니다. 다시 매수해서 재도전해 주세요.',
+        }),
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }, [trimmedAnswer, holdingId, onCompleted])
+
+  const deadlineMs = saleDeadlineAt ? parseLocalDateTime(saleDeadlineAt).getTime() : null
+  const remainingSeconds = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - nowMs) / 1000))
+  const timedOut = expired || (remainingSeconds !== null && remainingSeconds <= 0 && !sold)
+
+  if (timedOut) {
+    return (
+      <Card accent="none">
+        <div className="space-y-2 p-5">
+          <p className="text-sm text-ink">체결되지 않아 5분이 지나 만료됐습니다.</p>
+          <p className="text-xs text-muted">같은 종목을 다시 매수하면 새로 도전할 수 있습니다.</p>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card accent="none">
+        <div className="space-y-3 p-5">
+          {!sold && remainingSeconds !== null && (
+            <p className="tabular text-sm text-ink">매도까지 남은 시간 {formatRemaining(remainingSeconds)}</p>
+          )}
+          {sold ? (
+            <p className="text-sm text-ink">매도를 체결했습니다.</p>
+          ) : (
+            <>
+              {sellError && <p className="text-sm text-loss">{sellError}</p>}
+              <Button type="button" size="sm" disabled={selling} onClick={() => void handleSell()}>
+                {selling ? '매도하는 중…' : '지금 시장가로 매도'}
+              </Button>
+            </>
+          )}
+        </div>
+      </Card>
+
+      {sold && (
+        <Card accent="none">
+          <div className="space-y-3 p-5">
+            <div className="flex items-baseline justify-between">
+              <span className="text-xs font-medium text-ink">자유 복기</span>
+              <span
+                className={`text-[11px] tabular ${trimmedAnswer.length > REFLECTION_MAX ? 'text-loss' : 'text-muted'}`}
+              >
+                {answer.length.toLocaleString('ko-KR')}/{REFLECTION_MAX.toLocaleString('ko-KR')}
+              </span>
+            </div>
+            {!hasObservationEvidence && (
+              <p className="text-xs leading-relaxed text-muted">
+                3단계에서 가격이 손절·익절 경계에 가까워지거나 2분 이상 간격으로 3번 확인하면 복기를
+                저장할 수 있습니다.
+              </p>
+            )}
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              maxLength={REFLECTION_MAX}
+              rows={5}
+              placeholder="이번 매수~매도까지 어떤 판단을 했는지 적어보세요."
+              className="w-full resize-y rounded-2xl border border-line bg-elevated px-4 py-3 text-sm leading-relaxed text-ink outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15"
+            />
+            {reflectError && <p className="text-sm text-loss">{reflectError}</p>}
+            <Button type="button" size="sm" disabled={!canSubmit} onClick={() => void handleSubmit()}>
+              {submitting ? '저장 중…' : '저장'}
+            </Button>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}

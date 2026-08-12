@@ -6,6 +6,7 @@ import { MarketTabs } from '../components/ui/MarketTabs'
 import { FavoriteStep } from '../components/tutorial/FavoriteStep'
 import { IntentionStep } from '../components/tutorial/IntentionStep'
 import { ObservationReflectionStep } from '../components/tutorial/ObservationReflectionStep'
+import { SaleReflectionStep } from '../components/tutorial/SaleReflectionStep'
 import { PracticeLogRail } from '../components/tutorial/PracticeLogRail'
 import type { PracticeLogStep } from '../components/tutorial/PracticeLogRail'
 import { useTutorialProgress } from '../hooks/useTutorialProgress'
@@ -61,6 +62,9 @@ export function Tutorial() {
   const step1 = findStep(progress, 1)
   const step2 = findStep(progress, 2)
   const step3 = findStep(progress, 3)
+  // 샘플 종목 chain(031)만 4단계(매도·복기)를 갖는다 — steps 배열 길이로 구분한다.
+  const step4 = findStep(progress, 4)
+  const isSandboxChain = (progress?.steps.length ?? 0) === 4
 
   // 서버가 고른 chain 의 favoriteId. 아직 chain 이 없으면 이 시장에서 가장 먼저 등록한 favorite 로 대체한다
   // (favorite.createdAt ASC 가 서버 선택 규칙과 같다 — 016 진행조회 정본 참고).
@@ -100,6 +104,10 @@ export function Tutorial() {
   }, [refresh])
 
   const handleStep3Completed = useCallback(() => {
+    refresh()
+  }, [refresh])
+
+  const handleStep4Completed = useCallback(() => {
     refresh()
   }, [refresh])
 
@@ -179,7 +187,7 @@ export function Tutorial() {
     },
     {
       step: 3,
-      title: '가격 관찰 · 복기',
+      title: isSandboxChain ? '가격 관찰 · 견디기' : '가격 관찰 · 복기',
       status: step3?.status ?? 'NOT_STARTED',
       locked: step3?.locked ?? true,
       evidenceLabel: step3?.evidence.reflectionCreatedAt
@@ -199,12 +207,48 @@ export function Tutorial() {
             referenceStopLossPrice={step3.evidence.referenceStopLossPrice}
             referenceTakeProfitPrice={step3.evidence.referenceTakeProfitPrice}
             onCompleted={handleStep3Completed}
+            deferReflection={isSandboxChain}
           />
         ) : (
           <p className="text-sm text-muted">잠시 후 다시 시도해 주세요.</p>
         ),
     },
   ]
+
+  // 샘플 종목 chain(031)만 4단계를 갖는다 — steps 배열 길이 자체가 3 또는 4로 달라진다.
+  if (isSandboxChain) {
+    steps.push({
+      step: 4,
+      title: '매도 · 복기',
+      status: step4?.status ?? 'NOT_STARTED',
+      locked: step4?.locked ?? true,
+      evidenceLabel: step4?.evidence.reflectionCreatedAt
+        ? `${formatDateTime(step4.evidence.reflectionCreatedAt)} 복기 저장`
+        : step4?.evidence.sellTradeExecutedAt
+          ? `${formatDateTime(step4.evidence.sellTradeExecutedAt)} 매도 체결`
+          : undefined,
+      children:
+        step4?.status === 'COMPLETED' ? (
+          <p className="text-sm text-muted">
+            매도하고 복기를 저장해 실습을 완료했습니다
+            {step4.evidence.reflectionCreatedAt ? ` · ${formatDateTime(step4.evidence.reflectionCreatedAt)}` : ''}
+          </p>
+        ) : step4?.evidence.holdingId ? (
+          <SaleReflectionStep
+            market={market}
+            instrumentId={activeFavorite?.instrumentId ?? 0}
+            holdingId={step4.evidence.holdingId}
+            expired={step4.status === 'EXPIRED'}
+            saleDeadlineAt={step4.evidence.saleDeadlineAt}
+            sellTradeId={step4.evidence.sellTradeId}
+            hasObservationEvidence={step3?.evidence.evidenceType != null}
+            onCompleted={handleStep4Completed}
+          />
+        ) : (
+          <p className="text-sm text-muted">잠시 후 다시 시도해 주세요.</p>
+        ),
+    })
+  }
 
   return (
     <div className="relative min-h-[100dvh] px-4 pb-24 pt-28 md:pt-32">

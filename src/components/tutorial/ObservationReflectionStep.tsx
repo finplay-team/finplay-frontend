@@ -24,11 +24,17 @@ export function ObservationReflectionStep({
   referenceStopLossPrice,
   referenceTakeProfitPrice,
   onCompleted,
+  deferReflection = false,
 }: {
   holdingId: number
   referenceStopLossPrice: number | null
   referenceTakeProfitPrice: number | null
   onCompleted: () => void
+  /**
+   * 샘플 종목 4단계 흐름(031)에서는 이 3단계가 관찰만 담당하고 복기는 4단계(SaleReflectionStep)로
+   * 옮겨진다 — evidence A/B가 준비돼도 여기서 복기 폼을 보여주거나 저장하지 않는다.
+   */
+  deferReflection?: boolean
 }) {
   const [observations, setObservations] = useState<PracticeHoldingObservationResponse[]>([])
   const [observing, setObserving] = useState(false)
@@ -170,10 +176,15 @@ export function ObservationReflectionStep({
           )}
 
           {observeError && <p className="text-sm text-loss">{observeError}</p>}
+          {deferReflection && canReflect && (
+            <p className="text-sm text-ink">
+              조건을 충족했습니다. 다음 단계에서 매도하고 복기를 남기면 실습을 완료합니다.
+            </p>
+          )}
         </div>
       </Card>
 
-      {canReflect && (
+      {!deferReflection && canReflect && (
         <Card accent="none">
           <div className="space-y-3 p-5">
             <div className="flex items-baseline justify-between">
