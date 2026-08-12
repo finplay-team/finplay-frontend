@@ -1,7 +1,7 @@
 // 주식 SSE(/api/stocks/stream)를 fetch + ReadableStream 으로 직접 파싱하는 훅
 // EventSource 는 Authorization 헤더를 실을 수 없어서 쓸 수 없다(D2).
 import { useEffect, useRef, useState } from 'react'
-import { refreshAccessToken } from '../lib/apiClient'
+import { API_BASE_URL, refreshAccessToken } from '../lib/apiClient'
 import * as tokenStore from '../lib/tokenStore'
 import type {
   LocalDateString,
@@ -121,7 +121,7 @@ export function useStockStream(options?: { enabled?: boolean }): StockStream {
         setState(attemptRef.current === 0 ? 'connecting' : 'reconnecting')
 
         try {
-          const res = await fetch('/api/stocks/stream', {
+          const res = await fetch(`${API_BASE_URL}/api/stocks/stream`, {
             headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
             signal: controller.signal,
             cache: 'no-store',
