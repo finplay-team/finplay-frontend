@@ -5,6 +5,7 @@ import type {
   EmailVerificationConfirmResponse,
   Member,
   NicknameChangeRequest,
+  OAuthProvider,
   SignupRequest,
   TokenResponse,
 } from './types'
@@ -33,6 +34,22 @@ export function signup(req: SignupRequest): Promise<TokenResponse> {
 
 export function login(email: string, password: string): Promise<TokenResponse> {
   return api.post<TokenResponse>('/auth/login', { email, password }, { auth: false })
+}
+
+/**
+ * OAuth 콜백 코드 교환 — 프론트 콜백 라우트(`/oauth/:provider/callback`)가 받은 code·state를
+ * 그대로 백엔드에 넘기면 이메일 로그인과 같은 TokenResponse를 받는다. code는 1회용이라 재호출 금지.
+ * `oauth_state` 쿠키는 이 요청 경로가 백엔드 콜백 경로와 정확히 일치해 자동으로 실린다.
+ */
+export function exchangeOAuthCallback(
+  provider: OAuthProvider,
+  code: string,
+  state: string,
+): Promise<TokenResponse> {
+  return api.get<TokenResponse>(`/auth/oauth/${provider}/callback`, {
+    query: { code, state },
+    auth: false,
+  })
 }
 
 export function logout(refreshToken: string): Promise<void> {

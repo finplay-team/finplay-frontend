@@ -27,6 +27,9 @@ export interface ApiErrorEnvelope {
 
 export type SignupMethod = 'EMAIL' | 'KAKAO' | 'NAVER'
 
+/** GET /api/auth/oauth/{provider}/... — 백엔드는 대소문자 무관하게 받지만 소문자로 통일한다. */
+export type OAuthProvider = 'kakao' | 'naver'
+
 /** GET /api/auth/me — role 필드가 없다. 클라이언트 관리자 개념은 존재할 수 없다. */
 export interface Member {
   id: number

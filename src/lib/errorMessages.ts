@@ -16,6 +16,11 @@ const MESSAGES: Record<string, string> = {
   EMAIL_VERIFICATION_FAILED: '인증번호가 올바르지 않거나 만료되었습니다.',
   EMAIL_VERIFICATION_REQUIRED: '이메일 인증을 먼저 완료해 주세요.',
   REAUTHENTICATION_FAILED: '현재 비밀번호가 올바르지 않습니다.',
+  // OAuth
+  OAUTH_AUTHORIZATION_FAILED: '소셜 로그인 인증에 실패했습니다. 다시 시도해 주세요.',
+  OAUTH_EMAIL_REQUIRED: '이메일 제공에 동의해야 로그인할 수 있습니다.',
+  OAUTH_PROVIDER_ERROR: '소셜 로그인 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도해 주세요.',
+  ACCOUNT_LINK_REQUIRED: '이미 이메일로 가입된 계정입니다. 이메일로 로그인해 주세요.',
   // 주문·시세
   MARKET_CLOSED: '장 시간이 아닙니다 (09:00~15:30).',
   PRICE_UNAVAILABLE: '현재 이 종목의 시세를 받을 수 없어 주문할 수 없습니다.',

@@ -635,3 +635,68 @@ setter.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true }))
 
 행 전체가 `<button>`이고 라벨이 그 안의 `<span>`이면 텍스트 일치로 못 찾는다 —
 `button[aria-expanded]` 같은 속성으로 잡는다.
+
+---
+
+# 7차 스코프 — 카카오·네이버 OAuth 로그인 연동 (2026-08-12, 이슈 #11)
+
+## 배경
+
+백엔드는 카카오·네이버 OAuth를 이미 구현하고 실계정으로 검증까지 마쳤다(finplay-backend#9·#10·#53,
+전부 CLOSED). 배포 환경도 HTTPS 작업이 끝나 OAuth state의 Secure 쿠키가 정상 동작할 조건이 갖춰졌다.
+반면 프론트는 이메일/비밀번호 전용이었다 — 4차 해체(`8be748c`)에서 mock `SocialLogin.tsx`가 지워진 뒤
+재구현되지 않았다. 상세 조사와 근거는 GitHub 이슈 [#11](https://github.com/finplay-team/finplay-frontend/issues/11) 본문 참조.
+
+## D21. 콜백 응답은 프론트로 리다이렉트하지 않는다 — 프론트 콜백 라우트로 다리를 놓는다
+
+`GET /api/auth/oauth/{provider}/callback`(`OAuthCallbackController.java`)은 브라우저를 프론트로
+리다이렉트하지 않고 JSON 을 그대로 200 으로 준다. 백엔드 스펙(`issue-10-plan.md:78`)도 "프론트엔드
+성공 페이지나 토큰 전달 방식 변경"을 명시적으로 범위 제외해 뒀다 — 콜백 이후 토큰을 SPA(localStorage)로
+넘기는 방식은 프론트 몫으로 남겨진 것이었다.
+
+**결정(사용자 확정).** `KAKAO_REDIRECT_URI`·`NAVER_REDIRECT_URI`를 프론트 라우트(`/oauth/:provider/callback`)로
+바꾼다. 카카오/네이버가 그 라우트로 브라우저를 보내면, `pages/OAuthCallback.tsx`가 URL 의 `code`·`state`를
+그대로 `GET /api/auth/oauth/{provider}/callback`에 실어 보내고(`authService.exchangeOAuthCallback`),
+받은 `TokenResponse`를 기존 `tokenStore.setSession()` 경로로 저장한다. 표준 SPA OAuth 패턴이고
+**백엔드 코드 변경이 필요 없다** — 배포 환경변수 값과 카카오/네이버 콘솔의 Redirect URI 등록만 바꾸면 된다.
+
+**cookie Path 스코프를 확인했다.** `oauth_state` 쿠키는 `Path=/api/auth/oauth/{provider}/callback`로
+좁게 스코프돼 있다(`issue-9-plan.md:16`). 프론트 콜백 페이지(`/oauth/...`)로의 최초 진입 자체에는
+이 쿠키가 실리지 않지만, 그건 필요 없다 — 이후 `OAuthCallback.tsx`가 호출하는
+`fetch('/api/auth/oauth/{provider}/callback?...')` 요청은 그 경로와 **정확히 일치**하므로 쿠키가
+정상적으로 실린다. 쿠키 Path 매칭은 페이지 주소가 아니라 각 개별 요청의 대상 URL 기준이다.
+
+**provider 값은 소문자.** 백엔드가 대소문자 무관하게 받는다(`issue-9-plan.md:13`). 프론트 라우트·버튼·
+서비스 함수는 전부 `'kakao' | 'naver'` 소문자로 통일한다.
+
+## D22. 재발급 배포 설정은 코드와 분리한다
+
+`KAKAO_REDIRECT_URI`·`NAVER_REDIRECT_URI` 환경변수 값 변경과 카카오·네이버 개발자센터 콘솔의
+Redirect URI 등록은 **배포/외부 서비스 설정 작업**이라 이 스코프의 코드 작업과 분리했다.
+코드는 새 프론트 경로를 전제로 작성해 두고, 설정 변경은 별도로 진행한다(방법은 사용자에게 직접 안내).
+
+**실제 배포 도메인(사용자 확인, Route 53) — `https://finplay.site/`.**
+새 Redirect URI는 다음 두 값이다.
+- 카카오: `https://finplay.site/oauth/kakao/callback`
+- 네이버: `https://finplay.site/oauth/naver/callback`
+
+콘솔 등록값과 `.env`의 `KAKAO_REDIRECT_URI`·`NAVER_REDIRECT_URI`는 글자 하나까지 일치해야 한다
+(끝 슬래시 유무·http/https 포함). 기존에 등록돼 있던 백엔드 자체 콜백 URL
+(`https://finplay.site/api/auth/oauth/{provider}/callback`, 실계정 스모크 검증 때 쓴 값)은
+카카오는 목록에 추가로 남겨 둬도 무방하고, 네이버는 필드가 하나뿐이라 이 값으로 교체해야 한다.
+
+## 작업 내용 (완료 — 2026-08-12, `npm run build` 타입 에러 0·115 모듈 확인)
+
+- `services/types.ts`: `OAuthProvider = 'kakao' | 'naver'` 추가
+- `services/authService.ts`: `exchangeOAuthCallback(provider, code, state)` 추가
+- `auth/AuthContext.tsx`: `loginWithOAuth(provider, code, state)` 추가 — 기존 `login()`의
+  "토큰 저장 → `getMe()` → `setCachedMember`" 흐름을 그대로 재사용
+- `pages/OAuthCallback.tsx` 신규 — `code`/`state`/`error` 파싱, 교환 호출, 성공 시 `/trade`,
+  실패 시 오류 안내 + `/login` 복귀. StrictMode 이펙트 2회 실행 방어로 `useRef` 가드(코드는 1회용이라
+  두 번째 호출이 실패한다)
+- `components/SocialLoginButtons.tsx` 신규 — 카카오·네이버 버튼, 클릭 시 `window.location.href`
+  전체 페이지 이동(302 흐름이라 `fetch` 불가)
+- `pages/Login.tsx`·`pages/Signup.tsx`(1단계)에 버튼 배치
+- `lib/errorMessages.ts`: `OAUTH_AUTHORIZATION_FAILED`·`OAUTH_EMAIL_REQUIRED`·`OAUTH_PROVIDER_ERROR`·
+  `ACCOUNT_LINK_REQUIRED` 매핑 추가
+- `App.tsx`: `/oauth/:provider/callback` 라우트(비보호) + `hideChrome` 조건에 `startsWith('/oauth/')` 추가

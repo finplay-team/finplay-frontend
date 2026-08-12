@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AuthLayout } from '../components/AuthLayout'
 import { DevCodeNotice } from '../components/DevCodeNotice'
+import { SocialLoginButtons } from '../components/SocialLoginButtons'
 import { Button } from '../components/ui/Button'
 import { Field } from '../components/ui/Field'
 import { useAuth } from '../auth/AuthContext'
@@ -228,21 +229,26 @@ export function Signup() {
         )}
 
         {step === 1 && (
-          <form onSubmit={onSubmitEmail} noValidate className="space-y-4">
-            <Field
-              label="이메일"
-              name="email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              hint="이 주소로 6자리 인증번호를 보냅니다."
-            />
-            <Button type="submit" size="lg" withIcon disabled={pending} className="w-full">
-              {pending ? '발송 중…' : '인증번호 받기'}
-            </Button>
-          </form>
+          <>
+            <form onSubmit={onSubmitEmail} noValidate className="space-y-4">
+              <Field
+                label="이메일"
+                name="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                hint="이 주소로 6자리 인증번호를 보냅니다."
+              />
+              <Button type="submit" size="lg" withIcon disabled={pending} className="w-full">
+                {pending ? '발송 중…' : '인증번호 받기'}
+              </Button>
+            </form>
+            <div className="mt-6">
+              <SocialLoginButtons />
+            </div>
+          </>
         )}
 
         {step === 2 && (

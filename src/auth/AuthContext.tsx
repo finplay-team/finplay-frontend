@@ -13,7 +13,7 @@ import { ApiError } from '../lib/apiClient'
 import * as tokenStore from '../lib/tokenStore'
 import { invalidateInstrumentCache } from '../services/instrumentService'
 import * as authService from '../services/authService'
-import type { Member, SignupRequest } from '../services/types'
+import type { Member, OAuthProvider, SignupRequest } from '../services/types'
 
 export type AuthStatus = 'restoring' | 'authenticated' | 'anonymous'
 
@@ -22,6 +22,7 @@ interface AuthContextValue {
   /** isAdmin 은 없다 — /api/auth/me 에 role 이 없어 클라이언트 관리자 개념이 불가능하다. */
   member: Member | null
   login: (email: string, password: string) => Promise<void>
+  loginWithOAuth: (provider: OAuthProvider, code: string, state: string) => Promise<void>
   signupWithToken: (req: SignupRequest) => Promise<void>
   logout: () => Promise<void>
   refreshMember: () => Promise<void>
@@ -70,6 +71,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setValidated(true)
   }, [])
 
+  const loginWithOAuth = useCallback(
+    async (provider: OAuthProvider, code: string, state: string) => {
+      const t = await authService.exchangeOAuthCallback(provider, code, state)
+      tokenStore.setSession({ accessToken: t.accessToken, refreshToken: t.refreshToken })
+      const m = await authService.getMe()
+      tokenStore.setCachedMember(m)
+      setValidated(true)
+    },
+    [],
+  )
+
   const signupWithToken = useCallback(async (req: SignupRequest) => {
     // 가입 응답이 201 + TokenResponse 라 별도 로그인 호출이 필요 없다.
     const t = await authService.signup(req)
@@ -101,11 +113,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       member: snap.member,
       login,
+      loginWithOAuth,
       signupWithToken,
       logout,
       refreshMember,
     }),
-    [status, snap.member, login, signupWithToken, logout, refreshMember],
+    [status, snap.member, login, loginWithOAuth, signupWithToken, logout, refreshMember],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
