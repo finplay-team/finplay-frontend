@@ -1,6 +1,13 @@
-// 상대 경로 /api 기반 fetch 래퍼 — 에러 봉투 파싱, Bearer 부착, 401 단일 비행 토큰 갱신을 담당한다
+// API 베이스 URL + /api 기반 fetch 래퍼 — 에러 봉투 파싱, Bearer 부착, 401 단일 비행 토큰 갱신을 담당한다
 import * as tokenStore from './tokenStore'
 import type { ApiErrorEnvelope, TokenResponse } from '../services/types'
+
+/**
+ * 프론트가 S3로 분리되면서 API가 다른 오리진에 있을 수 있다(finplay-api ADR-0022).
+ * VITE_API_BASE_URL이 없으면 빈 문자열 — 지금까지처럼 상대경로 '/api'로 동작한다(로컬 dev 프록시,
+ * 또는 아직 동일 오리진인 배포). 끝 슬래시는 여기서 한 번만 정리해 buildUrl의 '//' 중복을 막는다.
+ */
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
 export class ApiError extends Error {
   readonly status: number
@@ -55,7 +62,7 @@ export function refreshAccessToken(): Promise<string> {
     return Promise.reject(new ApiError(401, 'UNAUTHORIZED'))
   }
 
-  refreshInFlight = fetch('/api/auth/refresh', {
+  refreshInFlight = fetch(`${API_BASE_URL}/api/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
@@ -80,7 +87,7 @@ export function refreshAccessToken(): Promise<string> {
 }
 
 function buildUrl(path: string, query: RequestOptions['query']): string {
-  const url = `/api${path}`
+  const url = `${API_BASE_URL}/api${path}`
   if (!query) return url
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
