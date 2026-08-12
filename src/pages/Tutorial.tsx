@@ -139,6 +139,15 @@ export function Tutorial() {
   })
   const replaying = replayingByMarket[market]
 
+  const handleStartReplay = useCallback(() => {
+    // showLiveStep2·showLiveStep3 이 이번 방문에서 "살아있게" 켜진 채로 남아 있으면, 체험 종료 후
+    // PracticeLogRail 이 다시 마운트한 IntentionStep·ObservationReflectionStep 이 완료 요약 대신
+    // 처음 상태(활성 매수 버튼 등)로 보인다 — 시작 시 미리 꺼서 완료된 시장은 계속 요약만 보이게 한다.
+    setIntentionByMarket((prev) => (prev[market] === null ? prev : { ...prev, [market]: null }))
+    setStep3LiveByMarket((prev) => (prev[market] ? { ...prev, [market]: false } : prev))
+    setReplayingByMarket((prev) => ({ ...prev, [market]: true }))
+  }, [market])
+
   useEffect(() => {
     if (step3 && step3.status !== 'COMPLETED' && !step3.locked) {
       setStep3LiveByMarket((prev) => (prev[market] ? prev : { ...prev, [market]: true }))
@@ -320,12 +329,7 @@ export function Tutorial() {
                   : '이미 완료한 실습입니다.'}
               </p>
               {!replaying && activeFavorite && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setReplayingByMarket((prev) => ({ ...prev, [market]: true }))}
-                >
+                <Button type="button" variant="ghost" size="sm" onClick={handleStartReplay}>
                   다시 하기
                 </Button>
               )}
