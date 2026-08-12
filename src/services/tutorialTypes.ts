@@ -135,4 +135,6 @@ export interface InvestmentPracticeResponse {
   steps: PracticeStepResponse[]
   /** 완료 전 null */
   completedAt: LocalDateTimeString | null
+  /** 이 시장 튜토리얼을 최초 완료했을 때 지급된 보상 금액(항상 5,000,000) — 완료 전에는 null(이슈 #343). */
+  rewardAmount: number | null
 }

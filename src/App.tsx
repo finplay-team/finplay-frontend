@@ -3,7 +3,6 @@ import { Route, Routes, useLocation } from 'react-router-dom'
 import { Nav } from './components/Nav'
 import { Footer } from './components/Footer'
 import { ProtectedRoute } from './auth/ProtectedRoute'
-import { RequireTutorial } from './auth/RequireTutorial'
 import { Landing } from './pages/Landing'
 import { Signup } from './pages/Signup'
 import { Login } from './pages/Login'
@@ -34,10 +33,8 @@ export default function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/support" element={<Support />} />
-          {/*
-            튜토리얼은 그 자체가 강제 이동 목적지라 RequireTutorial 로 감싸면 안 된다(무한 리다이렉트).
-            로그인만 필요하다.
-          */}
+          {/* 튜토리얼은 건너뛸 수 있다 — 완료 여부와 무관하게 로그인만 하면 언제든 드나들 수 있고,
+              다른 메뉴 접근을 막지 않는다. */}
           <Route
             path="/tutorial"
             element={
@@ -50,9 +47,7 @@ export default function App() {
             path="/trade"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <Trade />
-                </RequireTutorial>
+                <Trade />
               </ProtectedRoute>
             }
           />
@@ -60,9 +55,7 @@ export default function App() {
             path="/portfolio"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <Portfolio />
-                </RequireTutorial>
+                <Portfolio />
               </ProtectedRoute>
             }
           />
@@ -71,9 +64,7 @@ export default function App() {
             path="/community"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <Community />
-                </RequireTutorial>
+                <Community />
               </ProtectedRoute>
             }
           />
@@ -81,9 +72,7 @@ export default function App() {
             path="/community/:postId"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <CommunityPost />
-                </RequireTutorial>
+                <CommunityPost />
               </ProtectedRoute>
             }
           />
@@ -91,9 +80,7 @@ export default function App() {
             path="/journal"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <Journal />
-                </RequireTutorial>
+                <Journal />
               </ProtectedRoute>
             }
           />
@@ -101,9 +88,7 @@ export default function App() {
             path="/news"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <News />
-                </RequireTutorial>
+                <News />
               </ProtectedRoute>
             }
           />
@@ -111,9 +96,7 @@ export default function App() {
             path="/feedback"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <Feedback />
-                </RequireTutorial>
+                <Feedback />
               </ProtectedRoute>
             }
           />
@@ -121,9 +104,7 @@ export default function App() {
             path="/rankings"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <Rankings />
-                </RequireTutorial>
+                <Rankings />
               </ProtectedRoute>
             }
           />
@@ -131,9 +112,7 @@ export default function App() {
             path="/me"
             element={
               <ProtectedRoute>
-                <RequireTutorial>
-                  <MyPage />
-                </RequireTutorial>
+                <MyPage />
               </ProtectedRoute>
             }
           />

@@ -9,6 +9,8 @@ import { ObservationReflectionStep } from '../components/tutorial/ObservationRef
 import { SaleReflectionStep } from '../components/tutorial/SaleReflectionStep'
 import { PracticeLogRail } from '../components/tutorial/PracticeLogRail'
 import type { PracticeLogStep } from '../components/tutorial/PracticeLogRail'
+import { TutorialReplay } from '../components/tutorial/TutorialReplay'
+import { Button } from '../components/ui/Button'
 import { useTutorialProgress } from '../hooks/useTutorialProgress'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
@@ -100,9 +102,27 @@ export function Tutorial() {
     [market],
   )
 
+  // 4단계 5분 만료 후 "다시 시작"을 누르면 이 값을 올려 IntentionStep의 매수 화면을 다시 연다.
+  const [buyResetNonceByMarket, setBuyResetNonceByMarket] = useState<Record<Market, number>>({
+    STOCK: 0,
+    CRYPTO: 0,
+  })
+  // 재도전 중(다시 매수하기 전)에는 서버가 여전히 만료된 이전 chain의 4단계를 돌려주므로,
+  // 새 매수가 들어오기 전까지 화면에서만 4단계를 잠시 숨긴다.
+  const [retryingByMarket, setRetryingByMarket] = useState<Record<Market, boolean>>({
+    STOCK: false,
+    CRYPTO: false,
+  })
+
   const handleBought = useCallback(() => {
+    setRetryingByMarket((prev) => (prev[market] ? { ...prev, [market]: false } : prev))
     refresh()
-  }, [refresh])
+  }, [refresh, market])
+
+  const handleRetry = useCallback(() => {
+    setBuyResetNonceByMarket((prev) => ({ ...prev, [market]: prev[market] + 1 }))
+    setRetryingByMarket((prev) => ({ ...prev, [market]: true }))
+  }, [market])
 
   const handleStep3Completed = useCallback(() => {
     refresh()
@@ -111,6 +131,13 @@ export function Tutorial() {
   const handleStep4Completed = useCallback(() => {
     refresh()
   }, [refresh])
+
+  // 완료된 튜토리얼은 "다시 하기"로 재체험할 수 있다 — 완료 기록·보상은 그대로 둔다(TutorialReplay 참고).
+  const [replayingByMarket, setReplayingByMarket] = useState<Record<Market, boolean>>({
+    STOCK: false,
+    CRYPTO: false,
+  })
+  const replaying = replayingByMarket[market]
 
   useEffect(() => {
     if (step3 && step3.status !== 'COMPLETED' && !step3.locked) {
@@ -181,6 +208,7 @@ export function Tutorial() {
             intention={intention}
             onIntentionCreated={handleIntentionCreated}
             onBought={handleBought}
+            resetToken={buyResetNonceByMarket[market]}
           />
         ) : (
           <p className="text-sm text-muted">즐겨찾기를 먼저 등록해 주세요.</p>
@@ -229,7 +257,9 @@ export function Tutorial() {
           ? `${formatDateTime(step4.evidence.sellTradeExecutedAt)} 매도 체결`
           : undefined,
       children:
-        step4?.status === 'COMPLETED' ? (
+        retryingByMarket[market] ? (
+          <p className="text-sm text-muted">2단계에서 새로 매수하면 여기서 다시 진행됩니다.</p>
+        ) : step4?.status === 'COMPLETED' ? (
           <p className="text-sm text-muted">
             매도하고 복기를 저장해 실습을 완료했습니다
             {step4.evidence.reflectionCreatedAt ? ` · ${formatDateTime(step4.evidence.reflectionCreatedAt)}` : ''}
@@ -244,6 +274,7 @@ export function Tutorial() {
             sellTradeId={step4.evidence.sellTradeId}
             hasObservationEvidence={step3?.evidence.evidenceType != null}
             onCompleted={handleStep4Completed}
+            onRetry={handleRetry}
           />
         ) : (
           <p className="text-sm text-muted">잠시 후 다시 시도해 주세요.</p>
@@ -280,23 +311,55 @@ export function Tutorial() {
           {favoritesError && <p className="mt-3 text-sm text-loss">{favoritesError}</p>}
         </header>
 
-        <Card className="mt-8" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-6 md:p-8">
-          {/*
-            최초 로딩(progress === null)에서만 스켈레톤을 보여준다. refresh() 로 인한 재조회 중에도
-            이 조건으로 PracticeLogRail 을 계속 마운트해 두지 않으면, 그 안의 IntentionStep·
-            ObservationReflectionStep 이 방금 만든 로컬 상태(체결·관찰 결과)를 통째로 잃는다 —
-            progress 는 재조회 중에도 이전 값을 유지하므로 이 조건만으로 충분하다.
-          */}
-          {progress === null ? (
-            <div className="space-y-6">
-              <div className="skeleton h-16" />
-              <div className="skeleton h-24" />
-              <div className="skeleton h-24" />
+        {progress?.status === 'COMPLETED' && (
+          <Card className="mt-8" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-ink">
+                {progress.rewardAmount != null
+                  ? `이 실습을 완료해 보상 ${progress.rewardAmount.toLocaleString('ko-KR')}원을 받았습니다.`
+                  : '이미 완료한 실습입니다.'}
+              </p>
+              {!replaying && activeFavorite && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setReplayingByMarket((prev) => ({ ...prev, [market]: true }))}
+                >
+                  다시 하기
+                </Button>
+              )}
             </div>
-          ) : (
-            <PracticeLogRail steps={steps} />
-          )}
-        </Card>
+          </Card>
+        )}
+
+        {replaying && activeFavorite ? (
+          <div className="mt-8">
+            <TutorialReplay
+              market={market}
+              favorite={activeFavorite}
+              onExit={() => setReplayingByMarket((prev) => ({ ...prev, [market]: false }))}
+            />
+          </div>
+        ) : (
+          <Card className="mt-8" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-6 md:p-8">
+            {/*
+              최초 로딩(progress === null)에서만 스켈레톤을 보여준다. refresh() 로 인한 재조회 중에도
+              이 조건으로 PracticeLogRail 을 계속 마운트해 두지 않으면, 그 안의 IntentionStep·
+              ObservationReflectionStep 이 방금 만든 로컬 상태(체결·관찰 결과)를 통째로 잃는다 —
+              progress 는 재조회 중에도 이전 값을 유지하므로 이 조건만으로 충분하다.
+            */}
+            {progress === null ? (
+              <div className="space-y-6">
+                <div className="skeleton h-16" />
+                <div className="skeleton h-24" />
+                <div className="skeleton h-24" />
+              </div>
+            ) : (
+              <PracticeLogRail steps={steps} />
+            )}
+          </Card>
+        )}
       </div>
     </div>
   )

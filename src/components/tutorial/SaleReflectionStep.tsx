@@ -31,6 +31,7 @@ export function SaleReflectionStep({
   sellTradeId,
   hasObservationEvidence,
   onCompleted,
+  onRetry,
 }: {
   market: Market
   instrumentId: number
@@ -47,6 +48,8 @@ export function SaleReflectionStep({
    */
   hasObservationEvidence: boolean
   onCompleted: () => void
+  /** 5분 만료(timedOut) 화면의 "다시 시작" 클릭 시 호출 — 부모가 2단계 매수 화면을 다시 열어준다. */
+  onRetry: () => void
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
@@ -129,9 +132,14 @@ export function SaleReflectionStep({
   if (timedOut) {
     return (
       <Card accent="none">
-        <div className="space-y-2 p-5">
-          <p className="text-sm text-ink">체결되지 않아 5분이 지나 만료됐습니다.</p>
-          <p className="text-xs text-muted">같은 종목을 다시 매수하면 새로 도전할 수 있습니다.</p>
+        <div className="space-y-3 p-5">
+          <p className="text-sm text-ink">시간이 끝났습니다 — 5분 안에 매도하지 못해 만료됐습니다.</p>
+          <p className="text-xs text-muted">
+            다시 시작을 누르면 매수 화면으로 돌아가 같은 종목으로 새로 도전할 수 있습니다.
+          </p>
+          <Button type="button" size="sm" onClick={onRetry}>
+            다시 시작
+          </Button>
         </div>
       </Card>
     )

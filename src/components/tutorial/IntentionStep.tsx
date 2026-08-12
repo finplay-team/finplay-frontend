@@ -1,5 +1,5 @@
 // 튜토리얼 2단계 — 매수 전 의도(수량·손절가·익절가) 기록과 실제 매수 체결을 한 화면에서 처리한다
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
@@ -65,6 +65,7 @@ export function IntentionStep({
   intention,
   onIntentionCreated,
   onBought,
+  resetToken = 0,
 }: {
   market: Market
   favorite: FavoriteResponse
@@ -76,6 +77,11 @@ export function IntentionStep({
    * 코인 지정가 체결 경로(CoinPriceSessionBuyStep)는 체결 정보를 따로 갖고 있지 않아 인자 없이 부른다.
    */
   onBought: (execution?: OrderExecutionResponse) => void
+  /**
+   * 샘플 종목 4단계(031)에서 5분 만료 후 "다시 시작"을 누르면 부모가 이 값을 증가시켜 매수 화면을
+   * 다시 활성화한다 — 한 번 매수하면 영구히 "체결 완료" 카드로 고정되던 것을 되돌린다.
+   */
+  resetToken?: number
 }) {
   const isCrypto = favorite.market === 'CRYPTO'
   const unit = isCrypto ? '개' : '주'
@@ -141,6 +147,16 @@ export function IntentionStep({
   // 의도를 기록한 뒤부터(목표가는 참고선일 뿐, 자동 체결 트리거가 아니다) 흐르는 샘플 시세를 보며
   // 사용자가 직접 매수 시점을 고른다 — intention이 생기기 전에는 굳이 틱을 돌리지 않는다.
   const live = useLiveSamplePrice(favorite.instrumentId, intention !== null && execution === null)
+
+  // resetToken이 바뀌면(4단계 5분 만료 후 "다시 시작") 매수 확인 화면을 다시 활성화한다.
+  const lastResetTokenRef = useRef(resetToken)
+  useEffect(() => {
+    if (resetToken !== lastResetTokenRef.current) {
+      lastResetTokenRef.current = resetToken
+      setExecution(null)
+      setBuyError(null)
+    }
+  }, [resetToken])
 
   const loadReferenceData = useCallback(() => {
     // 순수 참고용 미니 차트라 실패해도 조용히 생략한다(evidence 판정과 무관).
