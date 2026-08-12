@@ -25,7 +25,11 @@ export function FavoriteStep({ market }: { market: Market }) {
     Promise.all([ensureInstrumentCache(), getFavorites()])
       .then(([index, favs]) => {
         if (!alive) return
-        setInstruments(Array.from(index.byId.values()).filter((i) => i.market === market))
+        // 튜토리얼은 실제 종목을 다루지 않는다 — 샘플 종목(031)만 고른다(실제 종목과 섞여 보이면
+        // 사용자가 실습 중 실제 자산을 건드리는 것으로 오해할 수 있다).
+        setInstruments(
+          Array.from(index.byId.values()).filter((i) => i.market === market && i.isTutorialSample),
+        )
         setFavorites(favs.filter((f) => f.market === market))
       })
       .catch((e) => {

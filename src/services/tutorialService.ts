@@ -9,9 +9,6 @@ import type {
   PracticeHoldingReflectionResponse,
   PracticeIntentionCreateRequest,
   PracticeIntentionResponse,
-  PracticeLimitOrderCreateRequest,
-  PracticeLimitOrderResponse,
-  PracticePriceSessionResponse,
   SyntheticPriceSeriesResponse,
 } from './tutorialTypes'
 
@@ -47,45 +44,6 @@ export function createPracticeIntention(
  */
 export function getSyntheticPrices(instrumentId: number): Promise<SyntheticPriceSeriesResponse> {
   return api.get<SyntheticPriceSeriesResponse>(`/education/practice/synthetic-prices/${instrumentId}`)
-}
-
-/**
- * 코인 전용 가상 가격 세션 생성. 사용자·종목당 ACTIVE 1개만 허용되며 중복 생성은
- * 409 PRACTICE_PRICE_SESSION_ALREADY_ACTIVE, 거래정지 종목은 409 INSTRUMENT_NOT_TRADABLE.
- */
-export function createPracticePriceSession(instrumentId: number): Promise<PracticePriceSessionResponse> {
-  return api.post<PracticePriceSessionResponse>('/education/practice/price-sessions', { instrumentId })
-}
-
-/** 본인 세션의 cursor·현재가·상태 조회. 없거나 타인 소유는 404 NOT_FOUND(존재 비노출). */
-export function getPracticePriceSession(sessionId: number): Promise<PracticePriceSessionResponse> {
-  return api.get<PracticePriceSessionResponse>(`/education/practice/price-sessions/${sessionId}`)
-}
-
-/**
- * expectedTick 은 정확히 currentTick+1 이어야 한다 — 어긋나면 409 PRACTICE_PRICE_TICK_CONFLICT.
- * 이미 COMPLETED 인 세션에 호출하면 409 PRACTICE_PRICE_SESSION_CLOSED.
- * tick 99 도달 시 세션이 COMPLETED 로 전이하며 이 세션의 미체결 지정가 주문을 서버가 자동 취소한다.
- */
-export function advancePracticePriceTick(
-  sessionId: number,
-  expectedTick: number,
-): Promise<PracticePriceSessionResponse> {
-  return api.post<PracticePriceSessionResponse>(`/education/practice/price-sessions/${sessionId}/ticks`, {
-    expectedTick,
-  })
-}
-
-/**
- * ACTIVE 세션에 귀속된 코인 지정가 매수 생성. 세션 종목과 다르면 409 PRACTICE_PRICE_SESSION_MISMATCH,
- * 세션이 이미 COMPLETED면 409 PRACTICE_PRICE_SESSION_CLOSED, 이미 PENDING 주문이 있으면
- * 409 PRACTICE_LIMIT_ORDER_ALREADY_PENDING. 응답은 항상 PENDING이고 체결은 세션 tick 진행에서만
- * 일어난다(체결 감지는 orderService.getOrders로 별도 확인).
- */
-export function createPracticeLimitOrder(
-  req: PracticeLimitOrderCreateRequest,
-): Promise<PracticeLimitOrderResponse> {
-  return api.post<PracticeLimitOrderResponse>('/education/practice/limit-orders', req)
 }
 
 /**

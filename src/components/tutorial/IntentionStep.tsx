@@ -4,7 +4,8 @@ import type { FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
-import { CoinPriceSessionBuyStep } from './CoinPriceSessionBuyStep'
+import { TickPriceChart } from './TickPriceChart'
+import { useLiveSamplePrice } from '../../hooks/useLiveSamplePrice'
 import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { formatKRW } from '../../lib/format'
@@ -137,8 +138,9 @@ export function IntentionStep({
   const [buying, setBuying] = useState(false)
   const [execution, setExecution] = useState<OrderExecutionResponse | null>(null)
   const [successNonce, setSuccessNonce] = useState(0)
-  // 코인은 가상 가격 세션·지정가 체결이라 execution(시장가 체결 결과)이 없다 — 체결 여부만 따로 기억한다.
-  const [cryptoFilled, setCryptoFilled] = useState(false)
+  // 의도를 기록한 뒤부터(목표가는 참고선일 뿐, 자동 체결 트리거가 아니다) 흐르는 샘플 시세를 보며
+  // 사용자가 직접 매수 시점을 고른다 — intention이 생기기 전에는 굳이 틱을 돌리지 않는다.
+  const live = useLiveSamplePrice(favorite.instrumentId, intention !== null && execution === null)
 
   const loadReferenceData = useCallback(() => {
     // 순수 참고용 미니 차트라 실패해도 조용히 생략한다(evidence 판정과 무관).
@@ -316,39 +318,21 @@ export function IntentionStep({
               </p>
             </div>
 
-            {isCrypto ? (
-              cryptoFilled ? (
-                <div className="mt-5 rounded-xl bg-elevated p-4">
-                  <p className="text-sm font-semibold text-ink">
-                    {intention.quantity.toLocaleString('ko-KR')}
-                    {unit} 지정가 매수를 체결했습니다.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-5">
-                  <CoinPriceSessionBuyStep
-                    instrumentId={favorite.instrumentId}
-                    quantity={intention.quantity}
-                    onFilled={() => {
-                      setCryptoFilled(true)
-                      onBought()
-                    }}
-                  />
-                </div>
-              )
-            ) : execution === null ? (
+            {execution === null ? (
               <div className="mt-5 rounded-xl bg-elevated p-4">
                 <p className="text-sm font-semibold text-ink">매수 확인</p>
-                <p className="mt-2 tabular text-sm text-ink">
-                  현재가{' '}
-                  {priceError
-                    ? priceError
-                    : priceInfo?.price !== null && priceInfo?.price !== undefined
-                      ? formatKRW(priceInfo.price)
-                      : '조회 중…'}
-                </p>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted">
-                  주식은 09:00~15:30 장중에만 체결됩니다. 장 시간이 아니면 매수 버튼을 눌렀을 때 안내됩니다.
+                <div className="mt-3">
+                  <TickPriceChart
+                    prices={live.prices}
+                    latest={live.latest}
+                    referenceStopLoss={intention.stopLoss}
+                    referenceTakeProfit={intention.takeProfit}
+                    accent={isCrypto ? 'coin' : 'brand'}
+                  />
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                  손절가·익절가는 참고선일 뿐 자동으로 체결시키지 않습니다. 시세가 흐르는 걸 보다가
+                  원할 때 직접 매수 버튼을 눌러 주세요.
                 </p>
                 {buyError && <p className="mt-2 text-sm text-rose-300">{buyError}</p>}
                 <Button type="button" className="mt-3" disabled={buying} onClick={() => void handleBuy()}>

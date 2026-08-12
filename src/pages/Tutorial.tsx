@@ -38,7 +38,8 @@ function findStep(progress: InvestmentPracticeResponse | null, step: number) {
 }
 
 export function Tutorial() {
-  const [market, setMarket] = useState<Market>('STOCK')
+  // 튜토리얼은 코인 샘플 종목(항시 시세, 장 시간 무관)이 진입 장벽이 가장 낮아 코인을 기본으로 연다.
+  const [market, setMarket] = useState<Market>('CRYPTO')
   const isCrypto = market === 'CRYPTO'
   const { stock, crypto, error, refresh } = useTutorialProgress()
   const progress = isCrypto ? crypto : stock

@@ -1,8 +1,8 @@
-// 3단계 튜토리얼 — 가격 관찰(손절·익절 경계 근접 판정) 후 자유 복기를 남겨 완료를 확정하는 위젯
-import { useRef, useState } from 'react'
+// 3단계 튜토리얼 — 가격 관찰(손절·익절 경계 근접 판정)을 시간이 흐르며 자동으로 진행하고, 조건 충족 후 자유 복기를 남겨 완료를 확정하는 위젯
+import { useEffect, useRef, useState } from 'react'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
-import { PriceGauge } from './PriceGauge'
+import { TickPriceChart } from './TickPriceChart'
 import { recordHoldingObservation, saveHoldingReflection } from '../../services/tutorialService'
 import type { PracticeHoldingObservationResponse } from '../../services/tutorialTypes'
 import { bumpTutorial } from '../../lib/tutorialPulse'
@@ -11,6 +11,8 @@ import { formatDateTime, parseLocalDateTime } from '../../lib/datetime'
 
 const REFLECTION_MAX = 2000
 const DEFAULT_PROMPT = '지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.'
+const TICK_MS = 2000
+const CHART_POINTS = 10
 
 const textareaClass =
   'w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-sm leading-relaxed text-ink outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15'
@@ -37,7 +39,6 @@ export function ObservationReflectionStep({
   deferReflection?: boolean
 }) {
   const [observations, setObservations] = useState<PracticeHoldingObservationResponse[]>([])
-  const [observing, setObserving] = useState(false)
   const [observeError, setObserveError] = useState<string | null>(null)
   const observeBusyRef = useRef(false)
 
@@ -51,27 +52,45 @@ export function ObservationReflectionStep({
   const latest = observations[0] ?? null
   const canReflect = observations.some((o) => o.evidenceType !== null)
 
-  const handleObserve = async () => {
-    if (observeBusyRef.current || referenceStopLossPrice === null || referenceTakeProfitPrice === null) return
-    observeBusyRef.current = true
-    setObserving(true)
-    setObserveError(null)
-    try {
-      const res = await recordHoldingObservation(holdingId)
-      setObservations((prev) => [res, ...prev])
-      bumpTutorial()
-    } catch (e) {
-      setObserveError(
-        toUserMessage(e, {
-          NOT_FOUND: '보유 종목을 찾을 수 없습니다.',
-          PRACTICE_EVIDENCE_MISSING: '조건을 다시 계산하지 못했습니다. 잠시 후 다시 시도해 주세요.',
-        }),
-      )
-    } finally {
-      observeBusyRef.current = false
-      setObserving(false)
+  // 사람이 클릭할 때마다 진행하는 대신, 손절·익절 참고선이 준비되면 시간이 흐르는 대로 자동으로
+  // 가격을 관찰한다 — 조건을 충족하거나(canReflect) 복기를 이미 마치면 멈춘다.
+  useEffect(() => {
+    if (referenceStopLossPrice === null || referenceTakeProfitPrice === null) return
+    if (canReflect || completed) return
+
+    let cancelled = false
+    const tick = () => {
+      if (observeBusyRef.current || cancelled) return
+      observeBusyRef.current = true
+      recordHoldingObservation(holdingId)
+        .then((res) => {
+          if (cancelled) return
+          setObservations((prev) => [res, ...prev])
+          setObserveError(null)
+          bumpTutorial()
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setObserveError(
+              toUserMessage(e, {
+                NOT_FOUND: '보유 종목을 찾을 수 없습니다.',
+                PRACTICE_EVIDENCE_MISSING: '조건을 다시 계산하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+              }),
+            )
+          }
+        })
+        .finally(() => {
+          observeBusyRef.current = false
+        })
     }
-  }
+
+    tick()
+    const id = setInterval(tick, TICK_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [holdingId, referenceStopLossPrice, referenceTakeProfitPrice, canReflect, completed])
 
   const trimmedAnswer = answer.trim()
   const canSubmit = canReflect && trimmedAnswer.length > 0 && trimmedAnswer.length <= REFLECTION_MAX && !submitting
@@ -120,9 +139,6 @@ export function ObservationReflectionStep({
     return (
       <Card accent="none">
         <div className="space-y-3 p-5">
-          <Button type="button" size="sm" disabled>
-            지금 가격 확인하기
-          </Button>
           <p className="text-sm text-muted">잠시 후 다시 시도해 주세요.</p>
         </div>
       </Card>
@@ -143,33 +159,37 @@ export function ObservationReflectionStep({
     } else if (latest.evidenceType === 'TIMED_REPETITION') {
       verdict = '2분 이상 간격으로 3번 관찰했습니다. 지금 복기를 남길 수 있습니다.'
     } else if (minutesSinceOldest < 2) {
-      verdict = `아직 조건을 채우지 못했습니다. 첫 확인 이후 ${minutesSinceOldest}분 지났습니다 — 연달아 눌러도 시간이 안 쌓이니, 2분 정도 기다렸다가 다시 눌러보세요.`
+      verdict = `아직 조건을 채우지 못했습니다. 관찰은 계속 자동으로 진행됩니다 — 2분 정도 기다리면 시간 분산 조건도 확인됩니다.`
     } else {
-      verdict = '아직 조건을 채우지 못했습니다. 가격이 손절·익절 경계에 더 가까워질 때까지 몇 분 간격으로 다시 확인해 보세요.'
+      verdict = '아직 조건을 채우지 못했습니다. 가격이 손절·익절 경계에 가까워질 때까지 자동으로 계속 확인합니다.'
     }
   }
+
+  // 최신이 앞인 observations를 시간순으로 뒤집어 최근 10개만 그래프에 보여준다.
+  const chartPrices = observations
+    .slice(0, CHART_POINTS)
+    .map((o) => o.currentPrice)
+    .reverse()
 
   return (
     <div className="space-y-4">
       <Card accent="none">
         <div className="space-y-4 p-5">
           <p className="text-xs leading-relaxed text-muted">
-            둘 중 하나를 채우면 복기를 쓸 수 있습니다. 가격이 손절선·익절선에 가까워지거나, 2분 이상
-            간격을 두고 3번 이상 확인하면 됩니다. 짧은 간격으로 여러 번 눌러도 두 번째 조건에는 도움이
-            되지 않습니다.
+            시세가 흐르며 자동으로 관찰됩니다. 가격이 손절선·익절선에 가까워지거나, 2분 이상 간격을 두고
+            3번 이상 확인되면 복기를 쓸 수 있습니다.
           </p>
 
-          <Button type="button" size="sm" disabled={observing} onClick={() => void handleObserve()}>
-            {observing ? '확인 중…' : '지금 가격 확인하기'}
-          </Button>
+          <TickPriceChart
+            prices={chartPrices}
+            latest={latest?.currentPrice ?? null}
+            referenceStopLoss={referenceStopLossPrice}
+            referenceTakeProfit={referenceTakeProfitPrice}
+            accent="brand"
+          />
 
           {latest && (
             <>
-              <PriceGauge
-                stopLoss={referenceStopLossPrice}
-                current={latest.currentPrice}
-                takeProfit={referenceTakeProfitPrice}
-              />
               {verdict && <p className="text-sm text-ink">{verdict}</p>}
               <p className="text-xs text-muted tabular">지금까지 {observations.length}회 확인했습니다.</p>
             </>

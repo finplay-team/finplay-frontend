@@ -2,9 +2,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
+import { TickPriceChart } from './TickPriceChart'
 import { parseLocalDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
+import { useLiveSamplePrice } from '../../hooks/useLiveSamplePrice'
 import { bumpAccount } from '../../lib/accountPulse'
 import { bumpTutorial } from '../../lib/tutorialPulse'
 import { getHoldings } from '../../services/holdingService'
@@ -52,9 +54,11 @@ export function SaleReflectionStep({
     return () => clearInterval(id)
   }, [])
 
+  const [sold, setSold] = useState(sellTradeId !== null)
+  const live = useLiveSamplePrice(instrumentId, !sold && !expired)
+
   const [selling, setSelling] = useState(false)
   const [sellError, setSellError] = useState<string | null>(null)
-  const [sold, setSold] = useState(sellTradeId !== null)
 
   const idempotencyKey = useIdempotencyKey([market, instrumentId, holdingId])
 
@@ -144,6 +148,14 @@ export function SaleReflectionStep({
             <p className="text-sm text-ink">매도를 체결했습니다.</p>
           ) : (
             <>
+              <TickPriceChart
+                prices={live.prices}
+                latest={live.latest}
+                accent={market === 'CRYPTO' ? 'coin' : 'brand'}
+              />
+              <p className="text-[11px] leading-relaxed text-muted">
+                목표가는 참고선일 뿐입니다. 시세가 흐르는 걸 보다가 원할 때 직접 매도해 주세요.
+              </p>
               {sellError && <p className="text-sm text-loss">{sellError}</p>}
               <Button type="button" size="sm" disabled={selling} onClick={() => void handleSell()}>
                 {selling ? '매도하는 중…' : '지금 시장가로 매도'}
