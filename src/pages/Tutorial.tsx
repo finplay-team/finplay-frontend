@@ -14,7 +14,8 @@ import { Button } from '../components/ui/Button'
 import { useTutorialProgress } from '../hooks/useTutorialProgress'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
-import { getFavorites } from '../services/tutorialService'
+import { loadEvidenceSnapshot, saveEvidenceSnapshot } from '../lib/tutorialEvidenceSnapshot'
+import { getFavorites, getPracticeProgress } from '../services/tutorialService'
 import type { FavoriteResponse, InvestmentPracticeResponse, PracticeIntentionResponse } from '../services/tutorialTypes'
 import type { Market } from '../services/types'
 
@@ -62,12 +63,30 @@ export function Tutorial() {
     // progress 가 바뀔 때(관찰·복기·즐겨찾기 갱신 이후) 목록도 같이 새로고침한다.
   }, [progress])
 
-  const step1 = findStep(progress, 1)
-  const step2 = findStep(progress, 2)
-  const step3 = findStep(progress, 3)
+  // 완료된 단계의 evidence(즐겨찾기·매수·복기 시각)는 이 스냅샷을 우선 보여준다 — 백엔드가 같은
+  // 종목의 "가장 최근 체결"로 매번 다시 계산하기 때문에, "다시 하기" 체험 중 실제 매수·매도가
+  // 원래 완료 시점을 흔들 수 있다(tutorialEvidenceSnapshot.ts 참고). 처음 완료 시 한 번 찍고,
+  // "처음부터 다시하기"를 끝까지 마쳤을 때만 새로 찍는다.
+  const [snapshotVersion, setSnapshotVersion] = useState(0)
+  useEffect(() => {
+    if (progress?.status === 'COMPLETED' && !loadEvidenceSnapshot(market)) {
+      saveEvidenceSnapshot(market, progress)
+      setSnapshotVersion((v) => v + 1)
+    }
+  }, [progress, market])
+
+  const displayProgress = useMemo(() => {
+    if (progress?.status !== 'COMPLETED') return progress
+    return loadEvidenceSnapshot(market) ?? progress
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress, market, snapshotVersion])
+
+  const step1 = findStep(displayProgress, 1)
+  const step2 = findStep(displayProgress, 2)
+  const step3 = findStep(displayProgress, 3)
   // 샘플 종목 chain(031)만 4단계(매도·복기)를 갖는다 — steps 배열 길이로 구분한다.
-  const step4 = findStep(progress, 4)
-  const isSandboxChain = (progress?.steps.length ?? 0) === 4
+  const step4 = findStep(displayProgress, 4)
+  const isSandboxChain = (displayProgress?.steps.length ?? 0) === 4
 
   // 서버가 고른 chain 의 favoriteId. 아직 chain 이 없으면 이 시장에서 가장 먼저 등록한 favorite 로 대체한다
   // (favorite.createdAt ASC 가 서버 선택 규칙과 같다 — 016 진행조회 정본 참고).
@@ -114,10 +133,35 @@ export function Tutorial() {
     CRYPTO: false,
   })
 
-  const handleBought = useCallback(() => {
-    setRetryingByMarket((prev) => (prev[market] ? { ...prev, [market]: false } : prev))
-    refresh()
-  }, [refresh, market])
+  // 2단계(매수 확인)에서 이어 그린 시세 — 3단계(관찰) 그래프가 0부터 다시 시작하지 않도록 앞머리로 넘겨준다.
+  const [buyPriceHistoryByMarket, setBuyPriceHistoryByMarket] = useState<Record<Market, number[]>>({
+    STOCK: [],
+    CRYPTO: [],
+  })
+  // 3단계(관찰)에서 이어 그린 시세 — 4단계(매도·복기) 그래프가 이어받는다.
+  const [observePriceHistoryByMarket, setObservePriceHistoryByMarket] = useState<Record<Market, number[]>>({
+    STOCK: [],
+    CRYPTO: [],
+  })
+
+  const handleBought = useCallback(
+    (_execution?: unknown, priceHistory?: number[]) => {
+      setRetryingByMarket((prev) => (prev[market] ? { ...prev, [market]: false } : prev))
+      if (priceHistory) {
+        setBuyPriceHistoryByMarket((prev) => ({ ...prev, [market]: priceHistory }))
+      }
+      setObservePriceHistoryByMarket((prev) => ({ ...prev, [market]: [] }))
+      refresh()
+    },
+    [refresh, market],
+  )
+
+  const handleObservePricesChanged = useCallback(
+    (prices: number[]) => {
+      setObservePriceHistoryByMarket((prev) => ({ ...prev, [market]: prices }))
+    },
+    [market],
+  )
 
   const handleRetry = useCallback(() => {
     setBuyResetNonceByMarket((prev) => ({ ...prev, [market]: prev[market] + 1 }))
@@ -147,6 +191,22 @@ export function Tutorial() {
     setStep3LiveByMarket((prev) => (prev[market] ? { ...prev, [market]: false } : prev))
     setReplayingByMarket((prev) => ({ ...prev, [market]: true }))
   }, [market])
+
+  const handleReplayExit = useCallback(
+    (completedFullRun: boolean) => {
+      setReplayingByMarket((prev) => ({ ...prev, [market]: false }))
+      if (!completedFullRun) return
+      // 체험을 끝까지 마쳤을 때만 완료 시각 스냅샷을 이번 체험의 실제 매수·매도 시각으로 새로 찍는다.
+      getPracticeProgress(market)
+        .then((fresh) => {
+          saveEvidenceSnapshot(market, fresh)
+          setSnapshotVersion((v) => v + 1)
+        })
+        .catch(() => undefined)
+      refresh()
+    },
+    [market, refresh],
+  )
 
   useEffect(() => {
     if (step3 && step3.status !== 'COMPLETED' && !step3.locked) {
@@ -246,6 +306,8 @@ export function Tutorial() {
             referenceTakeProfitPrice={step3.evidence.referenceTakeProfitPrice}
             onCompleted={handleStep3Completed}
             deferReflection={isSandboxChain}
+            initialPrices={buyPriceHistoryByMarket[market]}
+            onPricesChanged={handleObservePricesChanged}
           />
         ) : (
           <p className="text-sm text-muted">잠시 후 다시 시도해 주세요.</p>
@@ -281,9 +343,12 @@ export function Tutorial() {
             expired={step4.status === 'EXPIRED'}
             saleDeadlineAt={step4.evidence.saleDeadlineAt}
             sellTradeId={step4.evidence.sellTradeId}
+            referenceStopLossPrice={step4.evidence.referenceStopLossPrice}
+            referenceTakeProfitPrice={step4.evidence.referenceTakeProfitPrice}
             hasObservationEvidence={step3?.evidence.evidenceType != null}
             onCompleted={handleStep4Completed}
             onRetry={handleRetry}
+            initialPrices={observePriceHistoryByMarket[market]}
           />
         ) : (
           <p className="text-sm text-muted">잠시 후 다시 시도해 주세요.</p>
@@ -339,11 +404,7 @@ export function Tutorial() {
 
         {replaying && activeFavorite ? (
           <div className="mt-8">
-            <TutorialReplay
-              market={market}
-              favorite={activeFavorite}
-              onExit={() => setReplayingByMarket((prev) => ({ ...prev, [market]: false }))}
-            />
+            <TutorialReplay market={market} favorite={activeFavorite} onExit={handleReplayExit} />
           </div>
         ) : (
           <Card className="mt-8" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-6 md:p-8">

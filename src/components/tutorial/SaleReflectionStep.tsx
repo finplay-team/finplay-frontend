@@ -1,10 +1,11 @@
 // 튜토리얼 4단계(샘플 종목 전용) — 5분 안에 매도하고 복기를 남겨 실습을 완료한다
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { TickPriceChart } from './TickPriceChart'
 import { parseLocalDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
+import { formatKRW } from '../../lib/format'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { useLiveSamplePrice } from '../../hooks/useLiveSamplePrice'
 import { bumpAccount } from '../../lib/accountPulse'
@@ -15,6 +16,9 @@ import { saveHoldingReflection } from '../../services/tutorialService'
 import type { Market } from '../../services/types'
 
 const REFLECTION_MAX = 2000
+/** 5분 매도 시한 전체를 그래프에 다 담는다 — 5분 ÷ 60틱 = 5초 간격. */
+const SALE_WINDOW_TICK_MS = 5000
+const SALE_WINDOW_MAX_POINTS = 60
 
 function formatRemaining(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -30,8 +34,12 @@ export function SaleReflectionStep({
   saleDeadlineAt,
   sellTradeId,
   hasObservationEvidence,
+  referenceStopLossPrice,
+  referenceTakeProfitPrice,
   onCompleted,
   onRetry,
+  simulate = false,
+  initialPrices = [],
 }: {
   market: Market
   instrumentId: number
@@ -40,6 +48,9 @@ export function SaleReflectionStep({
   expired: boolean
   saleDeadlineAt: string | null
   sellTradeId: number | null
+  /** 2단계에서 기록한 참고용 손절가·익절가 — 매도 체결가와 얼마나 차이 났는지 보여주는 데만 쓴다. */
+  referenceStopLossPrice: number | null
+  referenceTakeProfitPrice: number | null
   /**
    * 3단계 evidence A/B(경계 접근·시간 분산)가 이미 충족됐는지 — holding-reflections는 매도 체결과
    * 무관하게 이 조건도 함께 요구한다(026 원칙 상속). 미충족 상태로 저장을 시도하면 매도와는 무관한
@@ -50,6 +61,17 @@ export function SaleReflectionStep({
   onCompleted: () => void
   /** 5분 만료(timedOut) 화면의 "다시 시작" 클릭 시 호출 — 부모가 2단계 매수 화면을 다시 열어준다. */
   onRetry: () => void
+  /**
+   * "다시 하기"(TutorialReplay)에서 true — 백엔드가 완료 후 복기 API를 막으므로(409
+   * PRACTICE_ALREADY_COMPLETED) 실제 호출 없이 로컬로만 복기를 완료 처리한다. 매도(handleSell)는
+   * 이 모드에서도 항상 실제로 체결한다.
+   */
+  simulate?: boolean
+  /**
+   * 3단계(관찰)에서 여기까지 이어 그린 시세 — 그래프가 0부터 다시 시작하지 않도록 앞머리에 붙일 뿐,
+   * 판정에는 쓰이지 않는다.
+   */
+  initialPrices?: number[]
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
@@ -58,10 +80,14 @@ export function SaleReflectionStep({
   }, [])
 
   const [sold, setSold] = useState(sellTradeId !== null)
-  const live = useLiveSamplePrice(instrumentId, !sold && !expired)
+  const live = useLiveSamplePrice(instrumentId, !sold && !expired, {
+    tickMs: SALE_WINDOW_TICK_MS,
+    maxPoints: SALE_WINDOW_MAX_POINTS,
+  })
 
   const [selling, setSelling] = useState(false)
   const [sellError, setSellError] = useState<string | null>(null)
+  const [sellPrice, setSellPrice] = useState<number | null>(null)
 
   const idempotencyKey = useIdempotencyKey([market, instrumentId, holdingId])
 
@@ -76,10 +102,11 @@ export function SaleReflectionStep({
         setSellError('매도 가능한 수량이 없습니다.')
         return
       }
-      await placeOrder(
+      const res = await placeOrder(
         { market, instrumentId, side: 'SELL', orderType: 'MARKET', quantity: String(sellable) },
         idempotencyKey,
       )
+      setSellPrice(res.price)
       setSold(true)
       bumpTutorial()
       bumpAccount()
@@ -89,6 +116,18 @@ export function SaleReflectionStep({
       setSelling(false)
     }
   }, [market, instrumentId, idempotencyKey])
+
+  // 매도 체결가가 참고 손절가·익절가 중 어느 쪽에 더 가까웠는지 — 목표가 대비 차이를 보여주는 용도일
+  // 뿐, 판정에는 쓰이지 않는다.
+  const targetDiff = useMemo(() => {
+    if (sellPrice === null) return null
+    const candidates: { label: string; target: number }[] = []
+    if (referenceStopLossPrice !== null) candidates.push({ label: '손절가', target: referenceStopLossPrice })
+    if (referenceTakeProfitPrice !== null) candidates.push({ label: '익절가', target: referenceTakeProfitPrice })
+    if (candidates.length === 0) return null
+    const nearest = candidates.reduce((a, b) => (Math.abs(sellPrice - a.target) <= Math.abs(sellPrice - b.target) ? a : b))
+    return { label: nearest.label, diff: sellPrice - nearest.target }
+  }, [sellPrice, referenceStopLossPrice, referenceTakeProfitPrice])
 
   const [answer, setAnswer] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -109,6 +148,11 @@ export function SaleReflectionStep({
     }
     setSubmitting(true)
     setReflectError(null)
+    if (simulate) {
+      setSubmitting(false)
+      onCompleted()
+      return
+    }
     try {
       await saveHoldingReflection(holdingId, trimmedAnswer)
       bumpTutorial()
@@ -123,7 +167,7 @@ export function SaleReflectionStep({
     } finally {
       setSubmitting(false)
     }
-  }, [trimmedAnswer, holdingId, onCompleted])
+  }, [trimmedAnswer, holdingId, onCompleted, simulate])
 
   const deadlineMs = saleDeadlineAt ? parseLocalDateTime(saleDeadlineAt).getTime() : null
   const remainingSeconds = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - nowMs) / 1000))
@@ -153,12 +197,20 @@ export function SaleReflectionStep({
             <p className="tabular text-sm text-ink">매도까지 남은 시간 {formatRemaining(remainingSeconds)}</p>
           )}
           {sold ? (
-            <p className="text-sm text-ink">매도를 체결했습니다.</p>
+            <>
+              <p className="text-sm text-ink">매도를 체결했습니다.</p>
+              {targetDiff && (
+                <p className="text-xs text-muted">
+                  {targetDiff.label} 대비 {targetDiff.diff >= 0 ? '+' : ''}
+                  {formatKRW(targetDiff.diff)} 차이로 매도했습니다.
+                </p>
+              )}
+            </>
           ) : (
             <>
               <TickPriceChart
-                prices={live.prices}
-                latest={live.latest}
+                prices={[...initialPrices, ...live.prices]}
+                latest={live.latest ?? initialPrices[initialPrices.length - 1] ?? null}
                 accent={market === 'CRYPTO' ? 'coin' : 'brand'}
               />
               <p className="text-[11px] leading-relaxed text-muted">

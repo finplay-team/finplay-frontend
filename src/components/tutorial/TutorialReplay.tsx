@@ -1,26 +1,22 @@
-// 완료된 튜토리얼을 다시 체험하는 위젯 — 완료 기록·보상은 그대로 두고(백엔드가 완료 후 의도·관찰·복기
-// API 재호출을 막으므로 그 세 단계는 로컬 시뮬레이션만 한다), 매수·매도만 실제 주문으로 체결한다.
+// 완료된 튜토리얼을 처음부터 다시 체험하는 위젯 — 실제 첫 튜토리얼과 똑같은 화면(PracticeLogRail +
+// FavoriteStep·IntentionStep·ObservationReflectionStep·SaleReflectionStep)을 그대로 재사용한다.
+// 완료 기록·보상은 그대로 두고(백엔드가 완료 후 의도·관찰·복기 API를 막으므로, 각 컴포넌트의
+// simulate 모드로 그 세 단계만 로컬에서 처리한다) 즐겨찾기·매수·매도는 항상 실제로 처리된다.
 import { useCallback, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
-import { TickPriceChart } from './TickPriceChart'
-import { useLiveSamplePrice } from '../../hooks/useLiveSamplePrice'
-import { toUserMessage } from '../../lib/errorMessages'
-import { formatKRW } from '../../lib/format'
-import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
-import { bumpAccount } from '../../lib/accountPulse'
-import { placeOrder } from '../../services/orderService'
-import { getHoldings } from '../../services/holdingService'
-import type { FavoriteResponse } from '../../services/tutorialTypes'
+import { FavoriteStep } from './FavoriteStep'
+import { IntentionStep } from './IntentionStep'
+import { ObservationReflectionStep } from './ObservationReflectionStep'
+import { SaleReflectionStep } from './SaleReflectionStep'
+import { PracticeLogRail } from './PracticeLogRail'
+import type { PracticeLogStep } from './PracticeLogRail'
+import { toLocalDateTimeString } from '../../lib/datetime'
+import type { FavoriteResponse, PracticeIntentionResponse } from '../../services/tutorialTypes'
 import type { Market } from '../../services/types'
 
-function sanitizeNumberInput(value: string, allowDecimal: boolean): string {
-  return value.replace(allowDecimal ? /[^0-9.]/g : /[^0-9]/g, '')
-}
-
-type ReplayPhase = 'intention' | 'buy' | 'observe' | 'sell' | 'done'
+const SALE_DEADLINE_MINUTES = 5
 
 export function TutorialReplay({
   market,
@@ -29,230 +25,183 @@ export function TutorialReplay({
 }: {
   market: Market
   favorite: FavoriteResponse
-  onExit: () => void
+  /**
+   * true면 1~4단계를 전부 끝까지 마치고 나간 것이다 — 부모가 이 경우에만 완료 시각 표시를 이번
+   * 체험의 실제 매수·매도 시각으로 다시 찍는다. false(중간에 종료)면 이전 완료 표시를 그대로 둔다.
+   */
+  onExit: (completedFullRun: boolean) => void
 }) {
   const isCrypto = market === 'CRYPTO'
-  const unit = isCrypto ? '개' : '주'
   const accent = isCrypto ? 'coin' : 'brand'
 
-  const [phase, setPhase] = useState<ReplayPhase>('intention')
-  const [quantity, setQuantity] = useState('')
-  const [stopLoss, setStopLoss] = useState('')
-  const [takeProfit, setTakeProfit] = useState('')
-  const [formError, setFormError] = useState<string | null>(null)
+  // 2단계에 넘길 의도 — 실제 Tutorial.tsx와 같은 패턴(부모가 들고 있어야 다시 매수 화면을 열 때도
+  // 안 날아간다). 여기서는 순수 로컬 상태다(서버에 남기지 않는다, simulateIntention).
+  const [intention, setIntention] = useState<PracticeIntentionResponse | null>(null)
+  // 성공적으로 매수(체결)할 때마다 올라간다 — 3·4단계 컴포넌트를 완전히 새로 마운트하는 key로 쓰고,
+  // holdingId 자리(로컬 시뮬레이션이라 실제 holding id가 필요 없다)로도 재사용한다.
+  const [attemptId, setAttemptId] = useState(0)
+  const [buyResetNonce, setBuyResetNonce] = useState(0)
+  const [retrying, setRetrying] = useState(false)
+  const [saleDeadlineAt, setSaleDeadlineAt] = useState<string | null>(null)
+  const [evidenceReady, setEvidenceReady] = useState(false)
+  const [done, setDone] = useState(false)
+  // 2단계(매수 확인)에서 이어 그린 시세 — 3단계(관찰) 그래프가 0부터 다시 시작하지 않도록 넘겨준다.
+  const [buyPriceHistory, setBuyPriceHistory] = useState<number[]>([])
+  // 3단계(관찰)에서 이어 그린 시세 — 4단계(매도·복기) 그래프가 이어받는다.
+  const [observePriceHistory, setObservePriceHistory] = useState<number[]>([])
 
-  const live = useLiveSamplePrice(favorite.instrumentId, phase === 'buy' || phase === 'observe' || phase === 'sell')
+  const handleIntentionCreated = useCallback((created: PracticeIntentionResponse) => {
+    setIntention(created)
+  }, [])
 
-  const [buying, setBuying] = useState(false)
-  const [buyError, setBuyError] = useState<string | null>(null)
-  const buyIdempotencyKey = useIdempotencyKey([market, favorite.instrumentId, 'replay-buy'])
+  const handleBought = useCallback((_execution?: unknown, priceHistory?: number[]) => {
+    setRetrying(false)
+    setEvidenceReady(false)
+    setSaleDeadlineAt(toLocalDateTimeString(new Date(Date.now() + SALE_DEADLINE_MINUTES * 60_000)))
+    setBuyPriceHistory(priceHistory ?? [])
+    setObservePriceHistory([])
+    setAttemptId((n) => n + 1)
+  }, [])
 
-  const [selling, setSelling] = useState(false)
-  const [sellError, setSellError] = useState<string | null>(null)
-  const sellIdempotencyKey = useIdempotencyKey([market, favorite.instrumentId, 'replay-sell'])
+  // 5분 매도 시한이 지나도 매도하지 않았을 때만 쓰는 좁은 재시작 — 매수 화면으로만 돌아간다(의도는
+  // 그대로 유지). "처음부터 다시하기"(handleRestart)와는 별개의 동작이다.
+  const handleRetry = useCallback(() => {
+    setBuyResetNonce((n) => n + 1)
+    setRetrying(true)
+    setSaleDeadlineAt(null)
+    setEvidenceReady(false)
+  }, [])
 
-  const [answer, setAnswer] = useState('')
+  // 어느 단계에 있든 이 체험 전체를 1단계(즐겨찾기)부터 다시 시작한다 — 5분 만료 재시작과 달리
+  // 의도·수량·손절익절가·매수 이후 진행을 전부 초기화한다.
+  const handleRestart = useCallback(() => {
+    setIntention(null)
+    setAttemptId(0)
+    setBuyResetNonce((n) => n + 1)
+    setRetrying(false)
+    setSaleDeadlineAt(null)
+    setEvidenceReady(false)
+    setDone(false)
+    setBuyPriceHistory([])
+    setObservePriceHistory([])
+  }, [])
 
-  const numericStopLoss = Number(stopLoss)
-  const numericTakeProfit = Number(takeProfit)
+  const handleStep4Completed = useCallback(() => {
+    setDone(true)
+  }, [])
 
-  const verdict = useMemo(() => {
-    if (live.latest === null || !stopLoss || !takeProfit) return null
-    const distanceToStop = Math.abs(live.latest - numericStopLoss)
-    const distanceToProfit = Math.abs(numericTakeProfit - live.latest)
-    return distanceToStop < distanceToProfit
-      ? `손절선에 더 가깝습니다 (거리 ${formatKRW(distanceToStop)})`
-      : `익절선에 더 가깝습니다 (거리 ${formatKRW(distanceToProfit)})`
-  }, [live.latest, numericStopLoss, numericTakeProfit, stopLoss, takeProfit])
+  // ObservationReflectionStep의 관찰 useEffect가 simulate를 deps로 쓴다 — 매 렌더마다 새 객체를
+  // 넘기면 참조가 계속 바뀌어 effect가 매번 정리·재시작되면서 tick()이 2초 간격을 지키지 못하고
+  // 렌더될 때마다 즉시 다시 도는 폭주가 생긴다(실제로 겪음). instrumentId가 같으면 같은 참조를 쓴다.
+  const simulateConfig = useMemo(() => ({ instrumentId: favorite.instrumentId }), [favorite.instrumentId])
 
-  const handleIntentionSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    setFormError(null)
-    const q = Number(quantity)
-    const sl = Number(stopLoss)
-    const tp = Number(takeProfit)
-    if (!quantity || !stopLoss || !takeProfit || !(q > 0) || !(sl > 0) || !(tp > 0)) {
-      setFormError('수량·손절가·익절가를 모두 0보다 크게 입력해 주세요.')
-      return
-    }
-    if (!isCrypto && !Number.isInteger(q)) {
-      setFormError('주식 수량은 정수만 입력할 수 있습니다.')
-      return
-    }
-    // 체험 모드는 완료된 튜토리얼의 의도 기록을 다시 남기지 않는다(서버가 막는다) — 로컬에만 둔다.
-    setPhase('buy')
-  }
+  const bought = attemptId > 0
 
-  const handleBuy = useCallback(async () => {
-    setBuying(true)
-    setBuyError(null)
-    try {
-      await placeOrder(
-        { market, instrumentId: favorite.instrumentId, side: 'BUY', orderType: 'MARKET', quantity },
-        buyIdempotencyKey,
-      )
-      bumpAccount()
-      setPhase('observe')
-    } catch (e) {
-      setBuyError(toUserMessage(e))
-    } finally {
-      setBuying(false)
-    }
-  }, [market, favorite.instrumentId, quantity, buyIdempotencyKey])
-
-  const handleSell = useCallback(async () => {
-    setSelling(true)
-    setSellError(null)
-    try {
-      const holdings = await getHoldings(market)
-      const holding = holdings.find((h) => h.instrumentId === favorite.instrumentId)
-      const sellable = holding ? Number(holding.quantity) - Number(holding.reservedQuantity) : 0
-      if (!(sellable > 0)) {
-        setSellError('매도 가능한 수량이 없습니다.')
-        return
-      }
-      await placeOrder(
-        { market, instrumentId: favorite.instrumentId, side: 'SELL', orderType: 'MARKET', quantity: String(sellable) },
-        sellIdempotencyKey,
-      )
-      bumpAccount()
-      setPhase('done')
-    } catch (e) {
-      setSellError(toUserMessage(e))
-    } finally {
-      setSelling(false)
-    }
-  }, [market, favorite.instrumentId, sellIdempotencyKey])
-
-  const inputClass = `w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 ${
-    isCrypto ? 'focus:border-coin focus:ring-4 focus:ring-coin/15' : 'focus:border-brand focus:ring-4 focus:ring-brand/15'
-  }`
+  const steps: PracticeLogStep[] = [
+    {
+      step: 1,
+      title: '즐겨찾기',
+      status: 'COMPLETED',
+      locked: false,
+      children: <FavoriteStep market={market} />,
+    },
+    {
+      step: 2,
+      title: '매수 전 의도 기록 · 매수',
+      status: intention === null ? 'NOT_STARTED' : bought ? 'COMPLETED' : 'IN_PROGRESS',
+      locked: false,
+      children: (
+        <IntentionStep
+          market={market}
+          favorite={favorite}
+          intention={intention}
+          onIntentionCreated={handleIntentionCreated}
+          onBought={handleBought}
+          resetToken={buyResetNonce}
+          simulateIntention
+        />
+      ),
+    },
+    {
+      step: 3,
+      title: '가격 관찰 · 견디기',
+      status: !bought ? 'NOT_STARTED' : evidenceReady ? 'COMPLETED' : 'IN_PROGRESS',
+      locked: !bought,
+      children: intention ? (
+        <ObservationReflectionStep
+          key={attemptId}
+          holdingId={attemptId}
+          referenceStopLossPrice={intention.stopLoss}
+          referenceTakeProfitPrice={intention.takeProfit}
+          onCompleted={() => undefined}
+          deferReflection
+          simulate={simulateConfig}
+          onEvidenceReady={() => setEvidenceReady(true)}
+          initialPrices={buyPriceHistory}
+          onPricesChanged={setObservePriceHistory}
+        />
+      ) : null,
+    },
+    {
+      step: 4,
+      title: '매도 · 복기',
+      status: done ? 'COMPLETED' : bought ? 'IN_PROGRESS' : 'NOT_STARTED',
+      locked: !bought,
+      children: retrying ? (
+        <p className="text-sm text-muted">2단계에서 새로 매수하면 여기서 다시 진행됩니다.</p>
+      ) : intention ? (
+        <SaleReflectionStep
+          key={attemptId}
+          market={market}
+          instrumentId={favorite.instrumentId}
+          holdingId={attemptId}
+          expired={false}
+          saleDeadlineAt={saleDeadlineAt}
+          sellTradeId={null}
+          referenceStopLossPrice={intention.stopLoss}
+          referenceTakeProfitPrice={intention.takeProfit}
+          hasObservationEvidence={evidenceReady}
+          onCompleted={handleStep4Completed}
+          onRetry={handleRetry}
+          simulate
+          initialPrices={observePriceHistory}
+        />
+      ) : null,
+    },
+  ]
 
   return (
-    <Card accent={accent}>
-      <div className="p-6">
-        <div className="flex items-center justify-between">
-          <Eyebrow>다시 체험하기 · {favorite.name}</Eyebrow>
-          <Button type="button" variant="ghost" size="sm" onClick={onExit}>
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Eyebrow>다시 체험하기 · {favorite.name}</Eyebrow>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={handleRestart}>
+            처음부터 다시하기
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onExit(false)}>
             종료
           </Button>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-muted">
-          완료 기록과 보상은 그대로 유지됩니다 — 이 체험은 진행 상태에 영향을 주지 않습니다. 매수·매도는
-          실제로 체결되지만, 의도·관찰·복기는 다시 저장되지 않습니다.
-        </p>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-muted">
+        완료 기록과 보상은 그대로 유지됩니다 — 이 체험은 진행 상태에 영향을 주지 않습니다. 즐겨찾기·매수·매도는
+        실제로 처리되지만, 의도·관찰·복기는 다시 저장되지 않습니다.
+      </p>
 
-        {phase === 'intention' && (
-          <form onSubmit={handleIntentionSubmit} className="mt-5 space-y-4">
-            <div>
-              <label htmlFor="replay-quantity" className="mb-1.5 block text-sm font-medium text-ink">
-                수량
-              </label>
-              <input
-                id="replay-quantity"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder={isCrypto ? '0.01' : '1'}
-                value={quantity}
-                onChange={(e) => setQuantity(sanitizeNumberInput(e.target.value, isCrypto))}
-                className={inputClass}
-              />
-              <span className="mt-1.5 block text-xs text-muted">{unit} 단위로 입력합니다.</span>
-            </div>
-            <div>
-              <label htmlFor="replay-stop-loss" className="mb-1.5 block text-sm font-medium text-ink">
-                손절가
-              </label>
-              <input
-                id="replay-stop-loss"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="0"
-                value={stopLoss}
-                onChange={(e) => setStopLoss(sanitizeNumberInput(e.target.value, true))}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="replay-take-profit" className="mb-1.5 block text-sm font-medium text-ink">
-                익절가
-              </label>
-              <input
-                id="replay-take-profit"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="0"
-                value={takeProfit}
-                onChange={(e) => setTakeProfit(sanitizeNumberInput(e.target.value, true))}
-                className={inputClass}
-              />
-            </div>
-            {formError && <p className="text-sm text-loss">{formError}</p>}
-            <Button type="submit">다음</Button>
-          </form>
-        )}
+      <Card className="mt-6" accent={accent} innerClassName="p-6 md:p-8">
+        <PracticeLogRail steps={steps} />
+      </Card>
 
-        {phase === 'buy' && (
-          <div className="mt-5 space-y-3">
-            <TickPriceChart
-              prices={live.prices}
-              latest={live.latest}
-              referenceStopLoss={numericStopLoss}
-              referenceTakeProfit={numericTakeProfit}
-              accent={accent}
-            />
-            {buyError && <p className="text-sm text-loss">{buyError}</p>}
-            <Button type="button" disabled={buying} onClick={() => void handleBuy()}>
-              {buying ? '매수하는 중…' : `${quantity}${unit} 시장가로 매수`}
-            </Button>
-          </div>
-        )}
-
-        {phase === 'observe' && (
-          <div className="mt-5 space-y-3">
-            <TickPriceChart
-              prices={live.prices}
-              latest={live.latest}
-              referenceStopLoss={numericStopLoss}
-              referenceTakeProfit={numericTakeProfit}
-              accent={accent}
-            />
-            {verdict && <p className="text-sm text-ink">{verdict}</p>}
-            <Button type="button" onClick={() => setPhase('sell')}>
-              매도하러 가기
-            </Button>
-          </div>
-        )}
-
-        {phase === 'sell' && (
-          <div className="mt-5 space-y-3">
-            <TickPriceChart prices={live.prices} latest={live.latest} accent={accent} />
-            {sellError && <p className="text-sm text-loss">{sellError}</p>}
-            <Button type="button" disabled={selling} onClick={() => void handleSell()}>
-              {selling ? '매도하는 중…' : '지금 시장가로 매도'}
-            </Button>
-          </div>
-        )}
-
-        {phase === 'done' && (
-          <div className="mt-5 space-y-3">
-            <p className="text-sm text-ink">매도까지 체험을 마쳤습니다. 이번 판단은 어땠나요?</p>
-            <textarea
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              rows={4}
-              placeholder="자유롭게 적어보세요(저장되지 않습니다)."
-              className={`${inputClass} resize-y`}
-            />
-            <Button type="button" onClick={onExit}>
+      {done && (
+        <Card className="mt-6" accent={accent} innerClassName="p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-ink">1~4단계를 모두 다시 체험했습니다.</p>
+            <Button type="button" onClick={() => onExit(true)}>
               체험 종료
             </Button>
           </div>
-        )}
-      </div>
-    </Card>
+        </Card>
+      )}
+    </div>
   )
 }

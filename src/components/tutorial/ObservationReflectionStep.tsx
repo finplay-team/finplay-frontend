@@ -4,15 +4,48 @@ import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { TickPriceChart } from './TickPriceChart'
 import { recordHoldingObservation, saveHoldingReflection } from '../../services/tutorialService'
-import type { PracticeHoldingObservationResponse } from '../../services/tutorialTypes'
+import { getPrice } from '../../services/instrumentService'
+import type { PracticeBoundary, PracticeEvidenceType, PracticeHoldingObservationResponse } from '../../services/tutorialTypes'
 import { bumpTutorial } from '../../lib/tutorialPulse'
 import { toUserMessage } from '../../lib/errorMessages'
-import { formatDateTime, parseLocalDateTime } from '../../lib/datetime'
+import { formatDateTime, nowLocalDateTimeString, parseLocalDateTime } from '../../lib/datetime'
 
 const REFLECTION_MAX = 2000
 const DEFAULT_PROMPT = '지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.'
 const TICK_MS = 2000
 const CHART_POINTS = 10
+/** simulate 모드(다시 하기)에서만 쓰는 로컬 근사 판정 — 실제 서버 판정 공식과는 다르다. */
+const SIMULATE_BOUNDARY_CLOSE_RATIO = 0.2
+const SIMULATE_TIMED_REPETITION_MIN_COUNT = 3
+const SIMULATE_TIMED_REPETITION_MIN_SPAN_MS = 2 * 60 * 1000
+
+function simulateEvidence(
+  price: number,
+  priorCount: number,
+  oldestObservedAt: string | null,
+  stopLoss: number,
+  takeProfit: number,
+): { closerToBoundary: boolean | null; closerBoundary: PracticeBoundary | null; evidenceType: PracticeEvidenceType | null } {
+  const range = Math.abs(takeProfit - stopLoss)
+  if (range > 0) {
+    const distanceToStop = Math.abs(price - stopLoss)
+    const distanceToProfit = Math.abs(takeProfit - price)
+    if (Math.min(distanceToStop, distanceToProfit) <= range * SIMULATE_BOUNDARY_CLOSE_RATIO) {
+      return {
+        closerToBoundary: true,
+        closerBoundary: distanceToStop <= distanceToProfit ? 'STOP_LOSS' : 'TAKE_PROFIT',
+        evidenceType: 'CLOSER_TO_BOUNDARY',
+      }
+    }
+  }
+  if (priorCount + 1 >= SIMULATE_TIMED_REPETITION_MIN_COUNT && oldestObservedAt) {
+    const span = Date.now() - parseLocalDateTime(oldestObservedAt).getTime()
+    if (span >= SIMULATE_TIMED_REPETITION_MIN_SPAN_MS) {
+      return { closerToBoundary: false, closerBoundary: null, evidenceType: 'TIMED_REPETITION' }
+    }
+  }
+  return { closerToBoundary: false, closerBoundary: null, evidenceType: null }
+}
 
 const textareaClass =
   'w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-sm leading-relaxed text-ink outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15'
@@ -27,16 +60,43 @@ export function ObservationReflectionStep({
   referenceTakeProfitPrice,
   onCompleted,
   deferReflection = false,
+  simulate,
+  onEvidenceReady,
+  initialPrices = [],
+  onPricesChanged,
 }: {
   holdingId: number
   referenceStopLossPrice: number | null
   referenceTakeProfitPrice: number | null
   onCompleted: () => void
   /**
+   * 2단계(매수 확인)에서 여기까지 이어 그린 시세 — 그래프가 0부터 다시 시작하지 않고 이어지도록
+   * 앞머리에 붙여서 보여줄 뿐, 관찰·evidence 판정에는 전혀 쓰이지 않는다.
+   */
+  initialPrices?: number[]
+  /**
    * 샘플 종목 4단계 흐름(031)에서는 이 3단계가 관찰만 담당하고 복기는 4단계(SaleReflectionStep)로
    * 옮겨진다 — evidence A/B가 준비돼도 여기서 복기 폼을 보여주거나 저장하지 않는다.
    */
   deferReflection?: boolean
+  /**
+   * "다시 하기"(TutorialReplay)에서 전달 — 백엔드가 완료 후 관찰·복기 API를 막으므로(409
+   * PRACTICE_ALREADY_COMPLETED) instrumentId의 현재가를 직접 조회해 로컬로만 관찰·판정한다.
+   */
+  simulate?: { instrumentId: number }
+  /**
+   * evidence A/B(경계 접근·시간 분산)를 처음 충족한 순간 한 번 호출된다 — deferReflection이 true인
+   * 4단계 흐름에서, 복기 폼을 갖고 있는 SaleReflectionStep(4단계)에게 "이제 복기를 저장해도 된다"를
+   * 알려주는 용도(hasObservationEvidence). deferReflection이 false면 이 컴포넌트가 직접 복기를 받으므로
+   * 굳이 쓰지 않아도 된다.
+   */
+  onEvidenceReady?: () => void
+  /**
+   * 이 단계에서 지금까지 이어 그린 시세(초기 이어받은 값 + 관찰 틱)가 바뀔 때마다 호출된다 — 4단계
+   * (매도·복기) 그래프가 여기서 이어받아 0부터 다시 시작하지 않도록 부모가 들고 있는 용도일 뿐,
+   * 판정에는 쓰이지 않는다.
+   */
+  onPricesChanged?: (prices: number[]) => void
 }) {
   const [observations, setObservations] = useState<PracticeHoldingObservationResponse[]>([])
   const [observeError, setObserveError] = useState<string | null>(null)
@@ -52,30 +112,80 @@ export function ObservationReflectionStep({
   const latest = observations[0] ?? null
   const canReflect = observations.some((o) => o.evidenceType !== null)
 
+  // simulate 모드에서 "2분 이상 간격" 판정에 쓸 가장 오래된 관찰을 tick() 클로저 밖에서도 최신으로
+  // 읽기 위한 참조 — setInterval의 클로저는 effect가 재실행될 때까지 observations를 갇힌 값으로 본다.
+  const observationsRef = useRef(observations)
+  useEffect(() => {
+    observationsRef.current = observations
+  }, [observations])
+
+  // 4단계(매도·복기) 그래프가 여기서 이어받을 수 있도록, 지금까지 이어 그린 시세가 바뀔 때마다
+  // 부모에게 흘려보낸다 — early return(완료·evidence 미준비) 이전에 있어야 훅 순서가 항상 같다.
+  useEffect(() => {
+    if (!onPricesChanged) return
+    onPricesChanged([
+      ...initialPrices,
+      ...observations
+        .slice(0, CHART_POINTS)
+        .map((o) => o.currentPrice)
+        .reverse(),
+    ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [observations, initialPrices])
+
+  const evidenceReadyFiredRef = useRef(false)
+  useEffect(() => {
+    if (canReflect && !evidenceReadyFiredRef.current) {
+      evidenceReadyFiredRef.current = true
+      onEvidenceReady?.()
+    }
+  }, [canReflect, onEvidenceReady])
+
   // 사람이 클릭할 때마다 진행하는 대신, 손절·익절 참고선이 준비되면 시간이 흐르는 대로 자동으로
   // 가격을 관찰한다 — 조건을 충족하거나(canReflect) 복기를 이미 마치면 멈춘다.
   useEffect(() => {
     if (referenceStopLossPrice === null || referenceTakeProfitPrice === null) return
     if (canReflect || completed) return
+    const stopLoss = referenceStopLossPrice
+    const takeProfit = referenceTakeProfitPrice
 
     let cancelled = false
     const tick = () => {
       if (observeBusyRef.current || cancelled) return
       observeBusyRef.current = true
-      recordHoldingObservation(holdingId)
+      const request: Promise<PracticeHoldingObservationResponse> = simulate
+        ? getPrice(simulate.instrumentId).then((res) => {
+            if (res.price === null) throw new Error('가격을 불러오지 못했습니다.')
+            const current = observationsRef.current
+            const oldest = current.length > 0 ? current[current.length - 1].observedAt : null
+            const ev = simulateEvidence(res.price, current.length, oldest, stopLoss, takeProfit)
+            return {
+              observationId: -1,
+              holdingId,
+              currentPrice: res.price,
+              observedAt: nowLocalDateTimeString(),
+              closerToBoundary: ev.closerToBoundary,
+              closerBoundary: ev.closerBoundary,
+              evidenceType: ev.evidenceType,
+            }
+          })
+        : recordHoldingObservation(holdingId)
+      request
         .then((res) => {
           if (cancelled) return
           setObservations((prev) => [res, ...prev])
           setObserveError(null)
-          bumpTutorial()
+          if (!simulate) bumpTutorial()
         })
         .catch((e) => {
           if (!cancelled) {
             setObserveError(
-              toUserMessage(e, {
-                NOT_FOUND: '보유 종목을 찾을 수 없습니다.',
-                PRACTICE_EVIDENCE_MISSING: '조건을 다시 계산하지 못했습니다. 잠시 후 다시 시도해 주세요.',
-              }),
+              simulate
+                ? toUserMessage(e)
+                : toUserMessage(e, {
+                    NOT_FOUND: '보유 종목을 찾을 수 없습니다.',
+                    PRACTICE_EVIDENCE_MISSING: '조건을 다시 계산하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+                  }),
             )
           }
         })
@@ -90,7 +200,7 @@ export function ObservationReflectionStep({
       cancelled = true
       clearInterval(id)
     }
-  }, [holdingId, referenceStopLossPrice, referenceTakeProfitPrice, canReflect, completed])
+  }, [holdingId, referenceStopLossPrice, referenceTakeProfitPrice, canReflect, completed, simulate])
 
   const trimmedAnswer = answer.trim()
   const canSubmit = canReflect && trimmedAnswer.length > 0 && trimmedAnswer.length <= REFLECTION_MAX && !submitting
@@ -104,6 +214,13 @@ export function ObservationReflectionStep({
     submitBusyRef.current = true
     setSubmitting(true)
     setReflectError(null)
+    if (simulate) {
+      setCompleted({ createdAt: nowLocalDateTimeString() })
+      submitBusyRef.current = false
+      setSubmitting(false)
+      onCompleted()
+      return
+    }
     try {
       const res = await saveHoldingReflection(holdingId, trimmedAnswer)
       setCompleted({ createdAt: res.createdAt })
@@ -165,11 +282,15 @@ export function ObservationReflectionStep({
     }
   }
 
-  // 최신이 앞인 observations를 시간순으로 뒤집어 최근 10개만 그래프에 보여준다.
-  const chartPrices = observations
-    .slice(0, CHART_POINTS)
-    .map((o) => o.currentPrice)
-    .reverse()
+  // 최신이 앞인 observations를 시간순으로 뒤집어 최근 10개만 그래프에 보여준다. 앞에는 2단계에서
+  // 이어받은 시세를 붙여 그래프가 0부터 다시 시작하지 않게 한다.
+  const chartPrices = [
+    ...initialPrices,
+    ...observations
+      .slice(0, CHART_POINTS)
+      .map((o) => o.currentPrice)
+      .reverse(),
+  ]
 
   return (
     <div className="space-y-4">

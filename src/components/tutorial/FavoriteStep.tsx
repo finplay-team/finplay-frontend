@@ -140,7 +140,7 @@ export function FavoriteStep({ market }: { market: Market }) {
                     disabled={rowBusy || !selectable}
                     onClick={() => handleToggle(instrument.instrumentId)}
                   >
-                    {!selectable ? '선택 불가' : favorited ? '해제' : '즐겨찾기'}
+                    {favorited ? '해제' : '즐겨찾기'}
                   </Button>
                 </li>
               )

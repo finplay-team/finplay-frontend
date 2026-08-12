@@ -6,13 +6,13 @@ import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
 import { TickPriceChart } from './TickPriceChart'
 import { useLiveSamplePrice } from '../../hooks/useLiveSamplePrice'
-import { formatDateTime } from '../../lib/datetime'
+import { formatDateTime, nowLocalDateTimeString } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { formatKRW } from '../../lib/format'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { bumpAccount } from '../../lib/accountPulse'
 import { bumpTutorial } from '../../lib/tutorialPulse'
-import { getPrice } from '../../services/instrumentService'
+import { ensureInstrumentCache, getPrice } from '../../services/instrumentService'
 import { placeOrder } from '../../services/orderService'
 import { createPracticeIntention, getSyntheticPrices } from '../../services/tutorialService'
 import type { FavoriteResponse, PracticeIntentionResponse, SyntheticPriceSeriesResponse } from '../../services/tutorialTypes'
@@ -28,32 +28,8 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-/** 100개 점을 0~100 폭에 균등 배치하고 min/max 로 세로 정규화하는 아주 작은 스파크라인. */
-function Sparkline({ prices, accent }: { prices: number[]; accent: 'brand' | 'coin' }) {
-  const points = useMemo(() => {
-    if (prices.length === 0) return ''
-    const min = Math.min(...prices)
-    const max = Math.max(...prices)
-    const span = max - min || 1
-    return prices
-      .map((p, i) => {
-        const x = (i / (prices.length - 1)) * 100
-        const y = 100 - ((p - min) / span) * 100
-        return `${x.toFixed(2)},${y.toFixed(2)}`
-      })
-      .join(' ')
-  }, [prices])
-
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-      className={`mt-2 h-16 w-full ${accent === 'coin' ? 'text-coin' : 'text-brand'}`}
-    >
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
-  )
-}
+/** 매수 확인 그래프 앞머리에 이어 붙일 참고 시세 꼬리 길이 — 너무 길면 실시간 틱 구간이 안 보인다. */
+const REFERENCE_TAIL_POINTS = 20
 
 function sanitizeNumberInput(value: string, allowDecimal: boolean): string {
   return value.replace(allowDecimal ? /[^0-9.]/g : /[^0-9]/g, '')
@@ -66,6 +42,7 @@ export function IntentionStep({
   onIntentionCreated,
   onBought,
   resetToken = 0,
+  simulateIntention = false,
 }: {
   market: Market
   favorite: FavoriteResponse
@@ -73,15 +50,22 @@ export function IntentionStep({
   intention: PracticeIntentionResponse | null
   onIntentionCreated: (intention: PracticeIntentionResponse) => void
   /**
-   * 실제 매수 체결 성공 시 호출 — 부모가 진행 상태를 다시 읽도록 트리거한다.
-   * 코인 지정가 체결 경로(CoinPriceSessionBuyStep)는 체결 정보를 따로 갖고 있지 않아 인자 없이 부른다.
+   * 실제 매수 체결 성공 시 호출 — 부모가 진행 상태를 다시 읽도록 트리거한다. priceHistory는 매수
+   * 확인 화면에서 여기까지 이어 그린 시세(참고 시세 꼬리 + 실시간 틱)로, 3단계(관찰) 그래프가 0부터
+   * 다시 시작하지 않고 이어지게 하는 용도일 뿐 evidence 판정과는 무관하다.
    */
-  onBought: (execution?: OrderExecutionResponse) => void
+  onBought: (execution?: OrderExecutionResponse, priceHistory?: number[]) => void
   /**
    * 샘플 종목 4단계(031)에서 5분 만료 후 "다시 시작"을 누르면 부모가 이 값을 증가시켜 매수 화면을
    * 다시 활성화한다 — 한 번 매수하면 영구히 "체결 완료" 카드로 고정되던 것을 되돌린다.
    */
   resetToken?: number
+  /**
+   * "다시 하기"(완료된 튜토리얼 재체험, TutorialReplay 참고)에서 true — 백엔드가 완료 후 의도 기록
+   * API를 막으므로(409 PRACTICE_ALREADY_COMPLETED) 실제 호출 없이 로컬에서만 의도를 만든다.
+   * 매수(handleBuy)는 이 모드에서도 항상 실제로 체결한다.
+   */
+  simulateIntention?: boolean
 }) {
   const isCrypto = favorite.market === 'CRYPTO'
   const unit = isCrypto ? '개' : '주'
@@ -97,6 +81,22 @@ export function IntentionStep({
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // 코인 최소 주문금액 — 이 종목은 단가가 높아 "0.01개" 같은 흔한 기본값이 5,000원 미달로 거절될 수
+  // 있다(예: 단가 10,000원 × 0.01개 = 100원). 클릭 전에 바로 알려주지 않으면 서버가 뭉뚱그린
+  // "입력값을 다시 확인해 주세요."만 돌려줘서 원인을 알기 어렵다.
+  const [minOrderAmount, setMinOrderAmount] = useState<number | null>(null)
+  useEffect(() => {
+    let alive = true
+    ensureInstrumentCache()
+      .then((index) => {
+        if (alive) setMinOrderAmount(index.byId.get(favorite.instrumentId)?.minOrderAmount ?? null)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [favorite.instrumentId])
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setFormError(null)
@@ -111,6 +111,24 @@ export function IntentionStep({
     }
     if (!isCrypto && !Number.isInteger(q)) {
       setFormError('주식 수량은 정수만 입력할 수 있습니다.')
+      return
+    }
+    if (minOrderAmount !== null && priceInfo?.price != null && q * priceInfo.price < minOrderAmount) {
+      setFormError(
+        `주문금액이 최소 주문금액(${minOrderAmount.toLocaleString('ko-KR')}원)보다 적습니다. 수량을 늘려 주세요.`,
+      )
+      return
+    }
+
+    if (simulateIntention) {
+      onIntentionCreated({
+        intentionId: -1,
+        instrumentId: favorite.instrumentId,
+        quantity: q,
+        stopLoss: sl,
+        takeProfit: tp,
+        createdAt: nowLocalDateTimeString(),
+      })
       return
     }
 
@@ -139,6 +157,14 @@ export function IntentionStep({
   /* ---------- 2단계: 의도 요약 + 참고 시세 + 매수 확인 ---------- */
   const [prices, setPrices] = useState<SyntheticPriceSeriesResponse | null>(null)
   const [priceInfo, setPriceInfo] = useState<PriceResponse | null>(null)
+
+  // 특히 코인은 종목마다 단가가 크게 달라 "수량 0.01" 같은 감으로 입력하면 최소 주문금액에
+  // 못 미치는지 눈으로 바로 알기 어렵다 — 입력한 수량 × 현재가를 실시간으로 보여준다.
+  const estimatedAmount = useMemo(() => {
+    const q = Number(quantity)
+    if (!quantity || !(q > 0) || priceInfo?.price == null) return null
+    return q * priceInfo.price
+  }, [quantity, priceInfo])
   const [priceError, setPriceError] = useState<string | null>(null)
   const [buyError, setBuyError] = useState<string | null>(null)
   const [buying, setBuying] = useState(false)
@@ -147,6 +173,13 @@ export function IntentionStep({
   // 의도를 기록한 뒤부터(목표가는 참고선일 뿐, 자동 체결 트리거가 아니다) 흐르는 샘플 시세를 보며
   // 사용자가 직접 매수 시점을 고른다 — intention이 생기기 전에는 굳이 틱을 돌리지 않는다.
   const live = useLiveSamplePrice(favorite.instrumentId, intention !== null && execution === null)
+
+  // 매수 확인 그래프가 실시간 틱(live.prices) 하나만으로 시작하면 점이 1~2개뿐이라 기울기가 안
+  // 보인다 — 참고 시세의 꼬리를 앞에 이어 붙여 처음부터 하나의 연속된 그래프처럼 보이게 한다.
+  const referenceTailPrices = useMemo(
+    () => prices?.prices.slice(-REFERENCE_TAIL_POINTS) ?? [],
+    [prices],
+  )
 
   // resetToken이 바뀌면(4단계 5분 만료 후 "다시 시작") 매수 확인 화면을 다시 활성화한다.
   const lastResetTokenRef = useRef(resetToken)
@@ -195,7 +228,9 @@ export function IntentionStep({
       )
       setExecution(res)
       setSuccessNonce((n) => n + 1)
-      onBought(res)
+      // 3단계(관찰) 그래프가 0부터 다시 시작하지 않도록, 지금까지 이어 그린 시세(참고 시세 꼬리 +
+      // 매수 확인 중 흐른 실시간 틱)를 넘겨준다 — 부모가 이걸 관찰 그래프의 앞머리로 이어 붙인다.
+      onBought(res, [...referenceTailPrices, ...live.prices])
       bumpTutorial()
       bumpAccount()
     } catch (err) {
@@ -242,7 +277,19 @@ export function IntentionStep({
                 onChange={(e) => setQuantity(sanitizeNumberInput(e.target.value, isCrypto))}
                 className={inputClass}
               />
-              <span className="mt-1.5 block text-xs text-muted">{unit} 단위로 입력합니다.</span>
+              <span className="mt-1.5 block text-xs text-muted">
+                {unit} 단위로 입력합니다.
+                {minOrderAmount != null && ` 최소 주문금액 ${minOrderAmount.toLocaleString('ko-KR')}원 이상이어야 합니다.`}
+              </span>
+              {estimatedAmount != null && (
+                <p
+                  className={`mt-1 text-xs ${
+                    minOrderAmount != null && estimatedAmount < minOrderAmount ? 'text-loss' : 'text-muted'
+                  }`}
+                >
+                  예상 주문금액 {formatKRW(estimatedAmount)} (현재가 × 수량 — 실제 체결가는 매수 시점 시세로 확정됩니다)
+                </p>
+              )}
             </div>
             <div>
               <label htmlFor="intention-stop-loss" className="mb-1.5 block text-sm font-medium text-ink">
@@ -322,25 +369,19 @@ export function IntentionStep({
               <Stat label="기록 시각" value={formatDateTime(intention.createdAt)} />
             </dl>
 
-            <div className="mt-5 rounded-xl bg-elevated p-4">
-              <p className="text-xs text-muted">{prices?.title ?? '참고 시세'}</p>
-              {prices ? (
-                <Sparkline prices={prices.prices} accent={isCrypto ? 'coin' : 'brand'} />
-              ) : (
-                <div className="skeleton mt-2 h-16" />
-              )}
-              <p className="mt-2 text-[11px] leading-relaxed text-muted">
-                이건 실제 시세가 아니라 연습용 참고 자료입니다.
-              </p>
-            </div>
-
             {execution === null ? (
               <div className="mt-5 rounded-xl bg-elevated p-4">
                 <p className="text-sm font-semibold text-ink">매수 확인</p>
                 <div className="mt-3">
+                  {/*
+                    실시간 틱(live.prices)만 그리면 처음엔 점 하나뿐이라 기울기가 안 보인다 — 의도를
+                    기록하기 전부터 보여준 참고 시세(prices.prices) 뒤쪽 구간을 이어 붙여, 하나의
+                    연속된 그래프처럼 보이게 한다. 뒤쪽(연습용 참고 자료)만 진짜가 아니고 그 앞
+                    구간은 여전히 연습용 합성 시세다.
+                  */}
                   <TickPriceChart
-                    prices={live.prices}
-                    latest={live.latest}
+                    prices={[...referenceTailPrices, ...live.prices]}
+                    latest={live.latest ?? referenceTailPrices[referenceTailPrices.length - 1] ?? null}
                     referenceStopLoss={intention.stopLoss}
                     referenceTakeProfit={intention.takeProfit}
                     accent={isCrypto ? 'coin' : 'brand'}
@@ -348,7 +389,8 @@ export function IntentionStep({
                 </div>
                 <p className="mt-2 text-[11px] leading-relaxed text-muted">
                   손절가·익절가는 참고선일 뿐 자동으로 체결시키지 않습니다. 시세가 흐르는 걸 보다가
-                  원할 때 직접 매수 버튼을 눌러 주세요.
+                  원할 때 직접 매수 버튼을 눌러 주세요. 왼쪽 구간은 연습용 참고 자료이며, 실제 시세가
+                  아닙니다.
                 </p>
                 {buyError && <p className="mt-2 text-sm text-rose-300">{buyError}</p>}
                 <Button type="button" className="mt-3" disabled={buying} onClick={() => void handleBuy()}>

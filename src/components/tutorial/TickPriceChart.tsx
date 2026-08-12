@@ -25,12 +25,14 @@ export function TickPriceChart({
     const span = max - min || 1
     const toY = (v: number) => 100 - ((v - min) / span) * 100
 
-    const pts = prices
-      .map((p, i) => {
-        const x = prices.length === 1 ? 100 : (i / (prices.length - 1)) * 100
-        return `${x.toFixed(2)},${toY(p).toFixed(2)}`
-      })
-      .join(' ')
+    // 점이 1개뿐이면 좌표 하나짜리 polyline은 아무것도 그려지지 않는다(선을 그리려면 최소 2점 필요) —
+    // 값을 두 번 찍어 처음 틱부터 바로 수평선이 보이게 한다.
+    const pts =
+      prices.length === 1
+        ? `0.00,${toY(prices[0]).toFixed(2)} 100.00,${toY(prices[0]).toFixed(2)}`
+        : prices
+            .map((p, i) => `${((i / (prices.length - 1)) * 100).toFixed(2)},${toY(p).toFixed(2)}`)
+            .join(' ')
 
     return {
       points: pts,
