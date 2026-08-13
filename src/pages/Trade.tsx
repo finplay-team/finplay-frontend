@@ -1,5 +1,5 @@
 // 주식·코인 매매 화면 — 시장 탭으로 전환하며 시세(주식 SSE / 코인 폴링)·캔들·시장가/지정가 주문을 한 화면에서 처리한다
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { CandleChart } from '../components/CandleChart'
 import { Button } from '../components/ui/Button'
@@ -275,6 +275,14 @@ export function Trade() {
   const isLimit = isCrypto && orderType === 'LIMIT'
 
   const watchlist = useWatchlist()
+
+  // 관심목록(★)에 있는 종목을 목록 맨 위로 올린다 — 그 안에서는 원래 정렬(instrumentId 순)을 유지한다.
+  const sortedInstruments = useMemo(() => {
+    const favorites = instruments.filter((i) => watchlist.has(i.instrumentId))
+    const rest = instruments.filter((i) => !watchlist.has(i.instrumentId))
+    return [...favorites, ...rest]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instruments, watchlist.items])
 
   /**
    * 서버 멱등 해시에 limitPrice 가 들어가는지 문서에 없다(MUST-VERIFY). 키를 가격까지 종속시켜
@@ -621,7 +629,7 @@ export function Trade() {
               </ul>
             ) : (
               <ul className="max-h-[28rem] space-y-1 overflow-y-auto lg:max-h-[36rem]">
-                {instruments.map((instrument) => {
+                {sortedInstruments.map((instrument, index) => {
                   const price = isCrypto
                     ? cryptoPrices[instrument.instrumentId]
                     : stockPrices[instrument.symbol]
@@ -631,9 +639,15 @@ export function Trade() {
                     : 'bg-brand-soft ring-1 ring-brand/40'
                   const starred = watchlist.has(instrument.instrumentId)
                   const starBusy = watchlist.busy.has(instrument.instrumentId)
+                  // 관심목록 종목이 위로 올라온 뒤 처음 만나는 일반 종목 앞에만 구분선을 넣는다.
+                  const isFirstNonFavorite = starred === false && index > 0 && watchlist.has(sortedInstruments[index - 1].instrumentId)
                   return (
-                    // ★ 를 행 버튼 안에 넣으면 버튼 중첩이라 유효하지 않은 HTML 이다 → 형제로 둔다.
-                    <li key={instrument.instrumentId} className="flex items-center gap-0.5">
+                    <Fragment key={instrument.instrumentId}>
+                      {isFirstNonFavorite && (
+                        <li aria-hidden className="my-1.5 border-t border-line" />
+                      )}
+                      {/* ★ 를 행 버튼 안에 넣으면 버튼 중첩이라 유효하지 않은 HTML 이다 → 형제로 둔다. */}
+                      <li className="flex items-center gap-0.5">
                       <button
                         type="button"
                         onClick={() => setSelectedId(instrument.instrumentId)}
@@ -685,7 +699,8 @@ export function Trade() {
                       >
                         <Star width={16} height={16} fill={starred ? 'currentColor' : 'none'} />
                       </button>
-                    </li>
+                      </li>
+                    </Fragment>
                   )
                 })}
               </ul>

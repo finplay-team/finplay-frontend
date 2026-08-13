@@ -35,6 +35,9 @@ export function Nav() {
   const isAuthenticated = status !== 'anonymous'
   const [wallet, setWallet] = useState<{ totalValue: number; availableCash: number } | null>(null)
   const accountRevision = useSyncExternalStore(subscribeAccount, getAccountRevision)
+  // 튜토리얼 중에는 샘플 종목 매매·완료 보상이 이 숫자에 섞여 실제 자산처럼 보이므로 숨긴다.
+  // 정확히 이 경로일 때만 — startsWith면 나중에 /tutorial-preview 같은 경로가 생겨도 잘못 걸린다.
+  const isTutorialRoute = location.pathname === '/tutorial'
 
   // 라우트 변경 시 모바일 메뉴 닫기
   useEffect(() => {
@@ -127,7 +130,7 @@ export function Nav() {
         <div className="hidden items-center gap-2 lg:flex">
           {isAuthenticated ? (
             <>
-              {wallet && (
+              {wallet && !isTutorialRoute && (
                 <Link
                   to="/me"
                   className="flex items-center gap-3 rounded-full bg-white/[0.04] px-4 py-1.5 ring-1 ring-white/[0.08] transition-colors duration-300 hover:bg-white/[0.08]"
@@ -223,7 +226,7 @@ export function Nav() {
         >
           {isAuthenticated ? (
             <>
-              {wallet && (
+              {wallet && !isTutorialRoute && (
                 <Link
                   to="/me"
                   onClick={() => setOpen(false)}
