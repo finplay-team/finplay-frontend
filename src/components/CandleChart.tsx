@@ -21,6 +21,18 @@ const PAD = { top: 10, right: 58, bottom: 22, left: 8 }
 const VOLUME_RATIO = 0.18
 /** 이 폭 아래에서는 차트를 낮추고 봉 수를 줄인다 (모바일). */
 const NARROW_PX = 480
+/** 이보다 적게 보여주면 봉이 서로 겹친다. */
+const MIN_VISIBLE_BARS = 15
+/** 버튼 클릭 한 번에 곱하는 배수 — 클릭은 이산적이라 큼직하게 반응해도 된다. */
+const ZOOM_STEP = 1.4
+/**
+ * 휠 한 틱에 곱하는 배수. 트랙패드·고감도 마우스는 한 번의 스크롤 제스처에도 wheel 이벤트가
+ * 여러 번(많으면 수십 번) 연달아 뜬다 — ZOOM_STEP 만큼 크게 반응하면 그 배수가 겹겹이 곱해져
+ * 봉 수가 순식간에 확 튄다. 훨씬 작게 잡는다.
+ */
+const WHEEL_ZOOM_STEP = 1.05
+/** 축소(확대 해제)가 실제로 받아온 봉 수를 넘어가지 않게 하는 상한. */
+const MAX_ZOOM_OUT_BARS = 500
 
 /**
  * 컨테이너의 실제 CSS 폭을 잰다.
@@ -83,8 +95,105 @@ export function CandleChart({
   className = '',
 }: CandleChartProps) {
   const { ref, width: boxWidth } = useElementWidth<HTMLDivElement>()
+  const svgRef = useRef<SVGSVGElement>(null)
   /** 호버 중인 봉의 인덱스. 터치·이탈 시 null. */
   const [hover, setHover] = useState<number | null>(null)
+  /** 화면에 펼쳐 보여줄 봉 수. null 이면 "기본값 사용"(주기 전환 시 이 상태로 되돌아간다). */
+  const [shownBars, setShownBars] = useState<number | null>(null)
+  /** 오른쪽 끝을 최신 봉에서 몇 개 뒤로 물릴지. 0 이면 항상 최신 봉까지 보여준다(드래그 팬). */
+  const [offset, setOffset] = useState(0)
+  /** 가격축을 자동 맞춤 창에서 위·아래로 얼마나(원) 밀었는지. 0 이면 자동 맞춤 그대로다. */
+  const [priceShift, setPriceShift] = useState(0)
+  /** 핀치 줌 중 직전 두 손가락 거리(px). 핀치가 아니면 null. */
+  const pinchDistRef = useRef<number | null>(null)
+  /** 좌클릭 드래그 팬 중 시작 지점 — 가로는 봉 오프셋, 세로는 가격축 이동에 각각 대응한다. */
+  const dragRef = useRef<{
+    startX: number
+    startOffset: number
+    startY: number
+    startPriceShift: number
+    startSpan: number
+  } | null>(null)
+  /** 커서 스타일(grab/grabbing) 전환용 — 로직은 dragRef 가 정본이다. */
+  const [isDragging, setIsDragging] = useState(false)
+  /**
+   * 네이티브 리스너(아래 useEffect들)가 항상 최신 확대·팬 상태를 읽게 하는 창구.
+   * render 도중 ref를 직접 갱신한다 — 이 값 때문에 다시 그릴 필요는 없어 state로 두지 않는다.
+   */
+  const zoomRangeRef = useRef({ visibleBars: 0, zoomCap: 0, maxOffset: 0, barW: 0, offset: 0 })
+
+  // 봉 주기(분/일/주/월)가 바뀌면 이전 확대·팬 상태가 새 주기에서는 의미가 없다 — 기본값으로 되돌린다.
+  useEffect(() => {
+    setShownBars(null)
+    setOffset(0)
+    setPriceShift(0)
+  }, [interval])
+
+  /**
+   * 핀치 줌 + 마우스 휠 줌. React의 onTouchMove·onWheel은 브라우저가 passive 리스너로 등록해
+   * preventDefault가 무시된다(경고만 뜨고 그대로 페이지가 확대·스크롤된다) — 네이티브 리스너를
+   * { passive: false }로 직접 붙여야 제스처 중 페이지가 같이 움직이는 걸 막을 수 있다.
+   *
+   * boxWidth 뿐 아니라 candles.length 에도 의존해야 한다 — 봉이 아예 없는 시장(장 마감 등)은
+   * <svg ref={svgRef}> 자체가 없는 "빈 상태" 분기를 반환한다(아래 n===0 조기 반환). boxWidth가
+   * 이미 측정된 채로 그 상태에 머물다가 나중에 봉이 생겨(예: 코인 탭으로 전환) 실제 차트로
+   * 바뀌어도 boxWidth 자체는 그대로라 이 effect가 다시 돌지 않아 리스너가 영영 안 붙는다 —
+   * 실제로 겪은 버그다(이슈 없음, 이 커밋 리뷰에서 발견).
+   */
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const distance = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) pinchDistRef.current = distance(e.touches)
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return
+      e.preventDefault()
+      const dist = distance(e.touches)
+      const prev = pinchDistRef.current
+      if (prev !== null && prev > 0) {
+        const { visibleBars, zoomCap } = zoomRangeRef.current
+        const next = Math.round(visibleBars * (prev / dist))
+        setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, next)))
+      }
+      pinchDistRef.current = dist
+    }
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinchDistRef.current = null
+    }
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault()
+      if (e.deltaX === 0 && e.deltaY === 0) return
+      /**
+       * 트랙패드 두 손가락 좌우 스와이프는 deltaX로 온다 — 대부분 deltaY도 약간 같이 섞여
+       * 들어오므로, 둘 중 더 큰 축을 그 제스처의 의도로 본다(좌우 스와이프 = 팬, 상하 = 확대).
+       * deltaX 부호가 "오른쪽으로 스크롤 = 더 최근 쪽으로 이동"이 되도록 맞췄다 — 실기기
+       * 트랙패드로 방향을 검증하지 못해 반대로 느껴지면 이 부호만 뒤집으면 된다.
+       */
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const { barW: currentBarW, offset: currentOffset, maxOffset: currentMaxOffset } = zoomRangeRef.current
+        if (currentBarW <= 0) return
+        const deltaBars = Math.round(e.deltaX / currentBarW)
+        if (deltaBars === 0) return
+        setOffset(Math.min(currentMaxOffset, Math.max(0, currentOffset - deltaBars)))
+        return
+      }
+      const { visibleBars, zoomCap } = zoomRangeRef.current
+      const factor = e.deltaY < 0 ? 1 / WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP
+      setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, Math.round(visibleBars * factor))))
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    el.addEventListener('wheel', onWheelNative, { passive: false })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('wheel', onWheelNative)
+    }
+  }, [boxWidth, candles.length])
 
   // 첫 페인트에는 폭을 아직 모른다. 자리만 잡아 두고 측정 후 그린다.
   if (boxWidth === 0) {
@@ -94,8 +203,24 @@ export function CandleChart({
   const narrow = boxWidth < NARROW_PX
   const width = Math.round(boxWidth)
   const chartH = narrow ? Math.round(height * 0.72) : height
-  // 좁은 화면에서 120봉을 그리면 봉 하나가 2px 미만이 된다.
-  const bars = candles.slice(narrow ? -Math.min(maxBars, 60) : -maxBars)
+  // 좁은 화면에서 120봉을 그리면 봉 하나가 2px 미만이 된다 — 기본값은 더 적게 잡는다.
+  const baseBars = narrow ? Math.min(maxBars, 60) : maxBars
+  // 확대·축소는 실제 받아온 봉 수 안에서만 가능하다. MIN_VISIBLE_BARS 아래로는 봉이 서로 겹친다.
+  const zoomCap = Math.min(MAX_ZOOM_OUT_BARS, candles.length)
+  const visibleBars = Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, shownBars ?? baseBars))
+  // 드래그로 과거로 물러날 수 있는 한도 — 창이 보유한 봉 수를 넘어가면 안 된다.
+  const maxOffset = Math.max(0, candles.length - visibleBars)
+  const clampedOffset = Math.min(maxOffset, Math.max(0, offset))
+  // barW·offset은 아직 계산 전이라 이전 값을 임시로 이어 둔다 — 아래에서 곧바로 최신값으로 덮어쓴다.
+  zoomRangeRef.current = {
+    visibleBars,
+    zoomCap,
+    maxOffset,
+    barW: zoomRangeRef.current.barW,
+    offset: zoomRangeRef.current.offset,
+  }
+  const windowEnd = candles.length - clampedOffset
+  const bars = candles.slice(Math.max(0, windowEnd - visibleBars), windowEnd)
   const n = bars.length
   const plotW = width - PAD.left - PAD.right
   const fullH = chartH - PAD.top - PAD.bottom
@@ -122,11 +247,23 @@ export function CandleChart({
   // 월봉처럼 범위가 넓으면 여백이 0 아래로 내려가 가격축에 음수가 찍힌다 — 가격은 음수가 될 수 없다.
   lo = Math.max(0, lo - pad)
   hi += pad
+  /**
+   * 세로 드래그로 가격축을 위아래로 밀 수 있다 — 자동 맞춤 창 위에 얹는 오프셋이다.
+   * 한도 없이 밀리면 봉이 플롯 영역 밖으로 완전히 사라진다 — 자동 맞춤 스팬의 60% 까지만
+   * 허용해, 끝까지 밀어도 원래 범위의 상당 부분이 화면에 남는다.
+   */
+  const maxPriceShift = (hi - lo) * 0.6
+  const clampedPriceShift = Math.max(-maxPriceShift, Math.min(maxPriceShift, priceShift))
+  lo += clampedPriceShift
+  hi += clampedPriceShift
 
   const y = (p: number) => PAD.top + ((hi - p) / (hi - lo)) * plotH
   const barW = plotW / n
   const x = (i: number) => PAD.left + (i + 0.5) * barW
   const bodyW = Math.max(1, barW * 0.62)
+  // 네이티브 휠 리스너(트랙패드 좌우 스와이프)가 최신 값을 읽을 창구 — effect 재실행 없이 갱신한다.
+  zoomRangeRef.current.barW = barW
+  zoomRangeRef.current.offset = clampedOffset
 
   const maxVol = Math.max(...bars.map((b) => b.volume), 1)
   const volTop = PAD.top + plotH + 6
@@ -152,29 +289,118 @@ export function CandleChart({
   const activeChange =
     active !== null && active.open !== 0 ? ((active.close - active.open) / active.open) * 100 : 0
 
-  /** 포인터 x 좌표를 봉 인덱스로 바꾼다. */
-  const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
+  /**
+   * 포인터 x·y 좌표를 각각 봉 인덱스(호버)·확대·팬으로 바꾼다.
+   * 드래그 중이면 가로는 좌우 이동(봉 오프셋), 세로는 가격축 이동을 함께 처리한다.
+   */
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
+    if (dragRef.current) {
+      const deltaPxX = e.clientX - dragRef.current.startX
+      const deltaBars = Math.round(((deltaPxX / rect.width) * width) / barW)
+      setOffset(
+        Math.min(zoomRangeRef.current.maxOffset, Math.max(0, dragRef.current.startOffset + deltaBars)),
+      )
+      // 화면 세로 픽셀 → 원 단위. 드래그 시작 시점의 가격 스팬·plotH를 기준으로 고정해
+      // 드래그 도중 실시간 가격 갱신으로 스팬이 흔들려도 손 움직임과 반응이 어긋나지 않게 한다.
+      const deltaPxY = e.clientY - dragRef.current.startY
+      const deltaPrice = (deltaPxY / plotH) * dragRef.current.startSpan
+      // 렌더의 clamp(maxPriceShift 기준)와 같은 한도로 여기서도 막아야 한다 — 안 그러면 한계
+      // 너머로 계속 끌다 되돌릴 때, 실제로 안 보이는 값까지 따라잡느라 한동안 반응이 없어진다.
+      setPriceShift(
+        Math.max(-maxPriceShift, Math.min(maxPriceShift, dragRef.current.startPriceShift + deltaPrice)),
+      )
+      return
+    }
     const px = ((e.clientX - rect.left) / rect.width) * width
     const idx = Math.floor((px - PAD.left) / barW)
     setHover(idx >= 0 && idx < n ? idx : null)
+  }
+
+  /** 좌클릭(마우스 전용 — 터치는 핀치가 이미 두 손가락을 쓴다) 드래그로 차트를 상하좌우로 민다. */
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0 || e.pointerType !== 'mouse') return
+    dragRef.current = {
+      startX: e.clientX,
+      startOffset: clampedOffset,
+      startY: e.clientY,
+      startPriceShift: priceShift,
+      startSpan: hi - lo,
+    }
+    setIsDragging(true)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const endDrag = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    setIsDragging(false)
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
   // 툴팁이 오른쪽 가격축을 넘어가지 않게 좌우를 뒤집는다.
   const tipW = 178
   const tipFlip = active !== null && hover !== null && x(hover) + tipW + 12 > PAD.left + plotW
 
+  const applyZoom = (factor: number) => {
+    setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, Math.round(visibleBars * factor))))
+  }
+  const canZoomIn = visibleBars > MIN_VISIBLE_BARS
+  const canZoomOut = visibleBars < zoomCap
+  const isModified = visibleBars !== baseBars || clampedOffset > 0 || priceShift !== 0
+  const resetView = () => {
+    setShownBars(null)
+    setOffset(0)
+    setPriceShift(0)
+  }
+
   return (
     <div ref={ref} className={`relative w-full ${className}`}>
+      {/* 확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다. */}
+      <div className="absolute right-1 top-1 z-10 flex items-center gap-1">
+        {isModified && (
+          <button
+            type="button"
+            onClick={resetView}
+            className="rounded-full bg-canvas/80 px-2 py-1 text-[10px] text-muted ring-1 ring-white/[0.08] transition-colors hover:text-ink"
+          >
+            초기화
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => applyZoom(ZOOM_STEP)}
+          disabled={!canZoomOut}
+          aria-label="차트 축소"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-canvas/80 text-xs text-muted ring-1 ring-white/[0.08] transition-colors hover:text-ink disabled:opacity-30"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => applyZoom(1 / ZOOM_STEP)}
+          disabled={!canZoomIn}
+          aria-label="차트 확대"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-canvas/80 text-xs text-muted ring-1 ring-white/[0.08] transition-colors hover:text-ink disabled:opacity-30"
+        >
+          +
+        </button>
+      </div>
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${width} ${chartH}`}
         width="100%"
         height={chartH}
         role="img"
         aria-label="캔들 차트"
-        onPointerMove={onMove}
-        onPointerLeave={() => setHover(null)}
-        className="touch-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onPointerLeave={(e) => {
+          setHover(null)
+          endDrag(e)
+        }}
+        className={`touch-none select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       >
         <defs>
           {/* 마지막 종가 기준 은은한 배경 — 상승/하락 톤을 배경에서도 느끼게 한다 */}
