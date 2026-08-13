@@ -18,7 +18,8 @@ export function News() {
     () =>
       index
         ? [...index.byId.values()]
-            .filter((i) => i.market === market)
+            // 튜토리얼 전용 샘플 종목(031)은 실제 뉴스 화면에 섞이면 안 된다 — 여기서 항상 제외한다.
+            .filter((i) => i.market === market && !i.isTutorialSample)
             .sort((a, b) => a.instrumentId - b.instrumentId)
         : [],
     [index, market],
