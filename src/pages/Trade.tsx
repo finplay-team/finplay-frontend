@@ -638,7 +638,8 @@ export function Trade() {
                 ))}
               </ul>
             ) : (
-              <ul className="max-h-[28rem] space-y-1 overflow-y-auto lg:max-h-[36rem]">
+              // 스크롤 박스에 가두지 않는다 — 종목 수만큼 자연스럽게 늘어나고 페이지가 대신 스크롤된다.
+              <ul className="space-y-1">
                 {sortedInstruments.map((instrument, index) => {
                   const price = isCrypto
                     ? cryptoPrices[instrument.instrumentId]
@@ -649,10 +650,17 @@ export function Trade() {
                     : 'bg-brand-soft ring-1 ring-brand/40'
                   const starred = watchlist.has(instrument.instrumentId)
                   const starBusy = watchlist.busy.has(instrument.instrumentId)
-                  // 관심목록 종목이 위로 올라온 뒤 처음 만나는 일반 종목 앞에만 구분선을 넣는다.
+                  // 관심목록 종목은 맨 위로 올라와 있다 — 그 구간의 첫 항목 앞에만 소제목을 붙인다.
+                  const isFirstFavorite = index === 0 && starred
+                  // 관심목록 종목이 위로 올라온 뒤 처음 만나는 일반 종목 앞에는 구분선을 넣는다.
                   const isFirstNonFavorite = starred === false && index > 0 && watchlist.has(sortedInstruments[index - 1].instrumentId)
                   return (
                     <Fragment key={instrument.instrumentId}>
+                      {isFirstFavorite && (
+                        <li aria-hidden className="px-3 pb-1 pt-1 text-xs font-medium text-muted">
+                          즐겨찾기한 종목
+                        </li>
+                      )}
                       {isFirstNonFavorite && (
                         <li aria-hidden className="my-1.5 border-t border-line" />
                       )}
