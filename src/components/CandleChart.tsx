@@ -23,8 +23,14 @@ const VOLUME_RATIO = 0.18
 const NARROW_PX = 480
 /** 이보다 적게 보여주면 봉이 서로 겹친다. */
 const MIN_VISIBLE_BARS = 15
-/** 확대·축소 한 번에 곱하는 배수. */
+/** 버튼 클릭 한 번에 곱하는 배수 — 클릭은 이산적이라 큼직하게 반응해도 된다. */
 const ZOOM_STEP = 1.4
+/**
+ * 휠 한 틱에 곱하는 배수. 트랙패드·고감도 마우스는 한 번의 스크롤 제스처에도 wheel 이벤트가
+ * 여러 번(많으면 수십 번) 연달아 뜬다 — ZOOM_STEP 만큼 크게 반응하면 그 배수가 겹겹이 곱해져
+ * 봉 수가 순식간에 확 튄다. 훨씬 작게 잡는다.
+ */
+const WHEEL_ZOOM_STEP = 1.05
 /** 축소(확대 해제)가 실제로 받아온 봉 수를 넘어가지 않게 하는 상한. */
 const MAX_ZOOM_OUT_BARS = 500
 
@@ -96,10 +102,18 @@ export function CandleChart({
   const [shownBars, setShownBars] = useState<number | null>(null)
   /** 오른쪽 끝을 최신 봉에서 몇 개 뒤로 물릴지. 0 이면 항상 최신 봉까지 보여준다(드래그 팬). */
   const [offset, setOffset] = useState(0)
+  /** 가격축을 자동 맞춤 창에서 위·아래로 얼마나(원) 밀었는지. 0 이면 자동 맞춤 그대로다. */
+  const [priceShift, setPriceShift] = useState(0)
   /** 핀치 줌 중 직전 두 손가락 거리(px). 핀치가 아니면 null. */
   const pinchDistRef = useRef<number | null>(null)
-  /** 좌클릭 드래그 팬 중 시작 지점의 clientX·offset. 드래그 중이 아니면 null. */
-  const dragRef = useRef<{ startX: number; startOffset: number } | null>(null)
+  /** 좌클릭 드래그 팬 중 시작 지점 — 가로는 봉 오프셋, 세로는 가격축 이동에 각각 대응한다. */
+  const dragRef = useRef<{
+    startX: number
+    startOffset: number
+    startY: number
+    startPriceShift: number
+    startSpan: number
+  } | null>(null)
   /** 커서 스타일(grab/grabbing) 전환용 — 로직은 dragRef 가 정본이다. */
   const [isDragging, setIsDragging] = useState(false)
   /**
@@ -112,6 +126,7 @@ export function CandleChart({
   useEffect(() => {
     setShownBars(null)
     setOffset(0)
+    setPriceShift(0)
   }, [interval])
 
   /**
@@ -151,7 +166,7 @@ export function CandleChart({
       e.preventDefault()
       if (e.deltaY === 0) return
       const { visibleBars, zoomCap } = zoomRangeRef.current
-      const factor = e.deltaY < 0 ? 1 / ZOOM_STEP : ZOOM_STEP
+      const factor = e.deltaY < 0 ? 1 / WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP
       setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, Math.round(visibleBars * factor))))
     }
     el.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -211,6 +226,9 @@ export function CandleChart({
   // 월봉처럼 범위가 넓으면 여백이 0 아래로 내려가 가격축에 음수가 찍힌다 — 가격은 음수가 될 수 없다.
   lo = Math.max(0, lo - pad)
   hi += pad
+  // 세로 드래그로 가격축을 위아래로 밀 수 있다 — 자동 맞춤 창 위에 얹는 오프셋이다.
+  lo += priceShift
+  hi += priceShift
 
   const y = (p: number) => PAD.top + ((hi - p) / (hi - lo)) * plotH
   const barW = plotW / n
@@ -241,15 +259,23 @@ export function CandleChart({
   const activeChange =
     active !== null && active.open !== 0 ? ((active.close - active.open) / active.open) * 100 : 0
 
-  /** 포인터 x 좌표를 봉 인덱스로 바꾼다. 드래그 중이면 호버 대신 좌우 이동(팬)을 처리한다. */
+  /**
+   * 포인터 x·y 좌표를 각각 봉 인덱스(호버)·확대·팬으로 바꾼다.
+   * 드래그 중이면 가로는 좌우 이동(봉 오프셋), 세로는 가격축 이동을 함께 처리한다.
+   */
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     if (dragRef.current) {
-      const deltaPx = e.clientX - dragRef.current.startX
-      const deltaBars = Math.round(((deltaPx / rect.width) * width) / barW)
+      const deltaPxX = e.clientX - dragRef.current.startX
+      const deltaBars = Math.round(((deltaPxX / rect.width) * width) / barW)
       setOffset(
         Math.min(zoomRangeRef.current.maxOffset, Math.max(0, dragRef.current.startOffset + deltaBars)),
       )
+      // 화면 세로 픽셀 → 원 단위. 드래그 시작 시점의 가격 스팬·plotH를 기준으로 고정해
+      // 드래그 도중 실시간 가격 갱신으로 스팬이 흔들려도 손 움직임과 반응이 어긋나지 않게 한다.
+      const deltaPxY = e.clientY - dragRef.current.startY
+      const deltaPrice = (deltaPxY / plotH) * dragRef.current.startSpan
+      setPriceShift(dragRef.current.startPriceShift + deltaPrice)
       return
     }
     const px = ((e.clientX - rect.left) / rect.width) * width
@@ -257,10 +283,16 @@ export function CandleChart({
     setHover(idx >= 0 && idx < n ? idx : null)
   }
 
-  /** 좌클릭(마우스 전용 — 터치는 핀치가 이미 두 손가락을 쓴다) 드래그로 차트를 좌우로 민다. */
+  /** 좌클릭(마우스 전용 — 터치는 핀치가 이미 두 손가락을 쓴다) 드래그로 차트를 상하좌우로 민다. */
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0 || e.pointerType !== 'mouse') return
-    dragRef.current = { startX: e.clientX, startOffset: clampedOffset }
+    dragRef.current = {
+      startX: e.clientX,
+      startOffset: clampedOffset,
+      startY: e.clientY,
+      startPriceShift: priceShift,
+      startSpan: hi - lo,
+    }
     setIsDragging(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
@@ -280,10 +312,11 @@ export function CandleChart({
   }
   const canZoomIn = visibleBars > MIN_VISIBLE_BARS
   const canZoomOut = visibleBars < zoomCap
-  const isModified = visibleBars !== baseBars || clampedOffset > 0
+  const isModified = visibleBars !== baseBars || clampedOffset > 0 || priceShift !== 0
   const resetView = () => {
     setShownBars(null)
     setOffset(0)
+    setPriceShift(0)
   }
 
   return (
