@@ -120,7 +120,7 @@ export function CandleChart({
    * 네이티브 리스너(아래 useEffect들)가 항상 최신 확대·팬 상태를 읽게 하는 창구.
    * render 도중 ref를 직접 갱신한다 — 이 값 때문에 다시 그릴 필요는 없어 state로 두지 않는다.
    */
-  const zoomRangeRef = useRef({ visibleBars: 0, zoomCap: 0, maxOffset: 0 })
+  const zoomRangeRef = useRef({ visibleBars: 0, zoomCap: 0, maxOffset: 0, barW: 0, offset: 0 })
 
   // 봉 주기(분/일/주/월)가 바뀌면 이전 확대·팬 상태가 새 주기에서는 의미가 없다 — 기본값으로 되돌린다.
   useEffect(() => {
@@ -164,7 +164,21 @@ export function CandleChart({
     }
     const onWheelNative = (e: WheelEvent) => {
       e.preventDefault()
-      if (e.deltaY === 0) return
+      if (e.deltaX === 0 && e.deltaY === 0) return
+      /**
+       * 트랙패드 두 손가락 좌우 스와이프는 deltaX로 온다 — 대부분 deltaY도 약간 같이 섞여
+       * 들어오므로, 둘 중 더 큰 축을 그 제스처의 의도로 본다(좌우 스와이프 = 팬, 상하 = 확대).
+       * deltaX 부호가 "오른쪽으로 스크롤 = 더 최근 쪽으로 이동"이 되도록 맞췄다 — 실기기
+       * 트랙패드로 방향을 검증하지 못해 반대로 느껴지면 이 부호만 뒤집으면 된다.
+       */
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const { barW: currentBarW, offset: currentOffset, maxOffset: currentMaxOffset } = zoomRangeRef.current
+        if (currentBarW <= 0) return
+        const deltaBars = Math.round(e.deltaX / currentBarW)
+        if (deltaBars === 0) return
+        setOffset(Math.min(currentMaxOffset, Math.max(0, currentOffset - deltaBars)))
+        return
+      }
       const { visibleBars, zoomCap } = zoomRangeRef.current
       const factor = e.deltaY < 0 ? 1 / WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP
       setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, Math.round(visibleBars * factor))))
@@ -197,7 +211,14 @@ export function CandleChart({
   // 드래그로 과거로 물러날 수 있는 한도 — 창이 보유한 봉 수를 넘어가면 안 된다.
   const maxOffset = Math.max(0, candles.length - visibleBars)
   const clampedOffset = Math.min(maxOffset, Math.max(0, offset))
-  zoomRangeRef.current = { visibleBars, zoomCap, maxOffset }
+  // barW·offset은 아직 계산 전이라 이전 값을 임시로 이어 둔다 — 아래에서 곧바로 최신값으로 덮어쓴다.
+  zoomRangeRef.current = {
+    visibleBars,
+    zoomCap,
+    maxOffset,
+    barW: zoomRangeRef.current.barW,
+    offset: zoomRangeRef.current.offset,
+  }
   const windowEnd = candles.length - clampedOffset
   const bars = candles.slice(Math.max(0, windowEnd - visibleBars), windowEnd)
   const n = bars.length
@@ -240,6 +261,9 @@ export function CandleChart({
   const barW = plotW / n
   const x = (i: number) => PAD.left + (i + 0.5) * barW
   const bodyW = Math.max(1, barW * 0.62)
+  // 네이티브 휠 리스너(트랙패드 좌우 스와이프)가 최신 값을 읽을 창구 — effect 재실행 없이 갱신한다.
+  zoomRangeRef.current.barW = barW
+  zoomRangeRef.current.offset = clampedOffset
 
   const maxVol = Math.max(...bars.map((b) => b.volume), 1)
   const volTop = PAD.top + plotH + 6
