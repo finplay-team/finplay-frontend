@@ -21,6 +21,12 @@ const PAD = { top: 10, right: 58, bottom: 22, left: 8 }
 const VOLUME_RATIO = 0.18
 /** 이 폭 아래에서는 차트를 낮추고 봉 수를 줄인다 (모바일). */
 const NARROW_PX = 480
+/** 이보다 적게 보여주면 봉이 서로 겹친다. */
+const MIN_VISIBLE_BARS = 15
+/** 확대·축소 한 번에 곱하는 배수. */
+const ZOOM_STEP = 1.4
+/** 축소(확대 해제)가 실제로 받아온 봉 수를 넘어가지 않게 하는 상한. */
+const MAX_ZOOM_OUT_BARS = 500
 
 /**
  * 컨테이너의 실제 CSS 폭을 잰다.
@@ -83,8 +89,61 @@ export function CandleChart({
   className = '',
 }: CandleChartProps) {
   const { ref, width: boxWidth } = useElementWidth<HTMLDivElement>()
+  const svgRef = useRef<SVGSVGElement>(null)
   /** 호버 중인 봉의 인덱스. 터치·이탈 시 null. */
   const [hover, setHover] = useState<number | null>(null)
+  /** 화면에 펼쳐 보여줄 봉 수. null 이면 "기본값 사용"(주기 전환 시 이 상태로 되돌아간다). */
+  const [shownBars, setShownBars] = useState<number | null>(null)
+  /** 핀치 줌 중 직전 두 손가락 거리(px). 핀치가 아니면 null. */
+  const pinchDistRef = useRef<number | null>(null)
+  /**
+   * 네이티브 터치 리스너(아래 useEffect)가 항상 최신 확대 상태를 읽게 하는 창구.
+   * render 도중 ref를 직접 갱신한다 — 이 값 때문에 다시 그릴 필요는 없어 state로 두지 않는다.
+   */
+  const zoomRangeRef = useRef({ visibleBars: 0, zoomCap: 0 })
+
+  // 봉 주기(분/일/주/월)가 바뀌면 이전 확대 상태가 새 주기에서는 의미가 없다 — 기본값으로 되돌린다.
+  useEffect(() => {
+    setShownBars(null)
+  }, [interval])
+
+  /**
+   * 핀치 줌. React의 onTouchMove는 브라우저가 passive 리스너로 등록해 preventDefault가
+   * 무시된다(경고만 뜨고 그대로 페이지가 확대·스크롤된다) — 네이티브 리스너를 { passive: false }로
+   * 직접 붙여야 핀치 중 페이지 확대를 막을 수 있다. boxWidth에 의존해야 한다 — 처음 마운트 시점엔
+   * 폭을 몰라 <svg> 자체가 없고(위 조기 반환), 측정 후 실제로 붙을 때 다시 붙여야 한다.
+   */
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const distance = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) pinchDistRef.current = distance(e.touches)
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return
+      e.preventDefault()
+      const dist = distance(e.touches)
+      const prev = pinchDistRef.current
+      if (prev !== null && prev > 0) {
+        const { visibleBars, zoomCap } = zoomRangeRef.current
+        const next = Math.round(visibleBars * (prev / dist))
+        setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, next)))
+      }
+      pinchDistRef.current = dist
+    }
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinchDistRef.current = null
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [boxWidth])
 
   // 첫 페인트에는 폭을 아직 모른다. 자리만 잡아 두고 측정 후 그린다.
   if (boxWidth === 0) {
@@ -94,8 +153,13 @@ export function CandleChart({
   const narrow = boxWidth < NARROW_PX
   const width = Math.round(boxWidth)
   const chartH = narrow ? Math.round(height * 0.72) : height
-  // 좁은 화면에서 120봉을 그리면 봉 하나가 2px 미만이 된다.
-  const bars = candles.slice(narrow ? -Math.min(maxBars, 60) : -maxBars)
+  // 좁은 화면에서 120봉을 그리면 봉 하나가 2px 미만이 된다 — 기본값은 더 적게 잡는다.
+  const baseBars = narrow ? Math.min(maxBars, 60) : maxBars
+  // 확대·축소는 실제 받아온 봉 수 안에서만 가능하다. MIN_VISIBLE_BARS 아래로는 봉이 서로 겹친다.
+  const zoomCap = Math.min(MAX_ZOOM_OUT_BARS, candles.length)
+  const visibleBars = Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, shownBars ?? baseBars))
+  zoomRangeRef.current = { visibleBars, zoomCap }
+  const bars = candles.slice(-visibleBars)
   const n = bars.length
   const plotW = width - PAD.left - PAD.right
   const fullH = chartH - PAD.top - PAD.bottom
@@ -164,9 +228,54 @@ export function CandleChart({
   const tipW = 178
   const tipFlip = active !== null && hover !== null && x(hover) + tipW + 12 > PAD.left + plotW
 
+  const applyZoom = (factor: number) => {
+    setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, Math.round(visibleBars * factor))))
+  }
+  const canZoomIn = visibleBars > MIN_VISIBLE_BARS
+  const canZoomOut = visibleBars < zoomCap
+  const isZoomed = visibleBars !== baseBars
+
+  /** 차트 위에서 휠을 굴리면 페이지가 스크롤되는 대신 확대·축소된다. */
+  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault()
+    if (e.deltaY < 0) applyZoom(1 / ZOOM_STEP)
+    else if (e.deltaY > 0) applyZoom(ZOOM_STEP)
+  }
+
   return (
     <div ref={ref} className={`relative w-full ${className}`}>
+      {/* 확대·축소 — 차트 위 휠, 모바일 두 손가락 핀치(useEffect의 네이티브 리스너), 버튼 셋 다 지원한다. */}
+      <div className="absolute right-1 top-1 z-10 flex items-center gap-1">
+        {isZoomed && (
+          <button
+            type="button"
+            onClick={() => setShownBars(null)}
+            className="rounded-full bg-canvas/80 px-2 py-1 text-[10px] text-muted ring-1 ring-white/[0.08] transition-colors hover:text-ink"
+          >
+            초기화
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => applyZoom(ZOOM_STEP)}
+          disabled={!canZoomOut}
+          aria-label="차트 축소"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-canvas/80 text-xs text-muted ring-1 ring-white/[0.08] transition-colors hover:text-ink disabled:opacity-30"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => applyZoom(1 / ZOOM_STEP)}
+          disabled={!canZoomIn}
+          aria-label="차트 확대"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-canvas/80 text-xs text-muted ring-1 ring-white/[0.08] transition-colors hover:text-ink disabled:opacity-30"
+        >
+          +
+        </button>
+      </div>
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${width} ${chartH}`}
         width="100%"
         height={chartH}
@@ -174,6 +283,7 @@ export function CandleChart({
         aria-label="캔들 차트"
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
+        onWheel={onWheel}
         className="touch-none"
       >
         <defs>
