@@ -25,7 +25,11 @@ export function FavoriteStep({ market }: { market: Market }) {
     Promise.all([ensureInstrumentCache(), getFavorites()])
       .then(([index, favs]) => {
         if (!alive) return
-        setInstruments(Array.from(index.byId.values()).filter((i) => i.market === market))
+        // 튜토리얼은 실제 종목을 다루지 않는다 — 샘플 종목(031)만 고른다(실제 종목과 섞여 보이면
+        // 사용자가 실습 중 실제 자산을 건드리는 것으로 오해할 수 있다).
+        setInstruments(
+          Array.from(index.byId.values()).filter((i) => i.market === market && i.isTutorialSample),
+        )
         setFavorites(favs.filter((f) => f.market === market))
       })
       .catch((e) => {
@@ -115,16 +119,25 @@ export function FavoriteStep({ market }: { market: Market }) {
             results.map((instrument) => {
               const favorited = isFavorited(instrument.instrumentId)
               const rowBusy = busy.has(instrument.instrumentId)
+              // tradable=false 샘플 종목(031)은 목록에 보이지만 선택할 수 없다 — 숨기지 않고 버튼만 막는다.
+              const selectable = instrument.tradable
               return (
                 <li key={instrument.instrumentId} className="flex items-center justify-between gap-3 px-4 py-3">
                   <div>
-                    <p className="text-[15px] text-ink">{instrument.name}</p>
+                    <p className="text-[15px] text-ink">
+                      {instrument.name}
+                      {instrument.isTutorialSample && (
+                        <span className="ml-2 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-muted">
+                          연습용
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted">{instrument.symbol}</p>
                   </div>
                   <Button
                     variant={favorited ? 'ghost' : 'soft'}
                     size="sm"
-                    disabled={rowBusy}
+                    disabled={rowBusy || !selectable}
                     onClick={() => handleToggle(instrument.instrumentId)}
                   >
                     {favorited ? '해제' : '즐겨찾기'}

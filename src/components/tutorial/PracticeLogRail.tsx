@@ -4,7 +4,8 @@ import type { ReactNode } from 'react'
 export interface PracticeLogStep {
   step: number
   title: string
-  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED'
+  /** AWAITING_SALE·EXPIRED는 샘플 종목 4단계(031)에서만 등장 — 매도 대기·5분 만료. */
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'AWAITING_SALE' | 'EXPIRED' | 'COMPLETED'
   locked: boolean
   /** 완료·진행 시각 등 한 줄 요약. 없으면 표시하지 않는다. */
   evidenceLabel?: string
@@ -15,11 +16,14 @@ function NodeMark({ status, locked }: { status: PracticeLogStep['status']; locke
   // 잠긴 단계는 실제 status 와 무관하게 NOT_STARTED 모양을 강제한다
   const effective = locked ? 'NOT_STARTED' : status
 
-  if (effective === 'IN_PROGRESS') {
+  if (effective === 'IN_PROGRESS' || effective === 'AWAITING_SALE') {
     return <div className="h-3.5 w-3.5 shrink-0 rounded-full bg-brand animate-pulse-soft" />
   }
   if (effective === 'COMPLETED') {
     return <div className="h-3.5 w-3.5 shrink-0 rounded-full bg-brand" />
+  }
+  if (effective === 'EXPIRED') {
+    return <div className="h-3.5 w-3.5 shrink-0 rounded-full bg-loss" />
   }
   return <div className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-line" />
 }

@@ -12,6 +12,17 @@ export function parseLocalDateTime(value: LocalDateTimeString): Date {
   return new Date(year, month - 1, day, hour, minute, Math.floor(second || 0))
 }
 
+/** parseLocalDateTime의 역함수 — Date를 같은 "오프셋 없는" 문자열로 만든다(튜토리얼 다시 하기처럼 서버 없이 로컬로 시각을 찍어야 할 때 쓴다). */
+export function toLocalDateTimeString(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+/** toLocalDateTimeString(new Date())의 축약. */
+export function nowLocalDateTimeString(): string {
+  return toLocalDateTimeString(new Date())
+}
+
 /** 차트 축·목록용 "09:01" */
 export function formatHhMm(value: LocalDateTimeString): string {
   const d = parseLocalDateTime(value)
