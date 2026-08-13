@@ -48,7 +48,9 @@ export function Community() {
    * 그 400 이 "없는 종목"과 코드가 같아 사용자에게 이유를 설명할 수 없기 때문이다.
    * (필터에는 이 제한이 없다. 필터는 조회 조건일 뿐이라 검증하지 않는다.)
    */
-  const taggable = index ? [...index.byId.values()].filter((i) => i.tradable) : []
+  const taggable = index
+    ? [...index.byId.values()].filter((i) => i.tradable && !i.isTutorialSample)
+    : []
 
   useEffect(() => {
     let cancelled = false
@@ -252,7 +254,7 @@ export function Community() {
               className="rounded-full border border-line bg-elevated px-3 py-1.5 text-xs text-ink outline-none focus:border-brand"
             >
               <option value="">전체</option>
-              {(index ? [...index.byId.values()] : []).map((i) => (
+              {(index ? [...index.byId.values()].filter((i) => !i.isTutorialSample) : []).map((i) => (
                 <option key={i.instrumentId} value={i.instrumentId}>
                   {i.name} ({i.symbol})
                 </option>
