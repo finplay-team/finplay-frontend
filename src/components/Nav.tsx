@@ -36,7 +36,8 @@ export function Nav() {
   const [wallet, setWallet] = useState<{ totalValue: number; availableCash: number } | null>(null)
   const accountRevision = useSyncExternalStore(subscribeAccount, getAccountRevision)
   // 튜토리얼 중에는 샘플 종목 매매·완료 보상이 이 숫자에 섞여 실제 자산처럼 보이므로 숨긴다.
-  const isTutorialRoute = location.pathname.startsWith('/tutorial')
+  // 정확히 이 경로일 때만 — startsWith면 나중에 /tutorial-preview 같은 경로가 생겨도 잘못 걸린다.
+  const isTutorialRoute = location.pathname === '/tutorial'
 
   // 라우트 변경 시 모바일 메뉴 닫기
   useEffect(() => {
