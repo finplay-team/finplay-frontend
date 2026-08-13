@@ -226,9 +226,15 @@ export function CandleChart({
   // 월봉처럼 범위가 넓으면 여백이 0 아래로 내려가 가격축에 음수가 찍힌다 — 가격은 음수가 될 수 없다.
   lo = Math.max(0, lo - pad)
   hi += pad
-  // 세로 드래그로 가격축을 위아래로 밀 수 있다 — 자동 맞춤 창 위에 얹는 오프셋이다.
-  lo += priceShift
-  hi += priceShift
+  /**
+   * 세로 드래그로 가격축을 위아래로 밀 수 있다 — 자동 맞춤 창 위에 얹는 오프셋이다.
+   * 한도 없이 밀리면 봉이 플롯 영역 밖으로 완전히 사라진다 — 자동 맞춤 스팬의 60% 까지만
+   * 허용해, 끝까지 밀어도 원래 범위의 상당 부분이 화면에 남는다.
+   */
+  const maxPriceShift = (hi - lo) * 0.6
+  const clampedPriceShift = Math.max(-maxPriceShift, Math.min(maxPriceShift, priceShift))
+  lo += clampedPriceShift
+  hi += clampedPriceShift
 
   const y = (p: number) => PAD.top + ((hi - p) / (hi - lo)) * plotH
   const barW = plotW / n
@@ -275,7 +281,11 @@ export function CandleChart({
       // 드래그 도중 실시간 가격 갱신으로 스팬이 흔들려도 손 움직임과 반응이 어긋나지 않게 한다.
       const deltaPxY = e.clientY - dragRef.current.startY
       const deltaPrice = (deltaPxY / plotH) * dragRef.current.startSpan
-      setPriceShift(dragRef.current.startPriceShift + deltaPrice)
+      // 렌더의 clamp(maxPriceShift 기준)와 같은 한도로 여기서도 막아야 한다 — 안 그러면 한계
+      // 너머로 계속 끌다 되돌릴 때, 실제로 안 보이는 값까지 따라잡느라 한동안 반응이 없어진다.
+      setPriceShift(
+        Math.max(-maxPriceShift, Math.min(maxPriceShift, dragRef.current.startPriceShift + deltaPrice)),
+      )
       return
     }
     const px = ((e.clientX - rect.left) / rect.width) * width
