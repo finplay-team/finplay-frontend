@@ -188,6 +188,8 @@ export function Trade() {
   // 주식은 서버 분 크론에만 새 봉이 생긴다 → 분이 넘어갈 때만 재조회한다. 코인은 폴링이다.
   const minuteTick = Math.floor((lastMessageAt ?? 0) / 60_000)
   const [interval, setInterval_] = useState<CandleInterval>('1m')
+  // 변동 원인 카드는 참고용이라 기본은 접어 둔다 — 차트 바로 아래 주문 폼까지 스크롤이 짧아진다.
+  const [showPriceMoves, setShowPriceMoves] = useState(false)
   const {
     candles,
     loading: candlesLoading,
@@ -770,9 +772,29 @@ export function Trade() {
             {/*
               4-1. 변동 원인 카드만 여기 남긴다 — 지금 보고 있는 차트의 "이 구간이 왜 움직였나"라
               차트 바로 아래가 제자리다. 시장 브리핑과 종목 뉴스 요약은 거래 흐름을 끊으므로
-              전용 화면(/news)으로 옮겼다.
+              전용 화면(/news)으로 옮겼다. 기본은 접어 둬서 차트 다음 바로 주문 폼이 오게 한다 —
+              보고 싶을 때만 펼친다.
             */}
-            {selectedId !== null && <PriceMoveCards instrumentId={selectedId} />}
+            {selectedId !== null && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowPriceMoves((v) => !v)}
+                  aria-expanded={showPriceMoves}
+                  className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-5 py-3.5 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
+                >
+                  <span className="font-medium">변동 원인 {showPriceMoves ? '숨기기' : '보기'}</span>
+                  <span className={`text-muted transition-transform duration-300 ${showPriceMoves ? 'rotate-180' : ''}`}>
+                    ▾
+                  </span>
+                </button>
+                {showPriceMoves && (
+                  <div className="mt-3">
+                    <PriceMoveCards instrumentId={selectedId} />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 5. 주문 패널 */}
             <Card accent={accent} innerClassName="p-6">
