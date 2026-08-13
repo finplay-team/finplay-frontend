@@ -1,10 +1,7 @@
 // 떠 있는 글래스 pill 내비게이션과 햄버거 X 모프 풀스크린 오버레이
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { getAccountSummary } from '../services/accountService'
-import { getAccountRevision, subscribeAccount } from '../lib/accountPulse'
-import { formatManEok } from '../lib/format'
 import { LinkButton } from './ui/Button'
 import { Logout } from './ui/icons'
 
@@ -33,11 +30,6 @@ export function Nav() {
   const navigate = useNavigate()
 
   const isAuthenticated = status !== 'anonymous'
-  const [wallet, setWallet] = useState<{ totalValue: number; availableCash: number } | null>(null)
-  const accountRevision = useSyncExternalStore(subscribeAccount, getAccountRevision)
-  // 튜토리얼 중에는 샘플 종목 매매·완료 보상이 이 숫자에 섞여 실제 자산처럼 보이므로 숨긴다.
-  // 정확히 이 경로일 때만 — startsWith면 나중에 /tutorial-preview 같은 경로가 생겨도 잘못 걸린다.
-  const isTutorialRoute = location.pathname === '/tutorial'
 
   // 라우트 변경 시 모바일 메뉴 닫기
   useEffect(() => {
@@ -60,35 +52,6 @@ export function Nav() {
     }
   }, [open])
 
-  // 주기 폴링 없이 화면 이동마다, 그리고 주문 체결로 잔고가 바뀐 직후에만 읽는다.
-  // 잔고는 SSE에 실려오지 않으므로 체결한 화면이 bumpAccount()로 알려줘야 한다.
-  // 실패하면 0원을 보여주는 대신 pill 을 숨긴다.
-  useEffect(() => {
-    if (status !== 'authenticated') {
-      setWallet(null)
-      return
-    }
-    let cancelled = false
-    // 주식만 읽으면 코인에서 매매해도 내비 숫자가 안 움직여 "가능 현금 1,000만"이 계속 남는다.
-    // 두 계좌를 합산한다 — 수익률은 표시하지 않으므로 분모가 어긋나는 문제(4차 결정)가 없다.
-    Promise.all([getAccountSummary('STOCK'), getAccountSummary('CRYPTO')])
-      .then(([stock, crypto]) => {
-        if (cancelled) return
-        setWallet({
-          totalValue: stock.totalValue + crypto.totalValue,
-          // 예약분을 빼야 실제 주문 가능액이다. 서버는 availableCash 를 주지 않는다.
-          availableCash:
-            stock.cashBalance - stock.reservedCash + (crypto.cashBalance - crypto.reservedCash),
-        })
-      })
-      .catch(() => {
-        if (!cancelled) setWallet(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [status, location.pathname, accountRevision])
-
   const handleLogout = async () => {
     await logout()
     navigate('/')
@@ -102,78 +65,64 @@ export function Nav() {
       <nav className="relative z-40 mt-5 flex w-full max-w-6xl items-center justify-between rounded-full border border-white/[0.08] bg-canvas/70 py-2 pl-5 pr-2 shadow-soft-sm backdrop-blur-xl">
         <Link to="/" className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-brand-ink">
-            i
+            f
           </span>
-          <span className="font-display text-lg font-semibold tracking-tight">Investory</span>
+          <span className="font-display text-lg font-semibold tracking-tight">FinPlay</span>
         </Link>
 
-        {/* md(768px)에서 펼치면 메뉴·지갑·닉네임이 전부 두세 줄로 접힌다 → lg 부터 펼친다 */}
-        <div className="hidden items-center gap-1 lg:flex">
-          {navLinks.map((l) => {
-            const active =
-              l.to === '/' ? location.pathname === '/' : location.pathname.startsWith(l.to)
-            return (
-              <Link
-                key={l.to}
-                to={l.to}
-                aria-current={active ? 'page' : undefined}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors duration-300 ${
-                  active ? 'bg-white/[0.06] text-ink' : 'text-muted hover:text-ink'
-                }`}
-              >
-                {l.label}
-              </Link>
-            )
-          })}
-        </div>
-
-        <div className="hidden items-center gap-2 lg:flex">
-          {isAuthenticated ? (
-            <>
-              {wallet && !isTutorialRoute && (
+        {/*
+          md(768px)에서 펼치면 메뉴·닉네임이 전부 두세 줄로 접힌다 → lg 부터 펼친다.
+          링크 목록과 우측 액션을 한 justify-between 자식으로 묶어야 한다 — 따로 두면 지갑 pill이
+          빠진 뒤 justify-between이 남는 공간을 전부 이 사이에 밀어넣어 닉네임이 화면 끝으로 붙는다.
+        */}
+        <div className="hidden items-center gap-4 lg:flex">
+          <div className="flex items-center gap-1">
+            {navLinks.map((l) => {
+              const active =
+                l.to === '/' ? location.pathname === '/' : location.pathname.startsWith(l.to)
+              return (
                 <Link
-                  to="/me"
-                  className="flex items-center gap-3 rounded-full bg-white/[0.04] px-4 py-1.5 ring-1 ring-white/[0.08] transition-colors duration-300 hover:bg-white/[0.08]"
+                  key={l.to}
+                  to={l.to}
+                  aria-current={active ? 'page' : undefined}
+                  className={`whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors duration-300 ${
+                    active ? 'bg-white/[0.06] text-ink' : 'text-muted hover:text-ink'
+                  }`}
                 >
-                  <span className="flex flex-col leading-tight">
-                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">평가자산</span>
-                    <span className="text-sm font-medium text-ink tabular">
-                      {formatManEok(wallet.totalValue)}
-                    </span>
-                  </span>
-                  <span className="h-6 w-px bg-line" aria-hidden />
-                  <span className="flex flex-col leading-tight">
-                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">가능 현금</span>
-                    <span className="text-sm font-medium text-brand tabular">
-                      {formatManEok(wallet.availableCash)}
-                    </span>
-                  </span>
+                  {l.label}
                 </Link>
-              )}
-              <span className="whitespace-nowrap text-sm text-muted">
-                <span className="font-medium text-ink">{member?.nickname}</span>님
-              </span>
-              <button
-                onClick={handleLogout}
-                className="group flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white/[0.04] px-4 py-2 text-sm text-ink ring-1 ring-white/[0.08] transition-all duration-400 ease-spring hover:bg-white/[0.08] active:scale-[0.98]"
-              >
-                로그아웃
-                <Logout width={15} height={15} className="text-muted" />
-              </button>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                className="rounded-full px-4 py-2 text-sm font-medium text-ink transition-colors hover:text-brand"
-              >
-                로그인
-              </Link>
-              <LinkButton to="/signup" size="md" withIcon>
-                시작하기
-              </LinkButton>
-            </>
-          )}
+              )
+            })}
+          </div>
+
+          <div className="flex items-center gap-4">
+            {isAuthenticated ? (
+              <>
+                <span className="whitespace-nowrap text-sm text-muted">
+                  <span className="font-medium text-ink">{member?.nickname}</span>님
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="group flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white/[0.04] px-4 py-2 text-sm text-ink ring-1 ring-white/[0.08] transition-all duration-400 ease-spring hover:bg-white/[0.08] active:scale-[0.98]"
+                >
+                  로그아웃
+                  <Logout width={15} height={15} className="text-muted" />
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="rounded-full px-4 py-2 text-sm font-medium text-ink transition-colors hover:text-brand"
+                >
+                  로그인
+                </Link>
+                <LinkButton to="/signup" size="md" withIcon>
+                  시작하기
+                </LinkButton>
+              </>
+            )}
+          </div>
         </div>
 
         {/* 모바일 햄버거 → X 모프 */}
@@ -225,34 +174,12 @@ export function Nav() {
           style={{ transitionDelay: open ? '360ms' : '0ms' }}
         >
           {isAuthenticated ? (
-            <>
-              {wallet && !isTutorialRoute && (
-                <Link
-                  to="/me"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center justify-between rounded-2xl border border-line bg-surface px-5 py-4"
-                >
-                  <span className="flex flex-col leading-tight">
-                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">평가자산</span>
-                    <span className="text-base font-medium text-ink tabular">
-                      {formatManEok(wallet.totalValue)}
-                    </span>
-                  </span>
-                  <span className="flex flex-col text-right leading-tight">
-                    <span className="text-[10px] uppercase tracking-eyebrow text-muted">가능 현금</span>
-                    <span className="text-base font-medium text-brand tabular">
-                      {formatManEok(wallet.availableCash)}
-                    </span>
-                  </span>
-                </Link>
-              )}
-              <button
-                onClick={handleLogout}
-                className="rounded-full bg-brand px-6 py-3.5 text-center text-[15px] font-medium text-brand-ink shadow-glow"
-              >
-                로그아웃
-              </button>
-            </>
+            <button
+              onClick={handleLogout}
+              className="rounded-full bg-brand px-6 py-3.5 text-center text-[15px] font-medium text-brand-ink shadow-glow"
+            >
+              로그아웃
+            </button>
           ) : (
             <>
               <LinkButton to="/signup" size="lg" withIcon className="justify-between">
