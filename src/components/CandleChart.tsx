@@ -94,24 +94,36 @@ export function CandleChart({
   const [hover, setHover] = useState<number | null>(null)
   /** 화면에 펼쳐 보여줄 봉 수. null 이면 "기본값 사용"(주기 전환 시 이 상태로 되돌아간다). */
   const [shownBars, setShownBars] = useState<number | null>(null)
+  /** 오른쪽 끝을 최신 봉에서 몇 개 뒤로 물릴지. 0 이면 항상 최신 봉까지 보여준다(드래그 팬). */
+  const [offset, setOffset] = useState(0)
   /** 핀치 줌 중 직전 두 손가락 거리(px). 핀치가 아니면 null. */
   const pinchDistRef = useRef<number | null>(null)
+  /** 좌클릭 드래그 팬 중 시작 지점의 clientX·offset. 드래그 중이 아니면 null. */
+  const dragRef = useRef<{ startX: number; startOffset: number } | null>(null)
+  /** 커서 스타일(grab/grabbing) 전환용 — 로직은 dragRef 가 정본이다. */
+  const [isDragging, setIsDragging] = useState(false)
   /**
-   * 네이티브 터치 리스너(아래 useEffect)가 항상 최신 확대 상태를 읽게 하는 창구.
+   * 네이티브 리스너(아래 useEffect들)가 항상 최신 확대·팬 상태를 읽게 하는 창구.
    * render 도중 ref를 직접 갱신한다 — 이 값 때문에 다시 그릴 필요는 없어 state로 두지 않는다.
    */
-  const zoomRangeRef = useRef({ visibleBars: 0, zoomCap: 0 })
+  const zoomRangeRef = useRef({ visibleBars: 0, zoomCap: 0, maxOffset: 0 })
 
-  // 봉 주기(분/일/주/월)가 바뀌면 이전 확대 상태가 새 주기에서는 의미가 없다 — 기본값으로 되돌린다.
+  // 봉 주기(분/일/주/월)가 바뀌면 이전 확대·팬 상태가 새 주기에서는 의미가 없다 — 기본값으로 되돌린다.
   useEffect(() => {
     setShownBars(null)
+    setOffset(0)
   }, [interval])
 
   /**
-   * 핀치 줌. React의 onTouchMove는 브라우저가 passive 리스너로 등록해 preventDefault가
-   * 무시된다(경고만 뜨고 그대로 페이지가 확대·스크롤된다) — 네이티브 리스너를 { passive: false }로
-   * 직접 붙여야 핀치 중 페이지 확대를 막을 수 있다. boxWidth에 의존해야 한다 — 처음 마운트 시점엔
-   * 폭을 몰라 <svg> 자체가 없고(위 조기 반환), 측정 후 실제로 붙을 때 다시 붙여야 한다.
+   * 핀치 줌 + 마우스 휠 줌. React의 onTouchMove·onWheel은 브라우저가 passive 리스너로 등록해
+   * preventDefault가 무시된다(경고만 뜨고 그대로 페이지가 확대·스크롤된다) — 네이티브 리스너를
+   * { passive: false }로 직접 붙여야 제스처 중 페이지가 같이 움직이는 걸 막을 수 있다.
+   *
+   * boxWidth 뿐 아니라 candles.length 에도 의존해야 한다 — 봉이 아예 없는 시장(장 마감 등)은
+   * <svg ref={svgRef}> 자체가 없는 "빈 상태" 분기를 반환한다(아래 n===0 조기 반환). boxWidth가
+   * 이미 측정된 채로 그 상태에 머물다가 나중에 봉이 생겨(예: 코인 탭으로 전환) 실제 차트로
+   * 바뀌어도 boxWidth 자체는 그대로라 이 effect가 다시 돌지 않아 리스너가 영영 안 붙는다 —
+   * 실제로 겪은 버그다(이슈 없음, 이 커밋 리뷰에서 발견).
    */
   useEffect(() => {
     const el = svgRef.current
@@ -135,15 +147,24 @@ export function CandleChart({
     const onTouchEnd = (e: TouchEvent) => {
       if (e.touches.length < 2) pinchDistRef.current = null
     }
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault()
+      if (e.deltaY === 0) return
+      const { visibleBars, zoomCap } = zoomRangeRef.current
+      const factor = e.deltaY < 0 ? 1 / ZOOM_STEP : ZOOM_STEP
+      setShownBars(Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, Math.round(visibleBars * factor))))
+    }
     el.addEventListener('touchstart', onTouchStart, { passive: true })
     el.addEventListener('touchmove', onTouchMove, { passive: false })
     el.addEventListener('touchend', onTouchEnd, { passive: true })
+    el.addEventListener('wheel', onWheelNative, { passive: false })
     return () => {
       el.removeEventListener('touchstart', onTouchStart)
       el.removeEventListener('touchmove', onTouchMove)
       el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('wheel', onWheelNative)
     }
-  }, [boxWidth])
+  }, [boxWidth, candles.length])
 
   // 첫 페인트에는 폭을 아직 모른다. 자리만 잡아 두고 측정 후 그린다.
   if (boxWidth === 0) {
@@ -158,8 +179,12 @@ export function CandleChart({
   // 확대·축소는 실제 받아온 봉 수 안에서만 가능하다. MIN_VISIBLE_BARS 아래로는 봉이 서로 겹친다.
   const zoomCap = Math.min(MAX_ZOOM_OUT_BARS, candles.length)
   const visibleBars = Math.min(zoomCap, Math.max(MIN_VISIBLE_BARS, shownBars ?? baseBars))
-  zoomRangeRef.current = { visibleBars, zoomCap }
-  const bars = candles.slice(-visibleBars)
+  // 드래그로 과거로 물러날 수 있는 한도 — 창이 보유한 봉 수를 넘어가면 안 된다.
+  const maxOffset = Math.max(0, candles.length - visibleBars)
+  const clampedOffset = Math.min(maxOffset, Math.max(0, offset))
+  zoomRangeRef.current = { visibleBars, zoomCap, maxOffset }
+  const windowEnd = candles.length - clampedOffset
+  const bars = candles.slice(Math.max(0, windowEnd - visibleBars), windowEnd)
   const n = bars.length
   const plotW = width - PAD.left - PAD.right
   const fullH = chartH - PAD.top - PAD.bottom
@@ -216,12 +241,34 @@ export function CandleChart({
   const activeChange =
     active !== null && active.open !== 0 ? ((active.close - active.open) / active.open) * 100 : 0
 
-  /** 포인터 x 좌표를 봉 인덱스로 바꾼다. */
-  const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
+  /** 포인터 x 좌표를 봉 인덱스로 바꾼다. 드래그 중이면 호버 대신 좌우 이동(팬)을 처리한다. */
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
+    if (dragRef.current) {
+      const deltaPx = e.clientX - dragRef.current.startX
+      const deltaBars = Math.round(((deltaPx / rect.width) * width) / barW)
+      setOffset(
+        Math.min(zoomRangeRef.current.maxOffset, Math.max(0, dragRef.current.startOffset + deltaBars)),
+      )
+      return
+    }
     const px = ((e.clientX - rect.left) / rect.width) * width
     const idx = Math.floor((px - PAD.left) / barW)
     setHover(idx >= 0 && idx < n ? idx : null)
+  }
+
+  /** 좌클릭(마우스 전용 — 터치는 핀치가 이미 두 손가락을 쓴다) 드래그로 차트를 좌우로 민다. */
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0 || e.pointerType !== 'mouse') return
+    dragRef.current = { startX: e.clientX, startOffset: clampedOffset }
+    setIsDragging(true)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const endDrag = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    setIsDragging(false)
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
   // 툴팁이 오른쪽 가격축을 넘어가지 않게 좌우를 뒤집는다.
@@ -233,23 +280,20 @@ export function CandleChart({
   }
   const canZoomIn = visibleBars > MIN_VISIBLE_BARS
   const canZoomOut = visibleBars < zoomCap
-  const isZoomed = visibleBars !== baseBars
-
-  /** 차트 위에서 휠을 굴리면 페이지가 스크롤되는 대신 확대·축소된다. */
-  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
-    e.preventDefault()
-    if (e.deltaY < 0) applyZoom(1 / ZOOM_STEP)
-    else if (e.deltaY > 0) applyZoom(ZOOM_STEP)
+  const isModified = visibleBars !== baseBars || clampedOffset > 0
+  const resetView = () => {
+    setShownBars(null)
+    setOffset(0)
   }
 
   return (
     <div ref={ref} className={`relative w-full ${className}`}>
-      {/* 확대·축소 — 차트 위 휠, 모바일 두 손가락 핀치(useEffect의 네이티브 리스너), 버튼 셋 다 지원한다. */}
+      {/* 확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다. */}
       <div className="absolute right-1 top-1 z-10 flex items-center gap-1">
-        {isZoomed && (
+        {isModified && (
           <button
             type="button"
-            onClick={() => setShownBars(null)}
+            onClick={resetView}
             className="rounded-full bg-canvas/80 px-2 py-1 text-[10px] text-muted ring-1 ring-white/[0.08] transition-colors hover:text-ink"
           >
             초기화
@@ -281,10 +325,15 @@ export function CandleChart({
         height={chartH}
         role="img"
         aria-label="캔들 차트"
-        onPointerMove={onMove}
-        onPointerLeave={() => setHover(null)}
-        onWheel={onWheel}
-        className="touch-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onPointerLeave={(e) => {
+          setHover(null)
+          endDrag(e)
+        }}
+        className={`touch-none select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       >
         <defs>
           {/* 마지막 종가 기준 은은한 배경 — 상승/하락 톤을 배경에서도 느끼게 한다 */}
