@@ -10,14 +10,17 @@ const publicLinks = [
   { to: '/support', label: '고객센터' },
 ]
 
-/** 로그인 시 추가로 노출되는 메뉴 */
+/**
+ * 로그인 시 추가로 노출되는 메뉴.
+ * 투자일기는 여기 없다 — 포트폴리오 화면 안(체결 내역 아래 미리보기 + "전체보기")으로 옮겼다.
+ * `/journal` 라우트 자체는 그대로 있다.
+ */
 const authLinks = [
   { to: '/tutorial', label: '실습' },
   { to: '/news', label: '뉴스' },
   { to: '/trade', label: '거래' },
   { to: '/portfolio', label: '포트폴리오' },
   { to: '/feedback', label: 'AI 복기' },
-  { to: '/journal', label: '투자일기' },
   { to: '/rankings', label: '랭킹' },
   { to: '/community', label: '커뮤니티' },
   { to: '/me', label: '내정보' },
@@ -62,7 +65,12 @@ export function Nav() {
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex justify-center px-4">
       {/* relative z-40 이 없으면 아래 풀스크린 오버레이(z-30)가 pill 위에 깔려 X 버튼을 덮는다 */}
-      <nav className="relative z-40 mt-5 flex w-full max-w-6xl items-center justify-between rounded-full border border-white/[0.08] bg-canvas/70 py-2 pl-5 pr-2 shadow-soft-sm backdrop-blur-xl">
+      {/*
+        너비를 콘텐츠에 맞춰 줄인다(w-full max-w-6xl 제거) — 링크가 몇 개든 pill이 화면 폭까지
+        늘어나 로고와 첫 링크 사이에 justify-between이 억지로 넓은 여백을 만들던 문제였다.
+        gap-8 이 그 여백을 대신한다.
+      */}
+      <nav className="relative z-40 mt-5 inline-flex items-center gap-6 rounded-full border border-white/[0.08] bg-canvas/70 py-2 pl-5 pr-2 shadow-soft-sm backdrop-blur-xl">
         <Link to="/" className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-brand-ink">
             f
@@ -75,7 +83,7 @@ export function Nav() {
           링크 목록과 우측 액션을 한 justify-between 자식으로 묶어야 한다 — 따로 두면 지갑 pill이
           빠진 뒤 justify-between이 남는 공간을 전부 이 사이에 밀어넣어 닉네임이 화면 끝으로 붙는다.
         */}
-        <div className="hidden items-center gap-4 lg:flex">
+        <div className="hidden items-center gap-3 lg:flex">
           <div className="flex items-center gap-1">
             {navLinks.map((l) => {
               const active =
@@ -85,7 +93,7 @@ export function Nav() {
                   key={l.to}
                   to={l.to}
                   aria-current={active ? 'page' : undefined}
-                  className={`whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors duration-300 ${
+                  className={`whitespace-nowrap rounded-full px-3 py-2 text-sm transition-colors duration-300 ${
                     active ? 'bg-white/[0.06] text-ink' : 'text-muted hover:text-ink'
                   }`}
                 >

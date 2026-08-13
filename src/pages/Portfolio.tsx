@@ -7,17 +7,20 @@ import { MarketTabs } from '../components/ui/MarketTabs'
 import { useInstruments } from '../hooks/useInstruments'
 import { useStockStream } from '../hooks/useStockStream'
 import { formatDateTime, ratioToPercent } from '../lib/datetime'
-import { toUserMessage } from '../lib/errorMessages'
+import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import { formatKRW, formatPercent, pnlTone } from '../lib/format'
 import { sideLabels } from '../lib/labels'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { getTrades } from '../services/tradeService'
+import { getJournals } from '../services/journalService'
 import { PendingOrders } from '../components/trade/PendingOrders'
 import { bumpAccount } from '../lib/accountPulse'
 import { PostSellFeedback } from '../components/feedback/PostSellFeedback'
 import { JournalEditor } from '../components/journal/JournalEditor'
-import type { AccountSummary, Holding, Market, OrderSide, Trade } from '../services/types'
+import type { AccountSummary, Holding, JournalListItem, Market, OrderSide, Trade } from '../services/types'
+
+const JOURNAL_PREVIEW_SIZE = 3
 
 const TRADE_PAGE_SIZE = 20
 /** 코인은 분 tick 이 없어 자체 주기로 계좌를 다시 읽는다. */
@@ -170,6 +173,38 @@ export function Portfolio() {
     (instrumentId: number) => index?.byId.get(instrumentId)?.name ?? `#${instrumentId}`,
     [index],
   )
+
+  /**
+   * 최근 투자일기 몇 개만 간략히 보여준다 — 전체 목록은 /journal 이 정본이다("전체보기").
+   * 종목명은 이미 받아 둔 `trades`(최신 20건)에서 찾는다. 목록 항목엔 종목 정보가 없고
+   * (spec 007 설계) 미리보기는 최근 몇 건뿐이라 최신 체결 페이지 안에 거의 항상 걸린다 —
+   * 못 찾으면 "—"로 둔다(전체보기에서는 전 페이지를 훑어 정확히 맞춘다).
+   */
+  const [journalPreview, setJournalPreview] = useState<JournalListItem[] | null>(null)
+  const [journalPreviewError, setJournalPreviewError] = useState<string | null>(null)
+  const [journalPreviewNonce, setJournalPreviewNonce] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    setJournalPreview(null)
+    setJournalPreviewError(null)
+    getJournals({ market, limit: JOURNAL_PREVIEW_SIZE })
+      .then((page) => {
+        if (!cancelled) setJournalPreview(page.content)
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        // 계좌 없음은 이 화면에서 이미 위쪽 계좌 요약 카드가 알린다 — 미리보기까지 또 에러로 띄우지 않고 빈 상태로 둔다.
+        if (isApiErrorCode(e, 'NOT_FOUND')) {
+          setJournalPreview([])
+          return
+        }
+        setJournalPreviewError(toUserMessage(e))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [market, journalPreviewNonce])
 
   const holdingsEmpty = holdings !== null && holdings.length === 0
   const marketLine = useMemo(() => {
@@ -470,7 +505,10 @@ export function Portfolio() {
                                   journalType={trade.side === 'BUY' ? 'BUY' : 'SELL'}
                                   tradeId={trade.tradeId}
                                   mode="create"
-                                  onSaved={() => setJournalTradeId(null)}
+                                  onSaved={() => {
+                                    setJournalTradeId(null)
+                                    setJournalPreviewNonce((n) => n + 1)
+                                  }}
                                   onCancel={() => setJournalTradeId(null)}
                                 />
                               ) : (
@@ -508,6 +546,61 @@ export function Portfolio() {
               </Button>
             </div>
           )}
+        </section>
+
+        {/* 6. 투자일기 미리보기 — 전체 목록·수정은 /journal 이 정본이다 */}
+        <section className="mt-12">
+          <h2 className="font-display text-2xl font-semibold text-ink">투자일기</h2>
+          <p className="mt-2 text-sm text-muted">최근 남긴 회고만 간단히 보여줍니다.</p>
+
+          {/* 목록 바로 위에 둬야 "이 목록의 전체 보기"라는 게 한눈에 이어진다 — 제목 옆에 두면 멀어 보인다. */}
+          <div className="mt-4 flex justify-end">
+            <LinkButton to="/journal" variant="ghost" size="sm">
+              전체보기
+            </LinkButton>
+          </div>
+
+          <div className="mt-2 space-y-3">
+            {journalPreview === null && !journalPreviewError && (
+              <Card innerClassName="p-5">
+                <div className="skeleton h-3 w-24" />
+                <div className="mt-3 skeleton h-3 w-full" />
+              </Card>
+            )}
+
+            {journalPreviewError && <p className="text-sm text-loss">{journalPreviewError}</p>}
+
+            {journalPreview !== null && journalPreview.length === 0 && (
+              <Card innerClassName="p-6 text-center text-sm text-muted">
+                아직 작성한 투자일기가 없습니다.
+              </Card>
+            )}
+
+            {journalPreview?.map((item) => {
+              const tradeId = item.journalType === 'BUY' ? item.buyTradeId : item.sellTradeId
+              // 최근 몇 건뿐이라 최신 체결 페이지(trades) 안에서 거의 항상 찾는다 — 못 찾으면 "—".
+              const instrumentId = trades.find((t) => t.tradeId === tradeId)?.instrumentId
+              return (
+                <Card key={`${item.journalType}-${tradeId}`} innerClassName="p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        item.journalType === 'BUY' ? 'bg-gain/15 text-gain' : 'bg-loss/15 text-loss'
+                      }`}
+                    >
+                      {sideLabels[item.journalType]}
+                    </span>
+                    <span className="text-sm font-medium text-ink">
+                      {instrumentId !== undefined ? instrumentName(instrumentId) : '—'}
+                    </span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">
+                    {item.content}
+                  </p>
+                </Card>
+              )
+            })}
+          </div>
         </section>
       </div>
     </div>
