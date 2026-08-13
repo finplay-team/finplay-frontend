@@ -1,5 +1,5 @@
 // 주식·코인 매매 화면 — 시장 탭으로 전환하며 시세(주식 SSE / 코인 폴링)·캔들·시장가/지정가 주문을 한 화면에서 처리한다
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { CandleChart } from '../components/CandleChart'
 import { Button } from '../components/ui/Button'
@@ -286,13 +286,81 @@ export function Trade() {
 
   const watchlist = useWatchlist()
 
-  // 관심목록(★)에 있는 종목을 목록 맨 위로 올린다 — 그 안에서는 원래 정렬(instrumentId 순)을 유지한다.
-  const sortedInstruments = useMemo(() => {
-    const favorites = instruments.filter((i) => watchlist.has(i.instrumentId))
-    const rest = instruments.filter((i) => !watchlist.has(i.instrumentId))
-    return [...favorites, ...rest]
+  /**
+   * 관심목록 종목을 원래 목록에서 옮기지 않는다 — 별도 "즐겨찾기한 종목" 묶음으로 위에 따로
+   * 모아 다시 보여준다. 아래 전체 목록은 원래 순서(instrumentId 순) 그대로, 즐겨찾기 종목도
+   * 제 위치에 그대로 남는다(두 곳에 같은 종목이 나타날 수 있다 — 의도된 동작이다).
+   */
+  const favoriteInstruments = useMemo(
+    () => instruments.filter((i) => watchlist.has(i.instrumentId)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instruments, watchlist.items])
+    [instruments, watchlist.items],
+  )
+
+  /** 종목 목록 한 행 — "즐겨찾기한 종목" 묶음과 전체 목록이 같은 행을 그대로 재사용한다. */
+  const renderInstrumentRow = (instrument: Instrument) => {
+    const price = isCrypto ? cryptoPrices[instrument.instrumentId] : stockPrices[instrument.symbol]
+    const active = instrument.instrumentId === selectedId
+    const activeTone = isCrypto
+      ? 'bg-coin-soft ring-1 ring-coin/40'
+      : 'bg-brand-soft ring-1 ring-brand/40'
+    const starred = watchlist.has(instrument.instrumentId)
+    const starBusy = watchlist.busy.has(instrument.instrumentId)
+    return (
+      // ★ 를 행 버튼 안에 넣으면 버튼 중첩이라 유효하지 않은 HTML 이다 → 형제로 둔다.
+      <li key={instrument.instrumentId} className="flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => setSelectedId(instrument.instrumentId)}
+          aria-current={active}
+          className={`flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors duration-300 ${
+            active ? activeTone : 'hover:bg-white/[0.04]'
+          }`}
+        >
+          <span className="min-w-0">
+            <span
+              className={`block truncate text-sm font-medium ${
+                active ? (isCrypto ? 'text-coin' : 'text-brand') : 'text-ink'
+              }`}
+            >
+              {instrument.name}
+            </span>
+            <span className="mt-0.5 block text-xs text-muted tabular">{instrument.symbol}</span>
+          </span>
+          <span className="flex-none text-right">
+            {price && (price.status === 'AVAILABLE' || price.status === 'STALE') && price.price !== null ? (
+              <span className="block text-sm font-medium text-ink tabular">
+                {formatPrice(price.price)}
+                {price.status === 'STALE' && (
+                  <span className="ml-1 text-[10px] font-normal text-muted">지연</span>
+                )}
+              </span>
+            ) : (
+              <span className="block text-xs text-muted">시세 없음</span>
+            )}
+            {!instrument.tradable && (
+              <span className="mt-1 inline-block rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-muted">
+                거래정지
+              </span>
+            )}
+          </span>
+        </button>
+        {/* 관심목록은 거래 가능 여부를 검사하지 않는 것이 계약이다. 거래정지 종목도 담을 수 있어야 하므로 tradable 로 막지 않는다. */}
+        <button
+          type="button"
+          onClick={() => void watchlist.toggle(instrument.instrumentId)}
+          disabled={starBusy || watchlist.items === null}
+          aria-pressed={starred}
+          aria-label={`${instrument.name} 관심목록 ${starred ? '해제' : '등록'}`}
+          className={`flex-none rounded-full p-2 transition-colors duration-300 disabled:opacity-40 ${
+            starred ? 'text-brand' : 'text-muted hover:text-ink'
+          }`}
+        >
+          <Star width={16} height={16} fill={starred ? 'currentColor' : 'none'} />
+        </button>
+      </li>
+    )
+  }
 
   /**
    * 서버 멱등 해시에 limitPrice 가 들어가는지 문서에 없다(MUST-VERIFY). 키를 가격까지 종속시켜
@@ -638,87 +706,25 @@ export function Trade() {
                 ))}
               </ul>
             ) : (
-              <ul className="max-h-[28rem] space-y-1 overflow-y-auto lg:max-h-[36rem]">
-                {sortedInstruments.map((instrument, index) => {
-                  const price = isCrypto
-                    ? cryptoPrices[instrument.instrumentId]
-                    : stockPrices[instrument.symbol]
-                  const active = instrument.instrumentId === selectedId
-                  const activeTone = isCrypto
-                    ? 'bg-coin-soft ring-1 ring-coin/40'
-                    : 'bg-brand-soft ring-1 ring-brand/40'
-                  const starred = watchlist.has(instrument.instrumentId)
-                  const starBusy = watchlist.busy.has(instrument.instrumentId)
-                  // 관심목록 종목이 위로 올라온 뒤 처음 만나는 일반 종목 앞에만 구분선을 넣는다.
-                  const isFirstNonFavorite = starred === false && index > 0 && watchlist.has(sortedInstruments[index - 1].instrumentId)
-                  return (
-                    <Fragment key={instrument.instrumentId}>
-                      {isFirstNonFavorite && (
-                        <li aria-hidden className="my-1.5 border-t border-line" />
-                      )}
-                      {/* ★ 를 행 버튼 안에 넣으면 버튼 중첩이라 유효하지 않은 HTML 이다 → 형제로 둔다. */}
-                      <li className="flex items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(instrument.instrumentId)}
-                        aria-current={active}
-                        className={`flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors duration-300 ${
-                          active ? activeTone : 'hover:bg-white/[0.04]'
-                        }`}
-                      >
-                        <span className="min-w-0">
-                          <span
-                            className={`block truncate text-sm font-medium ${
-                              active ? (isCrypto ? 'text-coin' : 'text-brand') : 'text-ink'
-                            }`}
-                          >
-                            {instrument.name}
-                          </span>
-                          <span className="mt-0.5 block text-xs text-muted tabular">
-                            {instrument.symbol}
-                          </span>
-                        </span>
-                        <span className="flex-none text-right">
-                          {price &&
-                          (price.status === 'AVAILABLE' || price.status === 'STALE') &&
-                          price.price !== null ? (
-                            <span className="block text-sm font-medium text-ink tabular">
-                              {formatPrice(price.price)}
-                              {price.status === 'STALE' && (
-                                <span className="ml-1 text-[10px] font-normal text-muted">지연</span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="block text-xs text-muted">시세 없음</span>
-                          )}
-                          {!instrument.tradable && (
-                            <span className="mt-1 inline-block rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-muted">
-                              거래정지
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                      {/*
-                        관심목록은 거래 가능 여부를 검사하지 않는 것이 계약이다.
-                        거래정지 종목도 담을 수 있어야 하므로 tradable 로 막지 않는다.
-                      */}
-                      <button
-                        type="button"
-                        onClick={() => void watchlist.toggle(instrument.instrumentId)}
-                        disabled={starBusy || watchlist.items === null}
-                        aria-pressed={starred}
-                        aria-label={`${instrument.name} 관심목록 ${starred ? '해제' : '등록'}`}
-                        className={`flex-none rounded-full p-2 transition-colors duration-300 disabled:opacity-40 ${
-                          starred ? 'text-brand' : 'text-muted hover:text-ink'
-                        }`}
-                      >
-                        <Star width={16} height={16} fill={starred ? 'currentColor' : 'none'} />
-                      </button>
-                      </li>
-                    </Fragment>
-                  )
-                })}
-              </ul>
+              <>
+                {/*
+                  즐겨찾기 종목을 아래 전체 목록에서 옮기는 게 아니다 — 원래 자리는 그대로 두고,
+                  같은 종목을 위쪽에 별도로 한 번 더 모아 보여준다(의도된 중복 노출).
+                */}
+                {favoriteInstruments.length > 0 && (
+                  <>
+                    <p className="px-3 pb-1 pt-1 text-xs font-medium text-muted">즐겨찾기한 종목</p>
+                    {/* 스크롤 박스에 가두지 않는다 — 종목 수만큼 자연스럽게 늘어나고 페이지가 대신 스크롤된다. */}
+                    <ul className="space-y-1">
+                      {favoriteInstruments.map((instrument) => renderInstrumentRow(instrument))}
+                    </ul>
+                    <div aria-hidden className="my-3 border-t border-line" />
+                  </>
+                )}
+                <ul className="space-y-1">
+                  {instruments.map((instrument) => renderInstrumentRow(instrument))}
+                </ul>
+              </>
             )}
             {watchlist.error && (
               <p className="mt-2 px-3 text-xs text-rose-300">{watchlist.error}</p>

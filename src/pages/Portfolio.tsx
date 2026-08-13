@@ -551,16 +551,15 @@ export function Portfolio() {
         {/* 6. 투자일기 미리보기 — 전체 목록·수정은 /journal 이 정본이다 */}
         <section className="mt-12">
           <h2 className="font-display text-2xl font-semibold text-ink">투자일기</h2>
-          <p className="mt-2 text-sm text-muted">최근 남긴 회고만 간단히 보여줍니다.</p>
-
-          {/* 목록 바로 위에 둬야 "이 목록의 전체 보기"라는 게 한눈에 이어진다 — 제목 옆에 두면 멀어 보인다. */}
-          <div className="mt-4 flex justify-end">
+          {/* 설명과 전체보기를 한 줄에 둬야 "이 목록의 전체 보기"라는 게 한눈에 이어진다. */}
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">최근 남긴 회고만 간단히 보여줍니다.</p>
             <LinkButton to="/journal" variant="ghost" size="sm">
               전체보기
             </LinkButton>
           </div>
 
-          <div className="mt-2 space-y-3">
+          <div className="mt-4 space-y-3">
             {journalPreview === null && !journalPreviewError && (
               <Card innerClassName="p-5">
                 <div className="skeleton h-3 w-24" />

@@ -1,4 +1,5 @@
 // 라우팅과 공통 레이아웃(내비·푸터)을 정의하는 앱 루트
+import { useEffect } from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { Nav } from './components/Nav'
 import { Footer } from './components/Footer'
@@ -22,6 +23,13 @@ import { NotFound } from './pages/NotFound'
 
 export default function App() {
   const location = useLocation()
+
+  // 클라이언트 사이드 라우팅은 브라우저가 스크롤을 알아서 맨 위로 올려주지 않는다 —
+  // 이전 페이지에서 스크롤해 둔 위치가 새 페이지에 그대로 남아 "밑에서부터 열리는" 것처럼 보인다.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [location.pathname])
+
   // 인증 페이지는 자체 풀스크린 레이아웃이라 푸터를 숨긴다
   const hideChrome =
     location.pathname === '/login' ||
