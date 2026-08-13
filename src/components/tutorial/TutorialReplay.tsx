@@ -90,6 +90,12 @@ export function TutorialReplay({
     setDone(true)
   }, [])
 
+  // deferReflection 모드라 3단계 자체는 복기를 받지 않는다 — onCompleted는 절대 호출되지 않지만
+  // prop은 필수라 no-op을 넘긴다. onEvidenceReady와 함께 인라인 화살표 대신 useCallback으로 고정해,
+  // simulateConfig처럼 다른 prop이 렌더마다 바뀌는 값이 되어 자식 effect를 흔드는 걸 방지한다.
+  const handleStep3NoopCompleted = useCallback(() => undefined, [])
+  const handleEvidenceReady = useCallback(() => setEvidenceReady(true), [])
+
   // ObservationReflectionStep의 관찰 useEffect가 simulate를 deps로 쓴다 — 매 렌더마다 새 객체를
   // 넘기면 참조가 계속 바뀌어 effect가 매번 정리·재시작되면서 tick()이 2초 간격을 지키지 못하고
   // 렌더될 때마다 즉시 다시 도는 폭주가 생긴다(실제로 겪음). instrumentId가 같으면 같은 참조를 쓴다.
@@ -133,10 +139,10 @@ export function TutorialReplay({
           holdingId={attemptId}
           referenceStopLossPrice={intention.stopLoss}
           referenceTakeProfitPrice={intention.takeProfit}
-          onCompleted={() => undefined}
+          onCompleted={handleStep3NoopCompleted}
           deferReflection
           simulate={simulateConfig}
-          onEvidenceReady={() => setEvidenceReady(true)}
+          onEvidenceReady={handleEvidenceReady}
           initialPrices={buyPriceHistory}
           onPricesChanged={setObservePriceHistory}
         />

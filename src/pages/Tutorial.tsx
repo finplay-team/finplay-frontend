@@ -19,16 +19,32 @@ import { getFavorites, getPracticeProgress } from '../services/tutorialService'
 import type { FavoriteResponse, InvestmentPracticeResponse, PracticeIntentionResponse } from '../services/tutorialTypes'
 import type { Market } from '../services/types'
 
-/** 시장별 완료 상태를 보여주는 작은 pill. Trade.tsx 의 Pill 과 같은 톤이다(그 파일을 import 하지 않고 여기서 다시 만든다). */
+/**
+ * 시장별 완료 상태를 보여주는 작은 pill. Trade.tsx 의 Pill 과 같은 톤이다(그 파일을 import 하지 않고
+ * 여기서 다시 만든다). AWAITING_SALE·EXPIRED(샘플 종목 4단계, 031)는 진행중·완료 어느 쪽도 아니므로
+ * 반드시 따로 다뤄야 한다 — 그러지 않으면 5분 매도 대기 중에 "불러오는 중"으로 잘못 보인다.
+ */
 function StatusPill({ label, status }: { label: string; status: InvestmentPracticeResponse['status'] | null }) {
   const tone =
     status === 'COMPLETED'
       ? 'bg-brand-soft text-brand'
-      : status === 'IN_PROGRESS'
+      : status === 'IN_PROGRESS' || status === 'AWAITING_SALE'
         ? 'bg-white/[0.06] text-ink ring-1 ring-white/[0.1]'
-        : 'bg-white/[0.04] text-muted ring-1 ring-white/[0.08]'
+        : status === 'EXPIRED'
+          ? 'bg-loss/10 text-loss ring-1 ring-loss/20'
+          : 'bg-white/[0.04] text-muted ring-1 ring-white/[0.08]'
   const text =
-    status === 'COMPLETED' ? '완료' : status === 'IN_PROGRESS' ? '진행 중' : status === 'NOT_STARTED' ? '시작 전' : '불러오는 중'
+    status === 'COMPLETED'
+      ? '완료'
+      : status === 'IN_PROGRESS'
+        ? '진행 중'
+        : status === 'AWAITING_SALE'
+          ? '매도 대기'
+          : status === 'EXPIRED'
+            ? '만료됨'
+            : status === 'NOT_STARTED'
+              ? '시작 전'
+              : '불러오는 중'
   return (
     <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${tone}`}>
       {label} · {text}
