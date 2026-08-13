@@ -113,7 +113,12 @@ export interface Instrument {
   isTutorialSample: boolean
 }
 
-export type PriceStatus = 'AVAILABLE' | 'UNAVAILABLE'
+/**
+ * 코인만 'STALE'이 온다 — 연결은 살아있지만 최신 틱이 10초를 넘긴 경우다(백엔드 이슈 #355).
+ * price·sourceTime 은 STALE 에서도 AVAILABLE 과 동일하게 마지막 실제 값으로 non-null 이다.
+ * 주문 체결 판정은 이 완화 대상이 아니라 STALE 이어도 여전히 막힌다 — 화면 표시에서만 구분한다.
+ */
+export type PriceStatus = 'AVAILABLE' | 'UNAVAILABLE' | 'STALE'
 export type MarketStatus = 'OPEN' | 'CLOSED'
 
 /** GET /api/instruments/{id}/price — 가격이 없으면 200 이 아니라 409 PRICE_UNAVAILABLE 이다. */

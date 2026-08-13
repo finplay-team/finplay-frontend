@@ -183,7 +183,10 @@ export function Trade() {
         ? (cryptoPrices[selected.instrumentId] as PriceResponse | undefined)
         : stockPrices[selected.symbol]
       : undefined
-  const currentPrice = snapshot?.status === 'AVAILABLE' ? snapshot.price : null
+  // 코인 STALE(연결 유지 + 10초 초과)도 마지막 실제 가격을 그대로 보여준다 — UNAVAILABLE(연결 끊김·수신 이력 없음)만 숨긴다.
+  const currentPrice =
+    snapshot?.status === 'AVAILABLE' || snapshot?.status === 'STALE' ? snapshot.price : null
+  const isStalePrice = snapshot?.status === 'STALE'
 
   // 주식은 서버 분 크론에만 새 봉이 생긴다 → 분이 넘어갈 때만 재조회한다. 코인은 폴링이다.
   const minuteTick = Math.floor((lastMessageAt ?? 0) / 60_000)
@@ -669,9 +672,14 @@ export function Trade() {
                           </span>
                         </span>
                         <span className="flex-none text-right">
-                          {price && price.status === 'AVAILABLE' && price.price !== null ? (
+                          {price &&
+                          (price.status === 'AVAILABLE' || price.status === 'STALE') &&
+                          price.price !== null ? (
                             <span className="block text-sm font-medium text-ink tabular">
                               {formatPrice(price.price)}
+                              {price.status === 'STALE' && (
+                                <span className="ml-1 text-[10px] font-normal text-muted">지연</span>
+                              )}
                             </span>
                           ) : (
                             <span className="block text-xs text-muted">시세 없음</span>
@@ -721,6 +729,7 @@ export function Trade() {
                   <p className="mt-1 text-xs text-muted tabular">
                     {selected ? selected.symbol : '—'}
                     {snapshot?.sourceTime ? ` · ${formatHhMm(snapshot.sourceTime)} 기준` : ''}
+                    {isStalePrice ? ' · 지연' : ''}
                   </p>
                 </div>
                 <div className="text-right">
