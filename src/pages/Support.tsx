@@ -132,7 +132,7 @@ export function Support() {
         {/* 4. 하단 안내 */}
         <Card className="mt-8" accent="none" innerClassName="p-6 md:p-8">
           <p className="text-xs leading-relaxed text-muted">
-            Investory는 가상 자산 기반의 교육용 모의투자 프로토타입입니다. 실제 금융 거래나 투자
+            FinPlay는 가상 자산 기반의 교육용 모의투자 프로토타입입니다. 실제 금융 거래나 투자
             권유를 제공하지 않습니다.
           </p>
         </Card>

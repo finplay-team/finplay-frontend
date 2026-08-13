@@ -9,9 +9,9 @@ export function Footer() {
           <div className="max-w-sm">
             <div className="flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-brand-ink">
-                i
+                f
               </span>
-              <span className="font-display text-lg font-semibold tracking-tight">Investory</span>
+              <span className="font-display text-lg font-semibold tracking-tight">FinPlay</span>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-muted">
               가상 자산으로 주식과 코인 매매를 연습하는 교육형 모의투자 플랫폼. 주식은 과거
@@ -47,7 +47,7 @@ export function Footer() {
           </p>
         </div>
 
-        <p className="mt-8 text-xs text-muted/70">© 2026 Investory. 교육용 프로토타입.</p>
+        <p className="mt-8 text-xs text-muted/70">© 2026 FinPlay. 교육용 프로토타입.</p>
       </div>
     </footer>
   )

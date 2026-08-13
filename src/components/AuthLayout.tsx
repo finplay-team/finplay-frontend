@@ -20,10 +20,10 @@ export function AuthLayout({ title, subtitle, children, footer, aside }: Props) 
           <div aria-hidden className="orb -bottom-20 -right-10 h-64 w-64" />
           <Link to="/" className="relative flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-[15px] font-bold text-brand-ink">
-              i
+              f
             </span>
             <span className="font-display text-xl font-semibold tracking-tight text-ink">
-              Investory
+              FinPlay
             </span>
           </Link>
           <div className="relative">{aside}</div>
@@ -34,9 +34,9 @@ export function AuthLayout({ title, subtitle, children, footer, aside }: Props) 
           <div className="lg:hidden">
             <Link to="/" className="flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-[15px] font-bold text-brand-ink">
-                i
+                f
               </span>
-              <span className="font-display text-xl font-semibold tracking-tight">Investory</span>
+              <span className="font-display text-xl font-semibold tracking-tight">FinPlay</span>
             </Link>
           </div>
           <h1 className="mt-8 font-display text-3xl font-bold tracking-tight lg:mt-0">{title}</h1>
