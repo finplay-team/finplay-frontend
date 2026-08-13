@@ -781,15 +781,19 @@ export function Trade() {
                   type="button"
                   onClick={() => setShowPriceMoves((v) => !v)}
                   aria-expanded={showPriceMoves}
+                  aria-controls="price-move-cards-panel"
                   className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-5 py-3.5 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
                 >
                   <span className="font-medium">변동 원인 {showPriceMoves ? '숨기기' : '보기'}</span>
-                  <span className={`text-muted transition-transform duration-300 ${showPriceMoves ? 'rotate-180' : ''}`}>
+                  <span
+                    aria-hidden="true"
+                    className={`text-muted transition-transform duration-300 ${showPriceMoves ? 'rotate-180' : ''}`}
+                  >
                     ▾
                   </span>
                 </button>
                 {showPriceMoves && (
-                  <div className="mt-3">
+                  <div id="price-move-cards-panel" className="mt-3">
                     <PriceMoveCards instrumentId={selectedId} />
                   </div>
                 )}
