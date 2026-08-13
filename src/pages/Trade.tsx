@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
 import { MarketTabs } from '../components/ui/MarketTabs'
+import { JournalEditor } from '../components/journal/JournalEditor'
 import { useCandles } from '../hooks/useCandles'
 import { useCryptoPrices } from '../hooks/useCryptoPrices'
 import { useIdempotencyKey } from '../hooks/useIdempotencyKey'
@@ -268,6 +269,12 @@ export function Trade() {
   const [result, setResult] = useState<OrderExecutionResponse | null>(null)
   /** 지정가는 체결이 아니라 접수 결과다 — 시장가 체결 카드와 섞으면 사용자가 체결된 줄 안다. */
   const [limitResult, setLimitResult] = useState<LimitOrderResponse | null>(null)
+  /**
+   * 매수 체결 직후 "투자일기 작성하러가기" 버튼 상태 — result.tradeId 로 식별한다.
+   * 새 주문이 체결되면 result 자체가 바뀌어 tradeId 가 더 이상 일치하지 않으므로 별도 초기화가 필요 없다.
+   */
+  const [journalTradeId, setJournalTradeId] = useState<number | null>(null)
+  const [journalSavedTradeId, setJournalSavedTradeId] = useState<number | null>(null)
   // 성공한 주문의 키를 그대로 재사용하면 서버가 같은 체결을 재생해 두 번째 주문이 조용히 삼켜진다.
   const [successNonce, setSuccessNonce] = useState(0)
   /** 미체결 목록을 즉시 다시 읽게 하는 신호. */
@@ -1087,6 +1094,35 @@ export function Trade() {
                       </dd>
                     </div>
                   </dl>
+
+                  {/* 매도 회고는 Portfolio 체결내역에서 이미 진입할 수 있다 — 여기서는 매수 직후 흐름만 앞당긴다. */}
+                  {result.side === 'BUY' && (
+                    <div className="mt-4 border-t border-white/[0.08] pt-4">
+                      {journalTradeId === result.tradeId ? (
+                        <JournalEditor
+                          journalType="BUY"
+                          tradeId={result.tradeId}
+                          mode="create"
+                          onSaved={() => {
+                            setJournalTradeId(null)
+                            setJournalSavedTradeId(result.tradeId)
+                          }}
+                          onCancel={() => setJournalTradeId(null)}
+                        />
+                      ) : journalSavedTradeId === result.tradeId ? (
+                        <p className="text-xs text-muted">투자일기를 저장했습니다.</p>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setJournalTradeId(result.tradeId)}
+                        >
+                          투자일기 작성하러가기
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
