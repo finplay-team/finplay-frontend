@@ -297,8 +297,9 @@ export function ObservationReflectionStep({
       <Card accent="none">
         <div className="space-y-4 p-5">
           <p className="text-xs leading-relaxed text-muted">
-            시세가 흐르며 자동으로 관찰됩니다. 가격이 손절선·익절선에 가까워지거나, 2분 이상 간격을 두고
-            3번 이상 확인되면 복기를 쓸 수 있습니다.
+            이 화면은 아무것도 누르지 않아도 저절로 가격을 계속 확인해요 — 마치 주식·코인 창을 켜놓고
+            가만히 지켜보는 것과 같아요. 가격이 손절선이나 익절선에 가까워지거나, 2분 이상 시간을 두고
+            3번 이상 가격을 확인하면 그때부터 아래에 "지금 느낀 걸 적어보기" 칸이 열려요.
           </p>
 
           <TickPriceChart

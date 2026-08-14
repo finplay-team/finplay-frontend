@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { toUserMessage } from '../lib/errorMessages'
+import { resolvePostAuthPath } from '../lib/postAuthRedirect'
 import type { OAuthProvider } from '../services/types'
 
 const PROVIDER_LABEL: Record<OAuthProvider, string> = { kakao: '카카오', naver: '네이버' }
@@ -43,7 +44,9 @@ export function OAuthCallback() {
     }
 
     loginWithOAuth(provider, code, state)
-      .then(() => navigate('/trade', { replace: true }))
+      // 카카오·네이버로 처음 가입한 사람도 진행 상태만으로 판별해 튜토리얼로 먼저 보낸다.
+      .then(() => resolvePostAuthPath('/trade'))
+      .then((path) => navigate(path, { replace: true }))
       .catch((err: unknown) => {
         setError(
           toUserMessage(err, {

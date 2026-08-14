@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button'
 import { Field } from '../components/ui/Field'
 import { useAuth } from '../auth/AuthContext'
 import { toUserMessage } from '../lib/errorMessages'
+import { resolvePostAuthPath } from '../lib/postAuthRedirect'
 
 interface LocationState {
   from?: string
@@ -35,7 +36,8 @@ export function Login() {
     setLoading(true)
     try {
       await login(form.email, form.password)
-      navigate(from, { replace: true })
+      // 튜토리얼을 아직 시작하지 않은 사람은 원래 가려던 곳 대신 튜토리얼로 먼저 보낸다.
+      navigate(await resolvePostAuthPath(from), { replace: true })
     } catch (err) {
       // 이 화면에서는 401 이 "다시 로그인" 이 아니라 자격 증명 오류다.
       setError(

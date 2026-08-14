@@ -9,6 +9,7 @@ import { Field } from '../components/ui/Field'
 import { useAuth } from '../auth/AuthContext'
 import { confirmEmailVerification, requestEmailVerification } from '../services/authService'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
+import { resolvePostAuthPath } from '../lib/postAuthRedirect'
 
 /** 백엔드가 재발송 사이에 60초를 강제한다 (추가로 시간당 5회·일 10회 제한). */
 const RESEND_COOLDOWN_SECONDS = 60
@@ -180,7 +181,8 @@ export function Signup() {
         termsAgreed: true,
         signupVerificationToken: token,
       })
-      navigate('/trade', { replace: true })
+      // 튜토리얼을 아직 시작하지 않은(=방금 가입한) 사람은 실거래 화면 대신 튜토리얼로 먼저 보낸다.
+      navigate(await resolvePostAuthPath('/trade'), { replace: true })
     } catch (err) {
       // 이메일은 1단계에서 이미 검증됐으므로 이 단계의 중복은 닉네임 중복이다.
       if (isApiErrorCode(err, 'DUPLICATE_RESOURCE')) {

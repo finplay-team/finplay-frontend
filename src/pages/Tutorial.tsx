@@ -3,21 +3,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
 import { MarketTabs } from '../components/ui/MarketTabs'
+import { CandleChart } from '../components/CandleChart'
 import { FavoriteStep } from '../components/tutorial/FavoriteStep'
 import { IntentionStep } from '../components/tutorial/IntentionStep'
 import { ObservationReflectionStep } from '../components/tutorial/ObservationReflectionStep'
 import { SaleReflectionStep } from '../components/tutorial/SaleReflectionStep'
 import { PracticeLogRail } from '../components/tutorial/PracticeLogRail'
 import type { PracticeLogStep } from '../components/tutorial/PracticeLogRail'
+import { PracticeScenarioCard } from '../components/tutorial/PracticeScenarioCard'
 import { TutorialReplay } from '../components/tutorial/TutorialReplay'
 import { Button } from '../components/ui/Button'
 import { useTutorialProgress } from '../hooks/useTutorialProgress'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
+import { ticksToCandles } from '../lib/tickCandles'
 import { loadEvidenceSnapshot, saveEvidenceSnapshot } from '../lib/tutorialEvidenceSnapshot'
-import { getFavorites, getPracticeProgress } from '../services/tutorialService'
+import { ensureInstrumentCache } from '../services/instrumentService'
+import { getFavorites, getPracticeProgress, getSyntheticPrices } from '../services/tutorialService'
 import type { FavoriteResponse, InvestmentPracticeResponse, PracticeIntentionResponse } from '../services/tutorialTypes'
 import type { Market } from '../services/types'
+
+/** 튜토리얼 미리보기용 합성 시세는 항상 3초 간격으로 온다(SyntheticPriceSeriesResponse.tickSeconds). */
+const PREVIEW_TICK_MS = 3000
 
 /**
  * 시장별 완료 상태를 보여주는 작은 pill. Trade.tsx 의 Pill 과 같은 톤이다(그 파일을 import 하지 않고
@@ -62,6 +69,30 @@ export function Tutorial() {
   const isCrypto = market === 'CRYPTO'
   const { stock, crypto, error, refresh } = useTutorialProgress()
   const progress = isCrypto ? crypto : stock
+
+  // 종목을 고르기 전부터 이미 움직이는 차트를 보여준다 — 이 시장의 샘플 종목 중 하나(연습 종목
+  // 선택 목록에 쓰는 것과 같은 필터)의 합성 시세를 미리보기로만 쓴다. 실습 진행과는 무관하다.
+  const [previewPrices, setPreviewPrices] = useState<number[]>([])
+  useEffect(() => {
+    let alive = true
+    setPreviewPrices([])
+    ensureInstrumentCache()
+      .then((index) => {
+        const sample = Array.from(index.byId.values())
+          .filter((i) => i.market === market && i.isTutorialSample)
+          .sort((a, b) => a.symbol.localeCompare(b.symbol))[0]
+        if (!sample) return null
+        return getSyntheticPrices(sample.instrumentId)
+      })
+      .then((series) => {
+        if (alive && series) setPreviewPrices(series.prices)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [market])
+  const previewCandles = useMemo(() => ticksToCandles(previewPrices, PREVIEW_TICK_MS), [previewPrices])
 
   // 이 시장의 즐겨찾기 목록 — FavoriteStep 이 내부적으로 자기 목록을 관리하지만,
   // 2단계(IntentionStep)에 넘길 "지금 진행 중인 chain 의 favorite" 은 여기서 별도로 찾아야 한다.
@@ -262,11 +293,11 @@ export function Tutorial() {
   const steps: PracticeLogStep[] = [
     {
       step: 1,
-      title: '즐겨찾기',
+      title: '연습 종목 선택',
       status: step1?.status ?? 'NOT_STARTED',
       locked: step1?.locked ?? false,
       evidenceLabel: step1?.evidence.favoriteCreatedAt
-        ? `${formatDateTime(step1.evidence.favoriteCreatedAt)} 즐겨찾기 등록`
+        ? `${formatDateTime(step1.evidence.favoriteCreatedAt)} 종목 선택`
         : undefined,
       children: <FavoriteStep market={market} />,
     },
@@ -296,7 +327,7 @@ export function Tutorial() {
             resetToken={buyResetNonceByMarket[market]}
           />
         ) : (
-          <p className="text-sm text-muted">즐겨찾기를 먼저 등록해 주세요.</p>
+          <p className="text-sm text-muted">1단계에서 연습할 종목을 먼저 골라주세요.</p>
         ),
     },
     {
@@ -352,20 +383,27 @@ export function Tutorial() {
             {step4.evidence.reflectionCreatedAt ? ` · ${formatDateTime(step4.evidence.reflectionCreatedAt)}` : ''}
           </p>
         ) : step4?.evidence.holdingId ? (
-          <SaleReflectionStep
-            market={market}
-            instrumentId={activeFavorite?.instrumentId ?? 0}
-            holdingId={step4.evidence.holdingId}
-            expired={step4.status === 'EXPIRED'}
-            saleDeadlineAt={step4.evidence.saleDeadlineAt}
-            sellTradeId={step4.evidence.sellTradeId}
-            referenceStopLossPrice={step4.evidence.referenceStopLossPrice}
-            referenceTakeProfitPrice={step4.evidence.referenceTakeProfitPrice}
-            hasObservationEvidence={step3?.evidence.evidenceType != null}
-            onCompleted={handleStep4Completed}
-            onRetry={handleRetry}
-            initialPrices={observePriceHistoryByMarket[market]}
-          />
+          // activeFavorite 은 별도 비동기 getFavorites() 조회가 끝나야 채워진다 — 이 시점에 아직
+          // null 이면 instrumentId 를 0 같은 값으로 대체해 매도 화면을 먼저 그리면 안 된다(그러면
+          // getHoldings 결과에서 실제 보유종목을 못 찾아 "매도 가능한 수량이 없습니다" 오류가 난다).
+          activeFavorite ? (
+            <SaleReflectionStep
+              market={market}
+              instrumentId={activeFavorite.instrumentId}
+              holdingId={step4.evidence.holdingId}
+              expired={step4.status === 'EXPIRED'}
+              saleDeadlineAt={step4.evidence.saleDeadlineAt}
+              sellTradeId={step4.evidence.sellTradeId}
+              referenceStopLossPrice={step4.evidence.referenceStopLossPrice}
+              referenceTakeProfitPrice={step4.evidence.referenceTakeProfitPrice}
+              hasObservationEvidence={step3?.evidence.evidenceType != null}
+              onCompleted={handleStep4Completed}
+              onRetry={handleRetry}
+              initialPrices={observePriceHistoryByMarket[market]}
+            />
+          ) : (
+            <p className="text-sm text-muted">불러오는 중…</p>
+          )
         ) : (
           <p className="text-sm text-muted">잠시 후 다시 시도해 주세요.</p>
         ),
@@ -383,7 +421,7 @@ export function Tutorial() {
             처음이니까, 하나씩 해봅니다
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-            처음 가입하면 여기부터입니다. 주식이나 코인 중 하나만 골라 아래 3단계(즐겨찾기 → 매수 전
+            처음 가입하면 여기부터입니다. 주식이나 코인 중 하나만 골라 아래 3단계(연습 종목 선택 → 매수 전
             의도 기록과 실제 매수 → 가격 관찰과 자유 복기)를 마치면 나머지 메뉴가 열립니다. 정답도 점수도
             없고, 완료는 직접 한 행동으로만 확인됩니다. 주식과 코인은 완전히 독립된 실습이라 한쪽을
             마쳐도 다른 쪽에 영향을 주지 않으며, 나중에 언제든 다시 와서 나머지 하나를 해볼 수 있습니다.
@@ -400,6 +438,26 @@ export function Tutorial() {
           )}
           {favoritesError && <p className="mt-3 text-sm text-loss">{favoritesError}</p>}
         </header>
+
+        {/* 종목을 고르기 전부터 이미 흐르는 차트를 보여줘, 아래에서 뭘 고르게 될지 먼저 감을 잡게 한다. */}
+        <div className="mt-8 grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
+          <Card accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-4">
+            <p className="text-xs text-muted">
+              {market === 'CRYPTO' ? '코인' : '주식'} 가격은 이렇게 오르내려요 — 이제 아래에서 연습할
+              종목을 골라볼게요.
+            </p>
+            <div className="mt-2">
+              <CandleChart
+                candles={previewCandles}
+                height={160}
+                maxBars={Math.max(previewCandles.length, 1)}
+                interval="1m"
+                emptyMessage="차트를 불러오는 중입니다."
+              />
+            </div>
+          </Card>
+          <PracticeScenarioCard market={market} />
+        </div>
 
         {progress?.status === 'COMPLETED' && (
           <Card className="mt-8" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-5">
