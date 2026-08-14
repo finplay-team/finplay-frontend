@@ -127,7 +127,8 @@ function Stat({ label, value, tone = 'text-ink' }: { label: string; value: strin
 }
 
 export function Trade() {
-  const [market, setMarket] = useState<Market>('STOCK')
+  // 코인이 우선 시장이라 기본 탭도 코인으로 연다(탭 순서도 MarketTabs.tsx에서 코인이 먼저다).
+  const [market, setMarket] = useState<Market>('CRYPTO')
   const isCrypto = market === 'CRYPTO'
   const accent = isCrypto ? 'coin' : 'brand'
 

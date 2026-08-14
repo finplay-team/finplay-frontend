@@ -16,7 +16,7 @@ const publicLinks = [
  * `/journal` 라우트 자체는 그대로 있다.
  */
 const authLinks = [
-  { to: '/tutorial', label: '실습' },
+  { to: '/tutorial', label: '튜토리얼' },
   { to: '/news', label: '뉴스' },
   { to: '/trade', label: '거래' },
   { to: '/portfolio', label: '포트폴리오' },

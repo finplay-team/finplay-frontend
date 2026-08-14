@@ -60,11 +60,13 @@ export function IntentionStep({
   intention: PracticeIntentionResponse | null
   onIntentionCreated: (intention: PracticeIntentionResponse) => void
   /**
-   * 실제 매수 체결 성공 시 호출 — 부모가 진행 상태를 다시 읽도록 트리거한다. priceHistory는 매수
-   * 확인 화면에서 여기까지 이어 그린 시세(참고 시세 꼬리 + 실시간 틱)로, 3단계(관찰) 그래프가 0부터
-   * 다시 시작하지 않고 이어지게 하는 용도일 뿐 evidence 판정과는 무관하다.
+   * 실제 매수 체결 성공 시 호출 — 부모가 진행 상태를 다시 읽도록 트리거한다. quantity는 4단계
+   * 매도가 GET /api/holdings 를 쓸 수 없는 문제(샌드박스 종목 holding은 그 응답에서 항상 빠진다,
+   * 033-exclude-tutorial-sandbox-data)를 우회하기 위해 매수 수량을 그대로 기억해 넘기는 값이다.
+   * priceHistory는 매수 확인 화면에서 여기까지 이어 그린 시세(참고 시세 꼬리 + 실시간 틱)로,
+   * 3단계(관찰) 그래프가 0부터 다시 시작하지 않고 이어지게 하는 용도일 뿐 evidence 판정과는 무관하다.
    */
-  onBought: (execution?: OrderExecutionResponse, priceHistory?: number[]) => void
+  onBought: (quantity: number, execution?: OrderExecutionResponse, priceHistory?: number[]) => void
   /**
    * 샘플 종목 4단계(031)에서 5분 만료 후 "다시 시작"을 누르면 부모가 이 값을 증가시켜 매수 화면을
    * 다시 활성화한다 — 한 번 매수하면 영구히 "체결 완료" 카드로 고정되던 것을 되돌린다.
@@ -289,7 +291,7 @@ export function IntentionStep({
       setSuccessNonce((n) => n + 1)
       // 3단계(관찰) 그래프가 0부터 다시 시작하지 않도록, 지금까지 이어 그린 시세(참고 시세 꼬리 +
       // 매수 확인 중 흐른 실시간 틱)를 넘겨준다 — 부모가 이걸 관찰 그래프의 앞머리로 이어 붙인다.
-      onBought(res, [...referenceTailPrices, ...live.prices])
+      onBought(intention.quantity, res, [...referenceTailPrices, ...live.prices])
       bumpTutorial()
       bumpAccount()
     } catch (err) {
@@ -303,13 +305,14 @@ export function IntentionStep({
   // 취소 오류 양쪽에서 함께 쓴다. limitOrder 를 반드시 비워야 아래 폴링 effect 가 멈춘다 — 안
   // 비우면 이미 사라진 주문을 매번 다시 "체결됐다"로 읽어 onBought·bumpTutorial 이 계속 반복 호출된다.
   const handleLimitFilled = useCallback(() => {
+    if (!intention) return
     setLimitOrder(null)
     setLimitFilled(true)
     setSuccessNonce((n) => n + 1)
-    onBought(undefined, [...referenceTailPrices, ...live.prices])
+    onBought(intention.quantity, undefined, [...referenceTailPrices, ...live.prices])
     bumpTutorial()
     bumpAccount()
-  }, [onBought, referenceTailPrices, live.prices])
+  }, [intention, onBought, referenceTailPrices, live.prices])
 
   // 폴링 effect가 limitOrder 가 바뀔 때만 재시작하도록(가격 틱마다 재시작되면 LIMIT_POLL_MS 안에
   // poll이 한 번도 못 돈다) handleLimitFilled 를 deps에 넣지 않는 대신, 항상 최신 버전을 담아 두는

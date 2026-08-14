@@ -272,13 +272,13 @@ export function ObservationReflectionStep({
   let verdict: string | null = null
   if (latest) {
     if (latest.evidenceType === 'CLOSER_TO_BOUNDARY') {
-      verdict = `${boundaryLabel(latest.closerBoundary)} 경계에 가까워졌습니다. 지금 복기를 남길 수 있습니다.`
+      verdict = `가격이 정해둔 ${boundaryLabel(latest.closerBoundary)}가에 가까워졌어요. 지금처럼 시장이 흔들릴 때 어떤 생각이 드는지, 아래 칸에 적어보세요.`
     } else if (latest.evidenceType === 'TIMED_REPETITION') {
-      verdict = '2분 이상 간격으로 3번 관찰했습니다. 지금 복기를 남길 수 있습니다.'
+      verdict = '2분 넘는 시간 동안 가격을 3번 이상 지켜봤어요. 그동안 느낀 걸 아래 칸에 적어보세요.'
     } else if (minutesSinceOldest < 2) {
-      verdict = `아직 조건을 채우지 못했습니다. 관찰은 계속 자동으로 진행됩니다 — 2분 정도 기다리면 시간 분산 조건도 확인됩니다.`
+      verdict = '아직은 적어볼 조건이 안 됐어요. 계속 지켜보고 있으니 잠시만 기다려 주세요 — 2분 정도 지나면 조건이 열려요.'
     } else {
-      verdict = '아직 조건을 채우지 못했습니다. 가격이 손절·익절 경계에 가까워질 때까지 자동으로 계속 확인합니다.'
+      verdict = '아직은 적어볼 조건이 안 됐어요. 가격이 손절가·익절가에 가까워질 때까지 계속 지켜보고 있어요.'
     }
   }
 
@@ -312,14 +312,17 @@ export function ObservationReflectionStep({
           {latest && (
             <>
               {verdict && <p className="text-sm text-ink">{verdict}</p>}
-              <p className="text-xs text-muted tabular">지금까지 {observations.length}회 확인했습니다.</p>
+              <p className="text-xs text-muted tabular">
+                지금까지 자동으로 {observations.length}번 가격을 확인했어요.
+              </p>
             </>
           )}
 
           {observeError && <p className="text-sm text-loss">{observeError}</p>}
           {deferReflection && canReflect && (
             <p className="text-sm text-ink">
-              조건을 충족했습니다. 다음 단계에서 매도하고 복기를 남기면 실습을 완료합니다.
+              여기서는 따로 적지 않아도 돼요 — 다음 단계(매도)에서 팔고 나서 지금 느낀 걸 한 번에 적으면
+              실습이 끝나요.
             </p>
           )}
         </div>

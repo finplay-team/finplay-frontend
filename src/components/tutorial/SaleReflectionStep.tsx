@@ -10,7 +10,6 @@ import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { useLiveSamplePrice } from '../../hooks/useLiveSamplePrice'
 import { bumpAccount } from '../../lib/accountPulse'
 import { bumpTutorial } from '../../lib/tutorialPulse'
-import { getHoldings } from '../../services/holdingService'
 import { cancelLimitOrder, getPendingOrders, placeLimitOrder, placeOrder } from '../../services/orderService'
 import { saveHoldingReflection } from '../../services/tutorialService'
 import type { LimitOrderResponse, Market } from '../../services/types'
@@ -52,6 +51,7 @@ export function SaleReflectionStep({
   onRetry,
   simulate = false,
   initialPrices = [],
+  quantity,
 }: {
   market: Market
   instrumentId: number
@@ -84,6 +84,13 @@ export function SaleReflectionStep({
    * 판정에는 쓰이지 않는다.
    */
   initialPrices?: number[]
+  /**
+   * 2단계에서 매수한 수량 — GET /api/holdings 로 매도 가능 수량을 확인할 수 없다(샌드박스 종목
+   * holding은 그 응답에서 항상 빠진다, 033-exclude-tutorial-sandbox-data). 매수 직후 이 값이
+   * 부모(Tutorial.tsx)의 세션 상태로 전달되며, 새로고침하면 사라진다(의도 기록과 같은 한계) — 그
+   * 경우 null이고, handleSell이 매도 자체를 막고 안내한다.
+   */
+  quantity: number | null
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
@@ -110,16 +117,16 @@ export function SaleReflectionStep({
   const idempotencyKey = useIdempotencyKey([market, instrumentId, holdingId, orderType, limitPrice])
 
   const handleSell = useCallback(async () => {
+    // quantity가 없으면(새로고침 등으로 매수 수량을 잃어버린 경우) 매도 자체를 시도하지 않는다 —
+    // GET /api/holdings 는 샌드박스 종목 holding을 항상 빼고 돌려줘 대안이 될 수 없다
+    // (033-exclude-tutorial-sandbox-data). 버튼도 이 경우 비활성화된다(아래 렌더 참고).
+    if (quantity === null) {
+      setSellError('매수 수량 정보를 잃어버렸어요. 처음부터 다시 시작해 주세요.')
+      return
+    }
     setSelling(true)
     setSellError(null)
     try {
-      const holdings = await getHoldings(market)
-      const holding = holdings.find((h) => h.instrumentId === instrumentId)
-      const sellable = holding ? Number(holding.quantity) - Number(holding.reservedQuantity) : 0
-      if (!(sellable > 0)) {
-        setSellError('매도 가능한 수량이 없습니다.')
-        return
-      }
       if (orderType === 'LIMIT') {
         const lp = Number(limitPrice)
         if (!(lp > 0)) {
@@ -127,7 +134,7 @@ export function SaleReflectionStep({
           return
         }
         const res = await placeLimitOrder(
-          { market: 'CRYPTO', instrumentId, side: 'SELL', quantity: String(sellable), limitPrice: String(lp) },
+          { market: 'CRYPTO', instrumentId, side: 'SELL', quantity: String(quantity), limitPrice: String(lp) },
           idempotencyKey,
         )
         setLimitOrder(res)
@@ -135,7 +142,7 @@ export function SaleReflectionStep({
         return
       }
       const res = await placeOrder(
-        { market, instrumentId, side: 'SELL', orderType: 'MARKET', quantity: String(sellable) },
+        { market, instrumentId, side: 'SELL', orderType: 'MARKET', quantity: String(quantity) },
         idempotencyKey,
       )
       setSellPrice(res.price)
@@ -147,7 +154,7 @@ export function SaleReflectionStep({
     } finally {
       setSelling(false)
     }
-  }, [market, instrumentId, idempotencyKey, orderType, limitPrice])
+  }, [market, instrumentId, idempotencyKey, orderType, limitPrice, quantity])
 
   // 지정가 매도가 체결됐을 때 시장가 매도와 같은 완료 처리를 하는 공용 경로 — 폴링과 "이미 체결됨"
   // 취소 오류 양쪽에서 함께 쓴다. 체결가는 접수 응답에 담기지 않아 sellPrice 는 null 로 남는다
@@ -316,6 +323,18 @@ export function SaleReflectionStep({
                 목표가는 참고선일 뿐입니다. 시세가 흐르는 걸 보다가 원할 때 직접 매도해 주세요.
               </p>
 
+              {quantity === null && (
+                <div className="space-y-2">
+                  <p className="text-sm text-loss">
+                    매수 수량 정보를 잃어버렸어요(새로고침 등으로 인한 것으로 보여요). 처음부터 다시
+                    시작해 주세요.
+                  </p>
+                  <Button type="button" size="sm" variant="soft" onClick={onRetry}>
+                    처음부터 다시 시작
+                  </Button>
+                </div>
+              )}
+
               {!limitOrder && (
                 <>
                   {/* 실제 거래 화면처럼 시장가·지정가를 직접 고른다 — 설명은 바로 아래에 붙인다. */}
@@ -392,7 +411,12 @@ export function SaleReflectionStep({
                   )}
 
                   {sellError && <p className="text-sm text-loss">{sellError}</p>}
-                  <Button type="button" size="sm" disabled={selling} onClick={() => void handleSell()}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={selling || quantity === null}
+                    onClick={() => void handleSell()}
+                  >
                     {selling
                       ? '주문 처리 중…'
                       : orderType === 'LIMIT'

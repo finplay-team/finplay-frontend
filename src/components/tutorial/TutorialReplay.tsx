@@ -49,17 +49,21 @@ export function TutorialReplay({
   const [buyPriceHistory, setBuyPriceHistory] = useState<number[]>([])
   // 3단계(관찰)에서 이어 그린 시세 — 4단계(매도·복기) 그래프가 이어받는다.
   const [observePriceHistory, setObservePriceHistory] = useState<number[]>([])
+  // 4단계 매도가 GET /api/holdings 를 쓸 수 없어(샌드박스 종목 holding은 그 응답에서 항상 빠진다,
+  // 033-exclude-tutorial-sandbox-data) 매수 수량을 여기서 기억해 그대로 넘긴다.
+  const [boughtQuantity, setBoughtQuantity] = useState<number | null>(null)
 
   const handleIntentionCreated = useCallback((created: PracticeIntentionResponse) => {
     setIntention(created)
   }, [])
 
-  const handleBought = useCallback((_execution?: unknown, priceHistory?: number[]) => {
+  const handleBought = useCallback((quantity: number, _execution?: unknown, priceHistory?: number[]) => {
     setRetrying(false)
     setEvidenceReady(false)
     setSaleDeadlineAt(toLocalDateTimeString(new Date(Date.now() + SALE_DEADLINE_MINUTES * 60_000)))
     setBuyPriceHistory(priceHistory ?? [])
     setObservePriceHistory([])
+    setBoughtQuantity(quantity)
     setAttemptId((n) => n + 1)
   }, [])
 
@@ -84,6 +88,7 @@ export function TutorialReplay({
     setDone(false)
     setBuyPriceHistory([])
     setObservePriceHistory([])
+    setBoughtQuantity(null)
   }, [])
 
   const handleStep4Completed = useCallback(() => {
@@ -171,6 +176,7 @@ export function TutorialReplay({
           onRetry={handleRetry}
           simulate
           initialPrices={observePriceHistory}
+          quantity={boughtQuantity}
         />
       ) : null,
     },
