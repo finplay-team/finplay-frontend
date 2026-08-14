@@ -384,7 +384,6 @@ export function IntentionStep({
                     latest={live.latest ?? referenceTailPrices[referenceTailPrices.length - 1] ?? null}
                     referenceStopLoss={intention.stopLoss}
                     referenceTakeProfit={intention.takeProfit}
-                    accent={isCrypto ? 'coin' : 'brand'}
                   />
                 </div>
                 <p className="mt-2 text-[11px] leading-relaxed text-muted">

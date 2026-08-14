@@ -3,6 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import { parseLocalDateTime } from '../lib/datetime'
 import type { Candle, CandleInterval } from '../services/types'
 
+interface ReferenceLine {
+  value: number
+  tone: 'gain' | 'loss'
+  label: string
+}
+
 interface CandleChartProps {
   candles: Candle[]
   /** 데스크톱 기준 차트 높이(px). 좁은 폭에서는 자동으로 낮아진다. */
@@ -13,6 +19,11 @@ interface CandleChartProps {
   interval?: CandleInterval
   emptyMessage?: string
   className?: string
+  /**
+   * 손절가·익절가처럼 캔들 데이터와 무관하게 항상 표시할 수평 참고선. 값이 현재 봉의 고가·저가
+   * 범위 밖이어도 가격축 자동 맞춤에 포함시켜 항상 화면에 보이게 한다(튜토리얼 참고선 용도).
+   */
+  referenceLines?: ReferenceLine[]
 }
 
 /** right 는 가격축, bottom 은 시간축 + 거래량 영역을 담는다. */
@@ -93,6 +104,7 @@ export function CandleChart({
   interval = '1m',
   emptyMessage = '표시할 봉이 없습니다.',
   className = '',
+  referenceLines,
 }: CandleChartProps) {
   const { ref, width: boxWidth } = useElementWidth<HTMLDivElement>()
   const svgRef = useRef<SVGSVGElement>(null)
@@ -239,8 +251,9 @@ export function CandleChart({
     )
   }
 
-  let lo = Math.min(...bars.map((b) => b.low))
-  let hi = Math.max(...bars.map((b) => b.high))
+  const refValues = referenceLines?.map((r) => r.value) ?? []
+  let lo = Math.min(...bars.map((b) => b.low), ...refValues)
+  let hi = Math.max(...bars.map((b) => b.high), ...refValues)
   // 시드 데이터나 봉 1개면 hi === lo 가 될 수 있어 0 나눗셈을 막는다.
   const span = hi - lo || Math.max(Math.abs(hi) * 0.001, 1)
   const pad = span * 0.08
@@ -445,6 +458,33 @@ export function CandleChart({
               className="text-muted tabular"
             >
               {won(v)}
+            </text>
+          </g>
+        ))}
+
+        {/* 손절가·익절가 등 데이터와 무관한 참고선 — 캔들보다 아래, 가격 그리드보다 위에 둔다 */}
+        {referenceLines?.map((r) => (
+          <g key={r.label}>
+            <line
+              x1={PAD.left}
+              x2={PAD.left + plotW}
+              y1={y(r.value)}
+              y2={y(r.value)}
+              stroke="currentColor"
+              strokeWidth={1}
+              strokeDasharray="4 3"
+              className={r.tone === 'gain' ? 'text-gain' : 'text-loss'}
+              opacity={0.6}
+            />
+            <text
+              x={PAD.left + 4}
+              y={y(r.value) - 4}
+              fontSize={9}
+              fontWeight={600}
+              fill="currentColor"
+              className={r.tone === 'gain' ? 'text-gain' : 'text-loss'}
+            >
+              {r.label} {won(r.value)}
             </text>
           </g>
         ))}
