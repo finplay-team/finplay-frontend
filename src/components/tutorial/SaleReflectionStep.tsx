@@ -324,10 +324,15 @@ export function SaleReflectionStep({
               </p>
 
               {quantity === null && (
-                <p className="text-sm text-loss">
-                  매수 수량 정보를 잃어버렸어요(새로고침 등으로 인한 것으로 보여요). 처음부터 다시
-                  시작해 주세요.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-loss">
+                    매수 수량 정보를 잃어버렸어요(새로고침 등으로 인한 것으로 보여요). 처음부터 다시
+                    시작해 주세요.
+                  </p>
+                  <Button type="button" size="sm" variant="soft" onClick={onRetry}>
+                    처음부터 다시 시작
+                  </Button>
+                </div>
               )}
 
               {!limitOrder && (

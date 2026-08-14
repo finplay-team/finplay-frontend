@@ -23,7 +23,9 @@ function seededRandom(seed: number): () => number {
  * 움직였다고 가정하면" 수준의 연습용 배경을 만든다 — CandleChart는 실제 종목과 똑같이 그린다.
  */
 export function generatePracticeMonthlyCandles(instrumentId: number, latestPrice: number): Candle[] {
-  const rand = seededRandom(instrumentId * 7919 + Math.round(latestPrice))
+  // 현재가는 합성 틱에 따라 계속 바뀌므로 시드에 섞지 않는다. 종목 ID만 시드로 고정하면 가격 수준은
+  // latestPrice를 따라가면서도 일별 등락의 상대적인 모양은 같은 종목에서 항상 같다.
+  const rand = seededRandom(instrumentId * 7919)
   // 오늘 가격에서 거슬러 올라가며 만들고 마지막에 뒤집어 시간 순으로 맞춘다.
   const closes: number[] = [latestPrice]
   for (let i = 1; i < DAYS; i++) {
