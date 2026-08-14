@@ -314,7 +314,18 @@ export function CandleChart({
     }
     const px = ((e.clientX - rect.left) / rect.width) * width
     const idx = Math.floor((px - PAD.left) / barW)
-    setHover(idx >= 0 && idx < n ? idx : null)
+    if (idx < 0 || idx >= n) {
+      setHover(null)
+      return
+    }
+    // 툴팁은 그 봉의 슬롯 아무 데나가 아니라 실제 캔들(몸통 폭·고가~저가 세로 범위) 위에서만 뜬다 —
+    // 슬롯 전체로 잡으면 캔들 사이 빈 공간이나 위·아래 여백에 마우스를 올려도 차트를 가리게 된다.
+    const py = ((e.clientY - rect.top) / rect.height) * chartH
+    const bar = bars[idx]
+    const withinX = Math.abs(px - x(idx)) <= bodyW / 2
+    const hitPad = 2 // 얇은 꼬리만 있는 봉도 너무 빡빡하지 않게 약간의 여유를 준다
+    const withinY = py >= y(bar.high) - hitPad && py <= y(bar.low) + hitPad
+    setHover(withinX && withinY ? idx : null)
   }
 
   /** 좌클릭(마우스 전용 — 터치는 핀치가 이미 두 손가락을 쓴다) 드래그로 차트를 상하좌우로 민다. */
