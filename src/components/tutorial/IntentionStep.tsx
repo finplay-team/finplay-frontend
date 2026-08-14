@@ -37,7 +37,12 @@ function Stat({ label, value }: { label: string; value: string }) {
 const REFERENCE_TAIL_POINTS = 20
 
 function sanitizeNumberInput(value: string, allowDecimal: boolean): string {
-  return value.replace(allowDecimal ? /[^0-9.]/g : /[^0-9]/g, '')
+  const cleaned = value.replace(allowDecimal ? /[^0-9.]/g : /[^0-9]/g, '')
+  if (!allowDecimal) return cleaned
+  // 소수점을 두 번째부터는 지운다("1.2.3" 같은 값이 그대로 남아 Number() 가 NaN이 되는 걸 막는다).
+  const firstDot = cleaned.indexOf('.')
+  if (firstDot === -1) return cleaned
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '')
 }
 
 export function IntentionStep({
@@ -197,9 +202,18 @@ export function IntentionStep({
 
   // resetToken이 바뀌면(4단계 5분 만료 후 "다시 시작") 매수 확인 화면을 다시 활성화한다.
   const lastResetTokenRef = useRef(resetToken)
+  // resetToken 은 4단계 5분 만료에만 바뀌므로 이 effect 는 그때만 재실행돼야 한다 — limitOrder 를
+  // deps에 넣으면 폴링 도중 매번 다시 실행되므로, 최신 값만 읽는 ref로 우회한다.
+  const limitOrderRef = useRef(limitOrder)
+  useEffect(() => {
+    limitOrderRef.current = limitOrder
+  }, [limitOrder])
   useEffect(() => {
     if (resetToken !== lastResetTokenRef.current) {
       lastResetTokenRef.current = resetToken
+      // 아직 체결되지 않은 지정가 주문이 남아있다면, 화면만 초기화하고 서버 주문은 그대로 두면
+      // 사용자도 모르는 채로 계속 살아있게 된다 — 최선을 다해 취소한다(실패해도 화면 전환은 막지 않는다).
+      if (limitOrderRef.current) cancelLimitOrder(limitOrderRef.current.orderId).catch(() => undefined)
       setExecution(null)
       setBuyError(null)
       setLimitOrder(null)
@@ -286,15 +300,24 @@ export function IntentionStep({
   }
 
   // 지정가 매수가 체결됐을 때 시장가 매수와 같은 완료 처리를 하는 공용 경로 — 폴링과 "이미 체결됨"
-  // 취소 오류 양쪽에서 함께 쓴다.
+  // 취소 오류 양쪽에서 함께 쓴다. limitOrder 를 반드시 비워야 아래 폴링 effect 가 멈춘다 — 안
+  // 비우면 이미 사라진 주문을 매번 다시 "체결됐다"로 읽어 onBought·bumpTutorial 이 계속 반복 호출된다.
   const handleLimitFilled = useCallback(() => {
+    setLimitOrder(null)
     setLimitFilled(true)
     setSuccessNonce((n) => n + 1)
     onBought(undefined, [...referenceTailPrices, ...live.prices])
     bumpTutorial()
     bumpAccount()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onBought, referenceTailPrices, live.prices])
+
+  // 폴링 effect가 limitOrder 가 바뀔 때만 재시작하도록(가격 틱마다 재시작되면 LIMIT_POLL_MS 안에
+  // poll이 한 번도 못 돈다) handleLimitFilled 를 deps에 넣지 않는 대신, 항상 최신 버전을 담아 두는
+  // ref로 우회한다 — 그래야 실제로 체결을 감지한 시점의 최신 live.prices 를 onBought 에 넘긴다.
+  const handleLimitFilledRef = useRef(handleLimitFilled)
+  useEffect(() => {
+    handleLimitFilledRef.current = handleLimitFilled
+  }, [handleLimitFilled])
 
   /**
    * 지정가는 접수 시점에 체결을 알 수 없다 — 체결 알림이 없어 미체결 목록 폴링이 유일한 감지
@@ -309,7 +332,7 @@ export function IntentionStep({
         .then((page) => {
           if (cancelled) return
           const stillPending = page.content.some((o) => o.orderId === limitOrder.orderId)
-          if (!stillPending) handleLimitFilled()
+          if (!stillPending) handleLimitFilledRef.current()
         })
         .catch(() => undefined)
     }
@@ -318,26 +341,28 @@ export function IntentionStep({
       cancelled = true
       clearInterval(id)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limitOrder])
 
   async function handleCancelLimit() {
     if (!limitOrder || cancellingLimit) return
     setCancellingLimit(true)
-    const orderId = limitOrder.orderId
+    const order = limitOrder
     // 먼저 비워 위 폴링을 멈춘다 — 안 그러면 취소 응답이 오기 전 폴링이 "사라졌다 = 체결"로
     // 잘못 읽을 수 있다.
     setLimitOrder(null)
     try {
-      await cancelLimitOrder(orderId)
+      await cancelLimitOrder(order.orderId)
       setBuyError(null)
     } catch (err) {
       if (isApiErrorCode(err, 'ORDER_ALREADY_FILLED')) {
         handleLimitFilled()
+      } else if (isApiErrorCode(err, 'ORDER_ALREADY_CANCELLED')) {
+        setBuyError('이미 취소된 주문이에요.')
       } else {
-        setBuyError(
-          toUserMessage(err, { ORDER_ALREADY_CANCELLED: '이미 취소된 주문이에요.' }),
-        )
+        // 취소 요청 자체가 실패했다면(네트워크 오류 등) 주문은 여전히 서버에 살아있다 — 화면에서마저
+        // 지워버리면 사용자가 같은 주문을 또 넣어 중복 주문이 생길 수 있다. 원래 상태로 되돌린다.
+        setLimitOrder(order)
+        setBuyError(toUserMessage(err))
       }
     } finally {
       setCancellingLimit(false)

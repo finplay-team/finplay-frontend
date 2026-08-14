@@ -24,6 +24,14 @@ const LIMIT_POLL_MS = 3000
 /** 시장가·지정가 중 무엇을 골랐는지 — 지정가는 코인 실습에서만 고를 수 있다(백엔드가 코인 전용). */
 type SellOrderType = 'MARKET' | 'LIMIT'
 
+/** 소수점을 두 번째부터는 지운다("1.2.3" 같은 값이 그대로 남아 Number() 가 NaN이 되는 걸 막는다). */
+function sanitizeDecimalInput(value: string): string {
+  const cleaned = value.replace(/[^0-9.]/g, '')
+  const firstDot = cleaned.indexOf('.')
+  if (firstDot === -1) return cleaned
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '')
+}
+
 function formatRemaining(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
@@ -143,8 +151,11 @@ export function SaleReflectionStep({
 
   // 지정가 매도가 체결됐을 때 시장가 매도와 같은 완료 처리를 하는 공용 경로 — 폴링과 "이미 체결됨"
   // 취소 오류 양쪽에서 함께 쓴다. 체결가는 접수 응답에 담기지 않아 sellPrice 는 null 로 남는다
-  // (targetDiff 계산은 sellPrice === null 이면 조용히 생략한다).
+  // (targetDiff 계산은 sellPrice === null 이면 조용히 생략한다). limitOrder 를 반드시 비워야 아래
+  // 폴링이 멈춘다 — 안 비우면 이미 사라진 주문을 매번 다시 "체결됐다"로 읽어 bumpTutorial·
+  // bumpAccount 가 계속 반복 호출된다.
   const handleLimitFilled = useCallback(() => {
+    setLimitOrder(null)
     setSold(true)
     bumpTutorial()
     bumpAccount()
@@ -177,18 +188,23 @@ export function SaleReflectionStep({
   const handleCancelLimit = useCallback(async () => {
     if (!limitOrder || cancellingLimit) return
     setCancellingLimit(true)
-    const orderId = limitOrder.orderId
+    const order = limitOrder
     // 먼저 비워 위 폴링을 멈춘다 — 안 그러면 취소 응답이 오기 전 폴링이 "사라졌다 = 체결"로
     // 잘못 읽을 수 있다.
     setLimitOrder(null)
     try {
-      await cancelLimitOrder(orderId)
+      await cancelLimitOrder(order.orderId)
       setSellError(null)
     } catch (e) {
       if (isApiErrorCode(e, 'ORDER_ALREADY_FILLED')) {
         handleLimitFilled()
+      } else if (isApiErrorCode(e, 'ORDER_ALREADY_CANCELLED')) {
+        setSellError('이미 취소된 주문이에요.')
       } else {
-        setSellError(toUserMessage(e, { ORDER_ALREADY_CANCELLED: '이미 취소된 주문이에요.' }))
+        // 취소 요청 자체가 실패했다면(네트워크 오류 등) 주문은 여전히 서버에 살아있다 — 화면에서마저
+        // 지워버리면 사용자가 같은 주문을 또 넣어 중복 주문이 생길 수 있다. 원래 상태로 되돌린다.
+        setLimitOrder(order)
+        setSellError(toUserMessage(e))
       }
     } finally {
       setCancellingLimit(false)
@@ -250,6 +266,12 @@ export function SaleReflectionStep({
   const deadlineMs = saleDeadlineAt ? parseLocalDateTime(saleDeadlineAt).getTime() : null
   const remainingSeconds = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - nowMs) / 1000))
   const timedOut = expired || (remainingSeconds !== null && remainingSeconds <= 0 && !sold)
+
+  // 5분 시한이 끝나 "다시 시작" 화면으로 넘어가면서도 아직 체결 안 된 지정가 주문이 남아있다면,
+  // 화면만 넘어가고 서버 주문은 계속 살아있게 된다 — 최선을 다해 취소한다(실패해도 화면 전환은 막지 않는다).
+  useEffect(() => {
+    if (timedOut && limitOrder) cancelLimitOrder(limitOrder.orderId).catch(() => undefined)
+  }, [timedOut, limitOrder])
 
   if (timedOut) {
     return (
@@ -363,7 +385,7 @@ export function SaleReflectionStep({
                         autoComplete="off"
                         placeholder="0"
                         value={limitPrice}
-                        onChange={(e) => setLimitPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+                        onChange={(e) => setLimitPrice(sanitizeDecimalInput(e.target.value))}
                         className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-coin focus:ring-4 focus:ring-coin/15"
                       />
                     </div>

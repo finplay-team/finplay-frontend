@@ -73,9 +73,13 @@ export function Tutorial() {
   // 종목을 고르기 전부터 이미 움직이는 차트를 보여준다 — 이 시장의 샘플 종목 중 하나(연습 종목
   // 선택 목록에 쓰는 것과 같은 필터)의 합성 시세를 미리보기로만 쓴다. 실습 진행과는 무관하다.
   const [previewPrices, setPreviewPrices] = useState<number[]>([])
+  // 순수 미리보기라 실패해도 조용히 넘어가지만, "불러오는 중"이 실패 후에도 영원히 남으면 사용자가
+  // 페이지가 멈췄다고 오해한다 — 실패했다는 사실만은 구분해서 다른 문구를 보여준다.
+  const [previewFailed, setPreviewFailed] = useState(false)
   useEffect(() => {
     let alive = true
     setPreviewPrices([])
+    setPreviewFailed(false)
     ensureInstrumentCache()
       .then((index) => {
         const sample = Array.from(index.byId.values())
@@ -85,9 +89,13 @@ export function Tutorial() {
         return getSyntheticPrices(sample.instrumentId)
       })
       .then((series) => {
-        if (alive && series) setPreviewPrices(series.prices)
+        if (!alive) return
+        if (series) setPreviewPrices(series.prices)
+        else setPreviewFailed(true)
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (alive) setPreviewFailed(true)
+      })
     return () => {
       alive = false
     }
@@ -452,7 +460,7 @@ export function Tutorial() {
                 height={160}
                 maxBars={Math.max(previewCandles.length, 1)}
                 interval="1m"
-                emptyMessage="차트를 불러오는 중입니다."
+                emptyMessage={previewFailed ? '차트를 불러오지 못했습니다.' : '차트를 불러오는 중입니다.'}
               />
             </div>
           </Card>
