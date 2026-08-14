@@ -235,7 +235,7 @@ export interface OrderExecutionResponse {
 }
 
 /**
- * GET /api/orders 와 GET /api/orders/pending 의 공통 항목 타입 — 9필드 고정.
+ * GET /api/orders 와 GET /api/orders/pending 의 공통 항목 타입 — 11필드 고정.
  * symbol·name 이 없어 instrumentService 캐시로 조인해야 한다.
  * 체결 전용 필드(tradeId·price·amount·fee·executedAt)는 어떤 이름으로도 오지 않는다 —
  * "무엇을 요청했는가"와 "얼마에 체결됐는가"를 두 API 가 분리한다(체결가는 GET /api/trades).
@@ -251,6 +251,9 @@ export interface OrderSummary {
   /** 시장가 주문은 항상 null. 지정가는 값이 있고 체결가 == limitPrice 다(체결가가 지정가로 고정된다). */
   limitPrice: Decimal | null
   requestedAt: LocalDateTimeString
+  /** 튜토리얼 attempt 밖 일반·legacy 주문이면 둘 다 null이다. */
+  practiceAttemptId: number | null
+  practiceAttemptRunNumber: number | null
 }
 
 /**

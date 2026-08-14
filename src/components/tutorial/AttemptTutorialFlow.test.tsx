@@ -18,6 +18,7 @@ import {
 } from '../../services/tutorialService'
 import { loadInstruments } from '../../services/instrumentService'
 import { cancelLimitOrder, getPendingOrders, placeLimitOrder, placeOrder } from '../../services/orderService'
+import type { OrderSummary } from '../../services/types'
 import { AttemptTutorialFlow } from './AttemptTutorialFlow'
 
 vi.mock('../CandleChart', () => ({
@@ -147,6 +148,23 @@ async function flushPromises() {
   })
 }
 
+function pendingSummary(overrides: Partial<OrderSummary> = {}): OrderSummary {
+  return {
+    orderId: 88,
+    market: 'CRYPTO',
+    instrumentId: 701,
+    side: 'BUY',
+    orderType: 'LIMIT',
+    status: 'PENDING',
+    quantity: 1,
+    limitPrice: 123,
+    requestedAt: '2026-08-14T12:00:00',
+    practiceAttemptId: 10,
+    practiceAttemptRunNumber: 1,
+    ...overrides,
+  }
+}
+
 describe('AttemptTutorialFlow', () => {
   beforeEach(() => {
     vi.mocked(getPracticeAttemptChart).mockResolvedValue(chart)
@@ -263,6 +281,44 @@ describe('AttemptTutorialFlow', () => {
     expect(await screen.findByText(/매수 지정가 주문이 체결을 기다리고 있습니다/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '지정가 주문 취소' }))
     await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(88))
+  })
+
+  it('hydrates and cancels only a pending limit order attributed to the exact attempt and run', async () => {
+    vi.mocked(getPendingOrders).mockResolvedValue({
+      content: [
+        pendingSummary({ orderId: 81, practiceAttemptId: null, practiceAttemptRunNumber: null }),
+        pendingSummary({ orderId: 82, practiceAttemptRunNumber: 0 }),
+        pendingSummary({ orderId: 83 }),
+      ],
+      nextCursor: null,
+      hasNext: false,
+    })
+
+    renderFlow()
+
+    expect(await screen.findByText(/매수 지정가 주문이 체결을 기다리고 있습니다/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '지정가 주문 취소' }))
+    await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(83))
+    expect(cancelLimitOrder).not.toHaveBeenCalledWith(81)
+    expect(cancelLimitOrder).not.toHaveBeenCalledWith(82)
+  })
+
+  it('ignores ordinary and stale-run pending orders for the same instrument and never cancels them', async () => {
+    vi.mocked(getPendingOrders).mockResolvedValue({
+      content: [
+        pendingSummary({ orderId: 91, practiceAttemptId: null, practiceAttemptRunNumber: null }),
+        pendingSummary({ orderId: 92, practiceAttemptRunNumber: 2 }),
+      ],
+      nextCursor: null,
+      hasNext: false,
+    })
+
+    renderFlow()
+    await waitFor(() => expect(getPendingOrders).toHaveBeenCalledWith({ market: 'CRYPTO', limit: 100 }))
+
+    expect(screen.queryByText(/지정가 주문이 체결을 기다리고 있습니다/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '지정가 주문 취소' })).not.toBeInTheDocument()
+    expect(cancelLimitOrder).not.toHaveBeenCalled()
   })
 
   it('keeps STOCK market-only because the backend rejects stock limit orders', async () => {

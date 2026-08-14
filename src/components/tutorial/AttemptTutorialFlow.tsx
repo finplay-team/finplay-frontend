@@ -202,7 +202,11 @@ export function AttemptTutorialFlow({
       .then((page) => {
         if (cancelled) return
         const found = page.content.find(
-          (order) => order.instrumentId === attempt.instrumentId && order.orderType === 'LIMIT',
+          (order) =>
+            order.instrumentId === attempt.instrumentId &&
+            order.orderType === 'LIMIT' &&
+            order.practiceAttemptId === attempt.attemptId &&
+            order.practiceAttemptRunNumber === attempt.runNumber,
         )
         if (!found || found.limitPrice === null) return
         setPendingOrder({
