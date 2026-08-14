@@ -1,8 +1,11 @@
 // 통화·손익·퍼센트 등 숫자 표기를 한국어 형식으로 통일하는 포맷 유틸
 
-/** 정확한 원화 금액. 예: 10000000 -> "10,000,000원". 축약이 필요하면 formatManEok 을 쓴다. */
+/**
+ * 정확한 원화 금액. 예: 10000000 -> "10,000,000원". 축약이 필요하면 formatManEok 을 쓴다.
+ * 원화는 소수 단위가 없다 — 코인 수량 × 가격처럼 소수가 섞인 계산값도 반올림해 정수로 보여준다.
+ */
 export function formatKRW(value: number): string {
-  return `${value.toLocaleString('ko-KR')}원`
+  return `${Math.round(value).toLocaleString('ko-KR')}원`
 }
 
 /** 큰 금액을 만/억 단위로 축약. 예: 12400000 -> "1,240만" */

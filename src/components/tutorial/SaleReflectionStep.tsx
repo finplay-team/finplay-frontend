@@ -4,21 +4,33 @@ import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { TickPriceChart } from './TickPriceChart'
 import { parseLocalDateTime } from '../../lib/datetime'
-import { toUserMessage } from '../../lib/errorMessages'
+import { isApiErrorCode, toUserMessage } from '../../lib/errorMessages'
 import { formatKRW } from '../../lib/format'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { useLiveSamplePrice } from '../../hooks/useLiveSamplePrice'
 import { bumpAccount } from '../../lib/accountPulse'
 import { bumpTutorial } from '../../lib/tutorialPulse'
 import { getHoldings } from '../../services/holdingService'
-import { placeOrder } from '../../services/orderService'
+import { cancelLimitOrder, getPendingOrders, placeLimitOrder, placeOrder } from '../../services/orderService'
 import { saveHoldingReflection } from '../../services/tutorialService'
-import type { Market } from '../../services/types'
+import type { LimitOrderResponse, Market } from '../../services/types'
 
 const REFLECTION_MAX = 2000
 /** 5분 매도 시한 전체를 그래프에 다 담는다 — 5분 ÷ 60틱 = 5초 간격. */
 const SALE_WINDOW_TICK_MS = 5000
 const SALE_WINDOW_MAX_POINTS = 60
+/** 지정가 매도가 체결됐는지 폴링으로 확인하는 주기 — IntentionStep의 지정가 매수 폴링과 같은 빈도. */
+const LIMIT_POLL_MS = 3000
+/** 시장가·지정가 중 무엇을 골랐는지 — 지정가는 코인 실습에서만 고를 수 있다(백엔드가 코인 전용). */
+type SellOrderType = 'MARKET' | 'LIMIT'
+
+/** 소수점을 두 번째부터는 지운다("1.2.3" 같은 값이 그대로 남아 Number() 가 NaN이 되는 걸 막는다). */
+function sanitizeDecimalInput(value: string): string {
+  const cleaned = value.replace(/[^0-9.]/g, '')
+  const firstDot = cleaned.indexOf('.')
+  if (firstDot === -1) return cleaned
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '')
+}
 
 function formatRemaining(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -89,7 +101,13 @@ export function SaleReflectionStep({
   const [sellError, setSellError] = useState<string | null>(null)
   const [sellPrice, setSellPrice] = useState<number | null>(null)
 
-  const idempotencyKey = useIdempotencyKey([market, instrumentId, holdingId])
+  // 실제 거래 화면처럼 시장가·지정가를 직접 고른다 — 지정가는 백엔드가 코인 전용으로 제한한다.
+  const [orderType, setOrderType] = useState<SellOrderType>('MARKET')
+  const [limitPrice, setLimitPrice] = useState('')
+  const [limitOrder, setLimitOrder] = useState<LimitOrderResponse | null>(null)
+  const [cancellingLimit, setCancellingLimit] = useState(false)
+
+  const idempotencyKey = useIdempotencyKey([market, instrumentId, holdingId, orderType, limitPrice])
 
   const handleSell = useCallback(async () => {
     setSelling(true)
@@ -100,6 +118,20 @@ export function SaleReflectionStep({
       const sellable = holding ? Number(holding.quantity) - Number(holding.reservedQuantity) : 0
       if (!(sellable > 0)) {
         setSellError('매도 가능한 수량이 없습니다.')
+        return
+      }
+      if (orderType === 'LIMIT') {
+        const lp = Number(limitPrice)
+        if (!(lp > 0)) {
+          setSellError('지정가를 입력해 주세요.')
+          return
+        }
+        const res = await placeLimitOrder(
+          { market: 'CRYPTO', instrumentId, side: 'SELL', quantity: String(sellable), limitPrice: String(lp) },
+          idempotencyKey,
+        )
+        setLimitOrder(res)
+        bumpTutorial()
         return
       }
       const res = await placeOrder(
@@ -115,7 +147,69 @@ export function SaleReflectionStep({
     } finally {
       setSelling(false)
     }
-  }, [market, instrumentId, idempotencyKey])
+  }, [market, instrumentId, idempotencyKey, orderType, limitPrice])
+
+  // 지정가 매도가 체결됐을 때 시장가 매도와 같은 완료 처리를 하는 공용 경로 — 폴링과 "이미 체결됨"
+  // 취소 오류 양쪽에서 함께 쓴다. 체결가는 접수 응답에 담기지 않아 sellPrice 는 null 로 남는다
+  // (targetDiff 계산은 sellPrice === null 이면 조용히 생략한다). limitOrder 를 반드시 비워야 아래
+  // 폴링이 멈춘다 — 안 비우면 이미 사라진 주문을 매번 다시 "체결됐다"로 읽어 bumpTutorial·
+  // bumpAccount 가 계속 반복 호출된다.
+  const handleLimitFilled = useCallback(() => {
+    setLimitOrder(null)
+    setSold(true)
+    bumpTutorial()
+    bumpAccount()
+  }, [])
+
+  /**
+   * 지정가는 접수 시점에 체결을 알 수 없다 — 체결 알림이 없어 미체결 목록 폴링이 유일한 감지
+   * 수단이다(PendingOrders.tsx 와 같은 패턴). 목록에서 이 주문이 사라지면(직접 취소한 게 아니라면)
+   * 체결됐다고 본다. 취소 시에는 handleCancelLimit 이 limitOrder 를 먼저 비워 이 폴링을 멈춘다.
+   */
+  useEffect(() => {
+    if (!limitOrder) return
+    let cancelled = false
+    const poll = () => {
+      getPendingOrders({ market: 'CRYPTO' })
+        .then((page) => {
+          if (cancelled) return
+          const stillPending = page.content.some((o) => o.orderId === limitOrder.orderId)
+          if (!stillPending) handleLimitFilled()
+        })
+        .catch(() => undefined)
+    }
+    const id = setInterval(poll, LIMIT_POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [limitOrder, handleLimitFilled])
+
+  const handleCancelLimit = useCallback(async () => {
+    if (!limitOrder || cancellingLimit) return
+    setCancellingLimit(true)
+    const order = limitOrder
+    // 먼저 비워 위 폴링을 멈춘다 — 안 그러면 취소 응답이 오기 전 폴링이 "사라졌다 = 체결"로
+    // 잘못 읽을 수 있다.
+    setLimitOrder(null)
+    try {
+      await cancelLimitOrder(order.orderId)
+      setSellError(null)
+    } catch (e) {
+      if (isApiErrorCode(e, 'ORDER_ALREADY_FILLED')) {
+        handleLimitFilled()
+      } else if (isApiErrorCode(e, 'ORDER_ALREADY_CANCELLED')) {
+        setSellError('이미 취소된 주문이에요.')
+      } else {
+        // 취소 요청 자체가 실패했다면(네트워크 오류 등) 주문은 여전히 서버에 살아있다 — 화면에서마저
+        // 지워버리면 사용자가 같은 주문을 또 넣어 중복 주문이 생길 수 있다. 원래 상태로 되돌린다.
+        setLimitOrder(order)
+        setSellError(toUserMessage(e))
+      }
+    } finally {
+      setCancellingLimit(false)
+    }
+  }, [limitOrder, cancellingLimit, handleLimitFilled])
 
   // 매도 체결가가 참고 손절가·익절가 중 어느 쪽에 더 가까웠는지 — 목표가 대비 차이를 보여주는 용도일
   // 뿐, 판정에는 쓰이지 않는다.
@@ -173,6 +267,12 @@ export function SaleReflectionStep({
   const remainingSeconds = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - nowMs) / 1000))
   const timedOut = expired || (remainingSeconds !== null && remainingSeconds <= 0 && !sold)
 
+  // 5분 시한이 끝나 "다시 시작" 화면으로 넘어가면서도 아직 체결 안 된 지정가 주문이 남아있다면,
+  // 화면만 넘어가고 서버 주문은 계속 살아있게 된다 — 최선을 다해 취소한다(실패해도 화면 전환은 막지 않는다).
+  useEffect(() => {
+    if (timedOut && limitOrder) cancelLimitOrder(limitOrder.orderId).catch(() => undefined)
+  }, [timedOut, limitOrder])
+
   if (timedOut) {
     return (
       <Card accent="none">
@@ -215,10 +315,116 @@ export function SaleReflectionStep({
               <p className="text-[11px] leading-relaxed text-muted">
                 목표가는 참고선일 뿐입니다. 시세가 흐르는 걸 보다가 원할 때 직접 매도해 주세요.
               </p>
-              {sellError && <p className="text-sm text-loss">{sellError}</p>}
-              <Button type="button" size="sm" disabled={selling} onClick={() => void handleSell()}>
-                {selling ? '매도하는 중…' : '지금 시장가로 매도'}
-              </Button>
+
+              {!limitOrder && (
+                <>
+                  {/* 실제 거래 화면처럼 시장가·지정가를 직접 고른다 — 설명은 바로 아래에 붙인다. */}
+                  {market === 'CRYPTO' ? (
+                    <div>
+                      <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
+                        {(
+                          [
+                            ['MARKET', '시장가'],
+                            ['LIMIT', '지정가'],
+                          ] as const
+                        ).map(([value, label]) => {
+                          const active = orderType === value
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setOrderType(value)}
+                              aria-pressed={active}
+                              className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
+                                active ? 'bg-coin-soft text-coin ring-1 ring-coin/40' : 'text-muted hover:text-ink'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                        시장가는 지금 바로 이 가격에 파는 거예요. 지정가는 "이 가격이 되면 팔겠다"고
+                        미리 정해두고 기다리는 거예요.
+                      </p>
+                      {orderType === 'LIMIT' && (
+                        <p className="mt-1 text-[11px] font-medium leading-relaxed text-loss">
+                          지정가는 체결이 늦어질 수 있어요 — 5분 안에 체결되지 않으면 이번 실습은
+                          다시 시작해야 해요. 그래도 괜찮으면 편하게 골라보세요.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] leading-relaxed text-muted">
+                      이 실습에서 주식은 시장가로만 팔 수 있어요(실제 거래 화면도 주식은 시장가만
+                      지원해요).
+                    </p>
+                  )}
+
+                  {orderType === 'LIMIT' && (
+                    <div>
+                      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                        <label htmlFor="sale-limit-price" className="text-sm font-medium text-ink">
+                          지정가 (원)
+                        </label>
+                        {live.latest != null && (
+                          <button
+                            type="button"
+                            onClick={() => setLimitPrice(String(live.latest))}
+                            className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-coin transition-colors hover:bg-white/[0.1]"
+                          >
+                            현재가 {formatKRW(live.latest)}
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        id="sale-limit-price"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="0"
+                        value={limitPrice}
+                        onChange={(e) => setLimitPrice(sanitizeDecimalInput(e.target.value))}
+                        className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-coin focus:ring-4 focus:ring-coin/15"
+                      />
+                    </div>
+                  )}
+
+                  {sellError && <p className="text-sm text-loss">{sellError}</p>}
+                  <Button type="button" size="sm" disabled={selling} onClick={() => void handleSell()}>
+                    {selling
+                      ? '주문 처리 중…'
+                      : orderType === 'LIMIT'
+                        ? '지정가로 주문 넣기'
+                        : '지금 시장가로 매도'}
+                  </Button>
+                </>
+              )}
+
+              {limitOrder && (
+                <div className="rounded-xl border border-coin/30 bg-coin-soft/40 p-4">
+                  <p className="text-sm font-medium text-coin">
+                    지정가 매도 주문을 넣었어요. {formatKRW(Number(limitOrder.limitPrice))}이 되면
+                    자동으로 체결돼요.
+                  </p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                    체결될 때까지 기다리는 중이에요. 5분 시한 안에 체결되지 않으면 이번 실습은 다시
+                    시작해야 해요. 마음이 바뀌었으면 아래 버튼으로 취소하고 다시 정할 수 있어요.
+                  </p>
+                  {sellError && <p className="mt-2 text-sm text-loss">{sellError}</p>}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3"
+                    disabled={cancellingLimit}
+                    onClick={() => void handleCancelLimit()}
+                  >
+                    {cancellingLimit ? '취소하는 중…' : '취소하고 다시 정하기'}
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </div>
