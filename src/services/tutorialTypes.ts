@@ -1,56 +1,5 @@
-// 3단계 투자 실습 튜토리얼(spec 016+026, 시장가 매매 기반 holding 경로) 응답·요청 타입
+// 영속 attempt 기반 투자 실습의 실행·차트·evidence 응답 타입
 import type { Decimal, LocalDateTimeString, Market } from './types'
-
-/* ---------- 1단계: 즐겨찾기 (튜토리얼 전용, 인메모리 — ADR-0012) ---------- */
-
-/**
- * 서버 재시작·재배포 시 유실된다(재등록 필요). 관심목록(watchlistService)과 완전히 다른 기능이므로
- * 절대 같은 UI 자리·아이콘을 공유하지 않는다.
- */
-export interface FavoriteResponse {
-  favoriteId: number
-  instrumentId: number
-  market: Market
-  symbol: string
-  name: string
-  createdAt: LocalDateTimeString
-}
-
-export interface FavoriteListResponse {
-  content: FavoriteResponse[]
-}
-
-/* ---------- 2단계: 매수 전 의도 기록 (인메모리) ---------- */
-
-/**
- * 계약 예시가 quantity·stopLoss·takeProfit 을 숫자 리터럴로 보낸다(주문 API 의 문자열 규칙과 다르다,
- * MUST-VERIFY — 문서에 별도 문자열 지시가 없다). 서버가 BigDecimal 로 받으므로 정수·소수 모두
- * JS number 정밀도 범위 안에서는 안전하다.
- */
-export interface PracticeIntentionCreateRequest {
-  instrumentId: number
-  quantity: number
-  stopLoss: number
-  takeProfit: number
-}
-
-export interface PracticeIntentionResponse {
-  intentionId: number
-  instrumentId: number
-  quantity: Decimal
-  stopLoss: Decimal
-  takeProfit: Decimal
-  createdAt: LocalDateTimeString
-}
-
-/* ---------- 튜토리얼 전용 합성 시세 (evidence 와 무관한 순수 참고용) ---------- */
-
-/** prices 는 항상 100개, tickSeconds 는 항상 3. 저장소 없이 요청마다 새로 계산된다. */
-export interface SyntheticPriceSeriesResponse {
-  title: string
-  tickSeconds: number
-  prices: number[]
-}
 
 /* ---------- 3단계: 가격 관찰·복기 (holding 기준, 026) ---------- */
 
@@ -112,6 +61,51 @@ export interface PracticeEvidenceResponse {
   sellTradeId: number | null
   sellTradeExecutedAt: LocalDateTimeString | null
   saleDeadlineAt: LocalDateTimeString | null
+  buyQuantity: Decimal | null
+  sellQuantity: Decimal | null
+  remainingQuantity: Decimal | null
+}
+
+export type PracticeAttemptMode = 'ACTIVE' | 'REPLAY'
+export type PracticeAttemptStatus = 'SELECTING_INSTRUMENT' | 'IN_PROGRESS' | 'EXPIRED' | 'COMPLETED'
+
+export interface PracticeRiskSnapshotResponse {
+  entryPrice: Decimal
+  stopLossPrice: Decimal
+  takeProfitPrice: Decimal
+  buyTradeId: number
+  createdAt: LocalDateTimeString
+}
+
+export interface PracticeAttemptResponse {
+  attemptId: number
+  market: Market
+  runNumber: number
+  mode: PracticeAttemptMode
+  status: PracticeAttemptStatus
+  instrumentId: number | null
+  anchorAt: LocalDateTimeString | null
+  tutorialDate: string | null
+  riskSnapshot: PracticeRiskSnapshotResponse | null
+  completedAt: LocalDateTimeString | null
+}
+
+export interface PracticeTutorialCandleResponse {
+  date: string
+  open: Decimal
+  high: Decimal
+  low: Decimal
+  close: Decimal
+  current: boolean
+}
+
+export interface PracticeTutorialChartResponse {
+  attemptId: number
+  runNumber: number
+  instrumentId: number
+  virtualDateTime: LocalDateTimeString
+  secondsPerVirtualMinute: number
+  candles: PracticeTutorialCandleResponse[]
 }
 
 /**
@@ -137,4 +131,6 @@ export interface InvestmentPracticeResponse {
   completedAt: LocalDateTimeString | null
   /** 이 시장 튜토리얼을 최초 완료했을 때 지급된 보상 금액(항상 5,000,000) — 완료 전에는 null(이슈 #343). */
   rewardAmount: number | null
+  /** attempt가 없는 기존 026 chain 사용자에게만 null이다. */
+  attempt: PracticeAttemptResponse | null
 }
