@@ -306,7 +306,6 @@ export function ObservationReflectionStep({
             latest={latest?.currentPrice ?? null}
             referenceStopLoss={referenceStopLossPrice}
             referenceTakeProfit={referenceTakeProfitPrice}
-            accent="brand"
           />
 
           {latest && (

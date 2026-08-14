@@ -1,47 +1,34 @@
-// 자동으로 흐르는 샘플 시세를 선 그래프로 그리고, 손절·익절 참고선을 함께 표시하는 위젯
+// 자동으로 흐르는 샘플 시세를 실제 코인·주식 화면과 같은 CandleChart 형식으로 그리고, 손절·익절 참고선을 함께 표시하는 위젯
 import { useMemo } from 'react'
+import { CandleChart } from '../CandleChart'
 import { formatKRW } from '../../lib/format'
+import { ticksToCandles } from '../../lib/tickCandles'
+
+/**
+ * 참고 시세 꼬리(3초 간격)와 실시간 틱(2초 간격)이 하나의 배열로 섞여 들어온다 — 실제 간격은
+ * evidence 판정과 무관하므로 시간축 표기가 자연스럽게 흐르도록 근사값 하나로 고정한다.
+ */
+const APPROX_TICK_MS = 2000
 
 export function TickPriceChart({
   prices,
   latest,
   referenceStopLoss,
   referenceTakeProfit,
-  accent,
 }: {
   prices: number[]
   latest: number | null
   referenceStopLoss?: number | null
   referenceTakeProfit?: number | null
-  accent: 'brand' | 'coin'
 }) {
-  const { points, stopLossY, takeProfitY } = useMemo(() => {
-    if (prices.length === 0) return { points: '', stopLossY: null, takeProfitY: null }
-    const values = [...prices]
-    if (referenceStopLoss != null) values.push(referenceStopLoss)
-    if (referenceTakeProfit != null) values.push(referenceTakeProfit)
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const span = max - min || 1
-    const toY = (v: number) => 100 - ((v - min) / span) * 100
+  const candles = useMemo(() => ticksToCandles(prices, APPROX_TICK_MS), [prices])
 
-    // 점이 1개뿐이면 좌표 하나짜리 polyline은 아무것도 그려지지 않는다(선을 그리려면 최소 2점 필요) —
-    // 값을 두 번 찍어 처음 틱부터 바로 수평선이 보이게 한다.
-    const pts =
-      prices.length === 1
-        ? `0.00,${toY(prices[0]).toFixed(2)} 100.00,${toY(prices[0]).toFixed(2)}`
-        : prices
-            .map((p, i) => `${((i / (prices.length - 1)) * 100).toFixed(2)},${toY(p).toFixed(2)}`)
-            .join(' ')
-
-    return {
-      points: pts,
-      stopLossY: referenceStopLoss != null ? toY(referenceStopLoss) : null,
-      takeProfitY: referenceTakeProfit != null ? toY(referenceTakeProfit) : null,
-    }
-  }, [prices, referenceStopLoss, referenceTakeProfit])
-
-  const strokeClass = accent === 'coin' ? 'text-coin' : 'text-brand'
+  const referenceLines = useMemo(() => {
+    const lines: { value: number; tone: 'gain' | 'loss'; label: string }[] = []
+    if (referenceStopLoss != null) lines.push({ value: referenceStopLoss, tone: 'loss' as const, label: '손절' })
+    if (referenceTakeProfit != null) lines.push({ value: referenceTakeProfit, tone: 'gain' as const, label: '익절' })
+    return lines
+  }, [referenceStopLoss, referenceTakeProfit])
 
   return (
     <div>
@@ -49,25 +36,16 @@ export function TickPriceChart({
         <span className="text-xs text-muted">실시간 진행 중인 샘플 시세</span>
         <span className="tabular text-sm text-ink">{latest !== null ? formatKRW(latest) : '불러오는 중…'}</span>
       </div>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={`mt-2 h-24 w-full ${strokeClass}`}>
-        {stopLossY !== null && (
-          <line x1="0" y1={stopLossY} x2="100" y2={stopLossY} stroke="currentColor" strokeWidth="0.5"
-            className="text-loss" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" />
-        )}
-        {takeProfitY !== null && (
-          <line x1="0" y1={takeProfitY} x2="100" y2={takeProfitY} stroke="currentColor" strokeWidth="0.5"
-            className="text-gain" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" />
-        )}
-        {points && (
-          <polyline
-            points={points}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
-      </svg>
+      <div className="mt-2">
+        <CandleChart
+          candles={candles}
+          height={160}
+          maxBars={Math.max(prices.length, 1)}
+          interval="1m"
+          emptyMessage="아직 표시할 시세가 없습니다."
+          referenceLines={referenceLines}
+        />
+      </div>
       {(referenceStopLoss != null || referenceTakeProfit != null) && (
         <div className="mt-1 flex justify-between text-[11px] text-muted">
           <span className="text-loss">손절 {referenceStopLoss != null ? formatKRW(referenceStopLoss) : '-'}</span>

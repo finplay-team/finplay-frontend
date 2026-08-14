@@ -211,7 +211,6 @@ export function SaleReflectionStep({
               <TickPriceChart
                 prices={[...initialPrices, ...live.prices]}
                 latest={live.latest ?? initialPrices[initialPrices.length - 1] ?? null}
-                accent={market === 'CRYPTO' ? 'coin' : 'brand'}
               />
               <p className="text-[11px] leading-relaxed text-muted">
                 목표가는 참고선일 뿐입니다. 시세가 흐르는 걸 보다가 원할 때 직접 매도해 주세요.
