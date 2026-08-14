@@ -1,9 +1,10 @@
 // 주식/코인 시장 전환 탭 — 활성 색이 시장 액센트(민트/앰버)를 따라간다
 import type { Market } from '../../services/types'
 
+// 코인이 우선 시장이라 탭도 코인을 먼저 보여준다.
 const items: { value: Market; label: string; activeTone: string }[] = [
-  { value: 'STOCK', label: '주식', activeTone: 'bg-brand text-brand-ink shadow-glow' },
   { value: 'CRYPTO', label: '코인', activeTone: 'bg-coin text-coin-ink' },
+  { value: 'STOCK', label: '주식', activeTone: 'bg-brand text-brand-ink shadow-glow' },
 ]
 
 export function MarketTabs({
