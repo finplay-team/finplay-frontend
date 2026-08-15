@@ -59,7 +59,7 @@ function SideChip({ side }: { side: OrderSide }) {
 }
 
 export function Portfolio() {
-  const [market, setMarket] = useState<Market>('STOCK')
+  const [market, setMarket] = useState<Market>('CRYPTO')
   const isCrypto = market === 'CRYPTO'
 
   // 코인 탭에서는 주식 SSE 를 붙잡아 둘 이유가 없다.
