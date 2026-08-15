@@ -18,7 +18,7 @@ const publicLinks = [
 const authLinks = [
   { to: '/tutorial', label: '튜토리얼' },
   { to: '/news', label: '뉴스' },
-  { to: '/trade', label: '거래' },
+  { to: '/trade', label: '모의투자' },
   { to: '/portfolio', label: '포트폴리오' },
   { to: '/feedback', label: 'AI 복기' },
   { to: '/rankings', label: '랭킹' },

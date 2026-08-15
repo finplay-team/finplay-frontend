@@ -588,7 +588,7 @@ export function Trade() {
       <div className="relative mx-auto max-w-6xl">
         {/* 1. 헤더 + 시장 탭 + 시세 상태 */}
         <header>
-          <Eyebrow>거래</Eyebrow>
+          <Eyebrow>모의투자</Eyebrow>
           <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
             {isCrypto ? '코인 매매' : '주식 시장가 매매'}
           </h1>
