@@ -274,7 +274,7 @@ export function Trade() {
   /** 지정가는 체결이 아니라 접수 결과다 — 시장가 체결 카드와 섞으면 사용자가 체결된 줄 안다. */
   const [limitResult, setLimitResult] = useState<LimitOrderResponse | null>(null)
   /**
-   * 매수 체결 직후 "투자일기 작성하러가기" 버튼 상태 — result.tradeId 로 식별한다.
+   * 매수·매도 체결 직후 "투자일기 작성하러가기" 버튼 상태 — result.tradeId 로 식별한다.
    * 새 주문이 체결되면 result 자체가 바뀌어 tradeId 가 더 이상 일치하지 않으므로 별도 초기화가 필요 없다.
    */
   const [journalTradeId, setJournalTradeId] = useState<number | null>(null)
@@ -1120,34 +1120,32 @@ export function Trade() {
                     </div>
                   </dl>
 
-                  {/* 매도 회고는 Portfolio 체결내역에서 이미 진입할 수 있다 — 여기서는 매수 직후 흐름만 앞당긴다. */}
-                  {result.side === 'BUY' && (
-                    <div className="mt-4 border-t border-white/[0.08] pt-4">
-                      {journalTradeId === result.tradeId ? (
-                        <JournalEditor
-                          journalType="BUY"
-                          tradeId={result.tradeId}
-                          mode="create"
-                          onSaved={() => {
-                            setJournalTradeId(null)
-                            setJournalSavedTradeId(result.tradeId)
-                          }}
-                          onCancel={() => setJournalTradeId(null)}
-                        />
-                      ) : journalSavedTradeId === result.tradeId ? (
-                        <p className="text-xs text-muted">투자일기를 저장했습니다.</p>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setJournalTradeId(result.tradeId)}
-                        >
-                          투자일기 작성하러가기
-                        </Button>
-                      )}
-                    </div>
-                  )}
+                  {/* 매수·매도 모두 체결 직후 바로 작성란을 띄운다 — Portfolio 체결내역에서도 같은 진입점을 제공한다. */}
+                  <div className="mt-4 border-t border-white/[0.08] pt-4">
+                    {journalTradeId === result.tradeId ? (
+                      <JournalEditor
+                        journalType={result.side === 'BUY' ? 'BUY' : 'SELL'}
+                        tradeId={result.tradeId}
+                        mode="create"
+                        onSaved={() => {
+                          setJournalTradeId(null)
+                          setJournalSavedTradeId(result.tradeId)
+                        }}
+                        onCancel={() => setJournalTradeId(null)}
+                      />
+                    ) : journalSavedTradeId === result.tradeId ? (
+                      <p className="text-xs text-muted">투자일기를 저장했습니다.</p>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setJournalTradeId(result.tradeId)}
+                      >
+                        투자일기 작성하러가기
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </Card>

@@ -10,7 +10,7 @@ import { toUserMessage } from '../lib/errorMessages'
 import type { Instrument, Market } from '../services/types'
 
 export function News() {
-  const [market, setMarket] = useState<Market>('STOCK')
+  const [market, setMarket] = useState<Market>('CRYPTO')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const { index, loading, error } = useInstruments()
 

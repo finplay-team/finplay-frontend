@@ -25,7 +25,7 @@ function signedKRW(value: number): string {
 }
 
 export function Rankings() {
-  const [market, setMarket] = useState<Market>('STOCK')
+  const [market, setMarket] = useState<Market>('CRYPTO')
   const [limit, setLimit] = useState(TOP_LIMIT)
   const [reloadKey, setReloadKey] = useState(0)
 

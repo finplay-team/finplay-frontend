@@ -42,7 +42,7 @@ function formatDateTimeWithYear(value: LocalDateTimeString): string {
 }
 
 export function Journal() {
-  const [market, setMarket] = useState<Market>('STOCK')
+  const [market, setMarket] = useState<Market>('CRYPTO')
   const [reloadKey, setReloadKey] = useState(0)
 
   const [items, setItems] = useState<JournalListItem[] | null>(null)
