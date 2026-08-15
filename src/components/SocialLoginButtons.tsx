@@ -9,10 +9,9 @@ const PROVIDERS: { id: OAuthProvider; label: string; className: string }[] = [
 
 function startOAuth(provider: OAuthProvider) {
   // fetch가 아니라 전체 페이지 이동이라 apiClient의 buildUrl을 못 거친다 — 여기서 직접 API_BASE_URL을 붙인다.
-  // 절대주소로 고쳐도 로그인이 완전히 되지는 않는다: 프론트와 API가 다른 오리진이면(S3 단독 단계)
-  // oauth_state 쿠키(SameSite=Lax)가 콜백 fetch에 실리지 않아 백엔드가 400 VALIDATION_ERROR로
-  // 거부한다 — OAuthCallback.tsx가 이미 안전하게 처리하지만(크래시 없이 안내 문구), 실제 로그인 성공은
-  // 프론트와 API가 same-site가 되는 단계(finplay-api ADR-0022 §결정 4)까지 보류된다.
+  // 이 뒤로는 백엔드가 카카오·네이버 인가 → LOGIN 콜백 성공까지 전부 처리하고, 마지막에 1회용 교환
+  // 코드를 실어 프론트 `/oauth/callback`(OAuthLoginCallback)으로 302 리다이렉트한다(finplay-api PR #385).
+  // 프론트가 그 코드로 실제 토큰을 받으므로 여기서 cross-origin 쿠키 문제를 신경 쓸 필요가 없다.
   window.location.href = `${API_BASE_URL}/api/auth/oauth/${provider}/authorize`
 }
 
