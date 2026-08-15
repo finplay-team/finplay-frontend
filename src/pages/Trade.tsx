@@ -717,12 +717,15 @@ export function Trade() {
                 */}
                 {favoriteInstruments.length > 0 && (
                   <>
-                    <p className="px-3 pb-1 pt-1 text-xs font-medium text-muted">즐겨찾기한 종목</p>
-                    {/* 스크롤 박스에 가두지 않는다 — 종목 수만큼 자연스럽게 늘어나고 페이지가 대신 스크롤된다. */}
-                    <ul className="space-y-1">
-                      {favoriteInstruments.map((instrument) => renderInstrumentRow(instrument))}
-                    </ul>
-                    <div aria-hidden className="my-3 border-t border-line" />
+                    {/* 옅은 배경으로 한 묶음임을 표시 — 아래 전체 목록과 색부터 구분된다. */}
+                    <div className="rounded-2xl bg-white/[0.03] p-2">
+                      <p className="px-1 pb-1 pt-1 text-xs font-medium text-muted">즐겨찾기한 종목</p>
+                      {/* 스크롤 박스에 가두지 않는다 — 종목 수만큼 자연스럽게 늘어나고 페이지가 대신 스크롤된다. */}
+                      <ul className="space-y-1">
+                        {favoriteInstruments.map((instrument) => renderInstrumentRow(instrument))}
+                      </ul>
+                    </div>
+                    <div aria-hidden className="my-6 border-t border-line" />
                   </>
                 )}
                 <ul className="space-y-1">
