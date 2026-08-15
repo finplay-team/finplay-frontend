@@ -23,6 +23,8 @@ interface AuthContextValue {
   member: Member | null
   login: (email: string, password: string) => Promise<void>
   loginWithOAuth: (provider: OAuthProvider, code: string, state: string) => Promise<void>
+  /** `/oauth/callback`(교환 코드 리다이렉트)이 쓰는 로그인 완료 경로 — authService.exchangeLoginCode 참고 */
+  loginWithOAuthCode: (code: string) => Promise<void>
   signupWithToken: (req: SignupRequest) => Promise<void>
   logout: () => Promise<void>
   refreshMember: () => Promise<void>
@@ -82,6 +84,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const loginWithOAuthCode = useCallback(async (code: string) => {
+    const t = await authService.exchangeLoginCode(code)
+    tokenStore.setSession({ accessToken: t.accessToken, refreshToken: t.refreshToken })
+    const m = await authService.getMe()
+    tokenStore.setCachedMember(m)
+    setValidated(true)
+  }, [])
+
   const signupWithToken = useCallback(async (req: SignupRequest) => {
     // 가입 응답이 201 + TokenResponse 라 별도 로그인 호출이 필요 없다.
     const t = await authService.signup(req)
@@ -114,11 +124,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       member: snap.member,
       login,
       loginWithOAuth,
+      loginWithOAuthCode,
       signupWithToken,
       logout,
       refreshMember,
     }),
-    [status, snap.member, login, loginWithOAuth, signupWithToken, logout, refreshMember],
+    [
+      status,
+      snap.member,
+      login,
+      loginWithOAuth,
+      loginWithOAuthCode,
+      signupWithToken,
+      logout,
+      refreshMember,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -8,6 +8,7 @@ import { Landing } from './pages/Landing'
 import { Signup } from './pages/Signup'
 import { Login } from './pages/Login'
 import { OAuthCallback } from './pages/OAuthCallback'
+import { OAuthLoginCallback } from './pages/OAuthLoginCallback'
 import { Trade } from './pages/Trade'
 import { Portfolio } from './pages/Portfolio'
 import { Community } from './pages/Community'
@@ -45,6 +46,9 @@ export default function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/oauth/:provider/callback" element={<OAuthCallback />} />
+          {/* finplay-api PR #385 — LOGIN 콜백이 이 경로로 1회용 교환 코드를 실어 리다이렉트한다.
+              위 /oauth/:provider/callback(OAuthCallback)은 그 이전 설계의 잔존 라우트다. */}
+          <Route path="/oauth/callback" element={<OAuthLoginCallback />} />
           <Route path="/support" element={<Support />} />
           {/* 튜토리얼은 건너뛸 수 있다 — 완료 여부와 무관하게 로그인만 하면 언제든 드나들 수 있고,
               다른 메뉴 접근을 막지 않는다. */}
