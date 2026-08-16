@@ -194,9 +194,11 @@ export function AttemptTutorialFlow({
       return
     }
     let cancelled = false
-    ensureInstrumentCache().then(() => {
-      if (!cancelled) setReplayInstrument(getCachedInstrument(attempt.instrumentId as number) ?? null)
-    })
+    ensureInstrumentCache()
+      .catch(() => undefined)
+      .then(() => {
+        if (!cancelled) setReplayInstrument(getCachedInstrument(attempt.instrumentId as number) ?? null)
+      })
     return () => {
       cancelled = true
     }
