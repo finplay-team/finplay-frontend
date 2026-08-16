@@ -37,7 +37,11 @@ const MESSAGES: Record<string, string> = {
   PRACTICE_PRICE_SESSION_MISMATCH: '이 세션의 종목과 일치하지 않습니다.',
   PRACTICE_LIMIT_ORDER_ALREADY_PENDING: '이미 대기 중인 주문이 있습니다.',
   // 튜토리얼 샘플 종목 4단계(매도) 5분 제한 (031)
-  PRACTICE_SANDBOX_TIME_EXPIRED: '매수 후 5분이 지나 이 시도는 만료됐습니다. 다시 매수해 주세요.',
+  PRACTICE_SANDBOX_TIME_EXPIRED: '매수 후 5분이 지나 이 시도는 만료됐습니다. 처음부터 다시 시작해 주세요.',
+  // 튜토리얼 실습 공통 (026·031·039)
+  PRACTICE_ALREADY_COMPLETED: '이미 완료한 튜토리얼입니다.',
+  PRACTICE_EVIDENCE_MISSING: '아직 조건이 충족되지 않았습니다. 매수 후 가격을 한 번 이상 관찰한 뒤 다시 시도해 주세요.',
+  PRACTICE_STEP_LOCKED: '먼저 이전 단계를 완료해야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
 }
 
 /** 화면별 문구가 필요할 때 override 를 앞세운다. */

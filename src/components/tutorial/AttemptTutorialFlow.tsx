@@ -445,7 +445,12 @@ export function AttemptTutorialFlow({
       bumpTutorial()
       await onRefresh()
     } catch (error) {
-      setMutationError(toUserMessage(error))
+      setMutationError(
+        toUserMessage(error, {
+          PRACTICE_EVIDENCE_MISSING:
+            '복기를 남기려면 먼저 매도를 완료하고, 매도 시점까지 가격을 한 번 이상 관찰해야 합니다. 관찰 기록을 남긴 뒤 다시 시도해 주세요.',
+        }),
+      )
     } finally {
       setReflecting(false)
     }
