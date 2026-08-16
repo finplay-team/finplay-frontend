@@ -344,15 +344,6 @@ function AccountCard({
   )
 }
 
-/** 소셜 가입 계정은 reauthToken(OAuth 왕복)이 필요해 구현 범위를 벗어난다 — 폼을 비활성화한다. */
-function SocialReauthNotice() {
-  return (
-    <p className="mt-4 rounded-2xl border border-line bg-elevated px-4 py-3 text-xs leading-relaxed text-muted">
-      소셜 가입 계정은 변경 시 소셜 재인증이 필요해 아직 이 화면에서 변경할 수 없습니다.
-    </p>
-  )
-}
-
 const providerLabels: Record<Exclude<SignupMethod, 'EMAIL'>, string> = {
   KAKAO: '카카오',
   NAVER: '네이버',
