@@ -380,6 +380,49 @@ describe('AttemptTutorialFlow', () => {
     expect(recordHoldingObservation).toHaveBeenCalledTimes(1)
   })
 
+  it('자동 관찰 기록이 실패하면 재시도 버튼으로 다시 시도할 수 있다', async () => {
+    vi.mocked(recordHoldingObservation).mockRejectedValueOnce(new Error('network'))
+    const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    expect(recordHoldingObservation).toHaveBeenCalledTimes(1)
+    const retry = await screen.findByRole('button', { name: '관찰 다시 시도' })
+
+    vi.mocked(recordHoldingObservation).mockResolvedValueOnce({} as never)
+    fireEvent.click(retry)
+    await flushPromises()
+
+    expect(recordHoldingObservation).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: '관찰 다시 시도' })).not.toBeInTheDocument()
+  })
+
+  it('재시작 확인창이 열려 있는 동안 attempt가 완료로 바뀌면 확인을 눌러도 재시작 API를 부르지 않는다', async () => {
+    const currentAttempt = attempt({ riskSnapshot: risk })
+    const { rerender } = renderFlow(
+      currentAttempt,
+      progress(evidence({ holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '처음부터 다시 시작' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    // 다이얼로그가 열려 있는 동안 백그라운드 폴링으로 attempt가 replay(완료)로 전환된 상황을 재현한다.
+    rerender(
+      <AttemptTutorialFlow
+        market="CRYPTO"
+        attempt={attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk })}
+        progress={progress(evidence({ holdingId: 41, buyQuantity: 2, remainingQuantity: 2 }), 'COMPLETED', 'COMPLETED')}
+        onAttemptChange={vi.fn()}
+        onRefresh={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
+    await flushPromises()
+    expect(restartPracticeAttempt).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it.each([
     ['selection', attempt({ status: 'SELECTING_INSTRUMENT', instrumentId: null }), progress()],
     ['buy', attempt({ riskSnapshot: null }), progress()],
@@ -410,6 +453,11 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText(/이번 실행의 매도 시간이 만료되었습니다/)).toBeInTheDocument()
     const restart = screen.getByRole('button', { name: '처음부터 다시 시작' })
     expect(screen.queryByRole('button', { name: /매수|매도/ })).not.toBeInTheDocument()
+
+    fireEvent.click(restart)
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+    expect(restartPracticeAttempt).not.toHaveBeenCalled()
+
     fireEvent.click(restart)
     fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
     await waitFor(() => expect(restartPracticeAttempt).toHaveBeenCalledWith('CRYPTO'))

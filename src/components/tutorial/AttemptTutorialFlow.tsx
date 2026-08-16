@@ -126,6 +126,8 @@ export function AttemptTutorialFlow({
   const [buyOrderType, setBuyOrderType] = useState<TutorialOrderType>('MARKET')
   const [buyLimitPrice, setBuyLimitPrice] = useState('')
   const [observing, setObserving] = useState(false)
+  const [observeFailed, setObserveFailed] = useState(false)
+  const [observeRetryNonce, setObserveRetryNonce] = useState(0)
   const [selling, setSelling] = useState(false)
   const [sellOrderType, setSellOrderType] = useState<TutorialOrderType>('MARKET')
   const [sellLimitPrice, setSellLimitPrice] = useState('')
@@ -333,6 +335,12 @@ export function AttemptTutorialFlow({
   }, [])
 
   const handleRestartConfirm = useCallback(async () => {
+    // 다이얼로그가 열려 있는 동안 백그라운드 폴링으로 attempt가 완료(replay)로 바뀔 수 있다 —
+    // 그 경우 다이얼로그만 닫고 재시작 API는 부르지 않는다.
+    if (replay) {
+      setShowRestartConfirm(false)
+      return
+    }
     setRestarting(true)
     setMutationError(null)
     try {
@@ -349,7 +357,7 @@ export function AttemptTutorialFlow({
       setRestarting(false)
       setShowRestartConfirm(false)
     }
-  }, [market, onAttemptChange, onRefresh])
+  }, [market, onAttemptChange, onRefresh, replay])
 
   const handleBuy = useCallback(async () => {
     if (attempt.instrumentId === null) return
@@ -409,23 +417,33 @@ export function AttemptTutorialFlow({
     if (replay || holdingId === null || observed) return
     if (autoObserveHoldingIdRef.current === holdingId) return
     autoObserveHoldingIdRef.current = holdingId
+    let cancelled = false
     setObserving(true)
+    setObserveFailed(false)
     setMutationError(null)
     recordHoldingObservation(holdingId)
       .then(() => {
+        if (cancelled) return
         bumpTutorial()
         return onRefresh()
       })
       .catch((error) => {
+        if (cancelled) return
         autoObserveHoldingIdRef.current = null
+        setObserveFailed(true)
         setMutationError(
           toUserMessage(error, {
             PRACTICE_EVIDENCE_MISSING: '가격을 관찰하려면 먼저 매수가 체결되어 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
           }),
         )
       })
-      .finally(() => setObserving(false))
-  }, [replay, holdingId, observed, onRefresh])
+      .finally(() => {
+        if (!cancelled) setObserving(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [replay, holdingId, observed, onRefresh, observeRetryNonce])
 
   const handleSell = useCallback(async () => {
     if (attempt.instrumentId === null || remainingQuantity === null || remainingQuantity <= 0) return
@@ -699,6 +717,16 @@ export function AttemptTutorialFlow({
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {observing && <span className="text-xs text-muted">관찰을 기록하는 중…</span>}
                 {observed && <span className="text-xs text-gain">관찰 evidence가 저장되었습니다.</span>}
+                {observeFailed && !observing && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setObserveRetryNonce((n) => n + 1)}
+                  >
+                    관찰 다시 시도
+                  </Button>
+                )}
               </div>
             </Card>
           )}
