@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CandleChart } from '../CandleChart'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { bumpAccount } from '../../lib/accountPulse'
 import { formatDateTime } from '../../lib/datetime'
@@ -133,9 +134,11 @@ export function AttemptTutorialFlow({
   const [answer, setAnswer] = useState('')
   const [reflecting, setReflecting] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false)
   const [replayInstrument, setReplayInstrument] = useState<Instrument | null>(null)
   const buyNonceRef = useRef(0)
   const sellNonceRef = useRef(0)
+  const autoObserveHoldingIdRef = useRef<number | null>(null)
 
   const evidence = useMemo(() => latestEvidence(progress), [progress])
   const holdingId = evidence?.holdingId ?? null
@@ -320,10 +323,16 @@ export function AttemptTutorialFlow({
     [market, onAttemptChange, onRefresh],
   )
 
-  const handleRestart = useCallback(async () => {
-    if (replay || !window.confirm('현재 실행의 미체결 주문과 샘플 보유를 정리하고 종목 선택부터 다시 시작할까요?')) {
-      return
-    }
+  const handleRestartClick = useCallback(() => {
+    if (replay) return
+    setShowRestartConfirm(true)
+  }, [replay])
+
+  const handleRestartCancel = useCallback(() => {
+    setShowRestartConfirm(false)
+  }, [])
+
+  const handleRestartConfirm = useCallback(async () => {
     setRestarting(true)
     setMutationError(null)
     try {
@@ -338,8 +347,9 @@ export function AttemptTutorialFlow({
       setMutationError(toUserMessage(error))
     } finally {
       setRestarting(false)
+      setShowRestartConfirm(false)
     }
-  }, [market, onAttemptChange, onRefresh, replay])
+  }, [market, onAttemptChange, onRefresh])
 
   const handleBuy = useCallback(async () => {
     if (attempt.instrumentId === null) return
@@ -392,24 +402,30 @@ export function AttemptTutorialFlow({
     }
   }, [attempt.instrumentId, buyKey, buyLimitPrice, buyOrderType, market, onRefresh, quantity])
 
-  const handleObserve = useCallback(async () => {
-    if (holdingId === null) return
+  // 매도 전 "관찰" 버튼을 수동으로 눌러야 하던 걸 없앴다 — 매수 체결 후 holding이 잡히는 즉시
+  // 서버에 한 번 자동으로 기록한다. 보상·evidence 판정 조건 자체는 그대로다(서버가 여전히 요구),
+  // 사용자가 직접 버튼을 눌러야 하는 수동 단계만 없앤 것.
+  useEffect(() => {
+    if (replay || holdingId === null || observed) return
+    if (autoObserveHoldingIdRef.current === holdingId) return
+    autoObserveHoldingIdRef.current = holdingId
     setObserving(true)
     setMutationError(null)
-    try {
-      await recordHoldingObservation(holdingId)
-      bumpTutorial()
-      await onRefresh()
-    } catch (error) {
-      setMutationError(
-        toUserMessage(error, {
-          PRACTICE_EVIDENCE_MISSING: '가격을 관찰하려면 먼저 매수가 체결되어 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
-        }),
-      )
-    } finally {
-      setObserving(false)
-    }
-  }, [holdingId, onRefresh])
+    recordHoldingObservation(holdingId)
+      .then(() => {
+        bumpTutorial()
+        return onRefresh()
+      })
+      .catch((error) => {
+        autoObserveHoldingIdRef.current = null
+        setMutationError(
+          toUserMessage(error, {
+            PRACTICE_EVIDENCE_MISSING: '가격을 관찰하려면 먼저 매수가 체결되어 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
+          }),
+        )
+      })
+      .finally(() => setObserving(false))
+  }, [replay, holdingId, observed, onRefresh])
 
   const handleSell = useCallback(async () => {
     if (attempt.instrumentId === null || remainingQuantity === null || remainingQuantity <= 0) return
@@ -505,7 +521,7 @@ export function AttemptTutorialFlow({
           </p>
         </div>
         {!replay && (
-          <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={() => void handleRestart()}>
+          <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={handleRestartClick}>
             {restarting ? '정리하는 중…' : '처음부터 다시 시작'}
           </Button>
         )}
@@ -678,12 +694,10 @@ export function AttemptTutorialFlow({
             <Card innerClassName="p-5">
               <h2 className="text-base font-semibold text-ink">2. 단일 차트를 보고 가격을 관찰합니다</h2>
               <p className="mt-2 text-sm text-muted">
-                가격이 손절·익절선에 가까워졌을 때 확인을 남겨보세요. 차트는 위에서 계속 이어집니다.
+                가격이 손절·익절선에 가까워졌는지 차트로 확인하세요. 관찰 기록은 서버가 자동으로 남깁니다.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Button type="button" variant="soft" disabled={observing || holdingId === null} onClick={() => void handleObserve()}>
-                  {observing ? '기록하는 중…' : '현재 가격 관찰 기록'}
-                </Button>
+                {observing && <span className="text-xs text-muted">관찰을 기록하는 중…</span>}
                 {observed && <span className="text-xs text-gain">관찰 evidence가 저장되었습니다.</span>}
               </div>
             </Card>
@@ -766,6 +780,16 @@ export function AttemptTutorialFlow({
       )}
 
       {mutationError && <p className="text-sm text-loss">{mutationError}</p>}
+
+      <ConfirmDialog
+        open={showRestartConfirm}
+        title="처음부터 다시 시작할까요?"
+        message="현재 실행의 미체결 주문과 샘플 보유를 정리하고 종목 선택부터 다시 시작합니다."
+        confirmLabel="다시 시작"
+        busy={restarting}
+        onConfirm={() => void handleRestartConfirm()}
+        onCancel={handleRestartCancel}
+      />
     </div>
   )
 }
