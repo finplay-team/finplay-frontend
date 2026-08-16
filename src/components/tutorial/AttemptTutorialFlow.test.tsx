@@ -16,7 +16,7 @@ import {
   selectPracticeInstrument,
   tickPracticeAttempt,
 } from '../../services/tutorialService'
-import { loadInstruments } from '../../services/instrumentService'
+import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
 import { cancelLimitOrder, getPendingOrders, placeLimitOrder, placeOrder } from '../../services/orderService'
 import type { OrderSummary } from '../../services/types'
 import { AttemptTutorialFlow } from './AttemptTutorialFlow'
@@ -27,7 +27,11 @@ vi.mock('../CandleChart', () => ({
 vi.mock('../../hooks/useIdempotencyKey', () => ({ useIdempotencyKey: () => 'tutorial-key' }))
 vi.mock('../../lib/accountPulse', () => ({ bumpAccount: vi.fn() }))
 vi.mock('../../lib/tutorialPulse', () => ({ bumpTutorial: vi.fn() }))
-vi.mock('../../services/instrumentService', () => ({ loadInstruments: vi.fn() }))
+vi.mock('../../services/instrumentService', () => ({
+  loadInstruments: vi.fn(),
+  ensureInstrumentCache: vi.fn(),
+  getCachedInstrument: vi.fn(),
+}))
 vi.mock('../../services/orderService', () => ({
   cancelLimitOrder: vi.fn(),
   getPendingOrders: vi.fn(),
@@ -169,6 +173,8 @@ describe('AttemptTutorialFlow', () => {
   beforeEach(() => {
     vi.mocked(getPracticeAttemptChart).mockResolvedValue(chart)
     vi.mocked(tickPracticeAttempt).mockResolvedValue(chart)
+    vi.mocked(ensureInstrumentCache).mockResolvedValue({ byId: new Map(), bySymbol: new Map() })
+    vi.mocked(getCachedInstrument).mockReturnValue(undefined)
     vi.mocked(loadInstruments).mockResolvedValue([
       {
         instrumentId: 701,
@@ -415,5 +421,32 @@ describe('AttemptTutorialFlow', () => {
     expect(recordHoldingObservation).not.toHaveBeenCalled()
     expect(saveHoldingReflection).not.toHaveBeenCalled()
     expect(restartPracticeAttempt).not.toHaveBeenCalled()
+  })
+
+  it('completed 이후 재시작 없이도 replay 화면에서 교육용 가상 시나리오 문구가 뜬다', async () => {
+    // 재시작으로 SELECTING_INSTRUMENT로 못 돌아가는 completed attempt(레거시 유저)를 위한 경로 —
+    // TUTORIAL-FLOW-005(완료 REPLAY 불변성)를 건드리지 않고 replay 화면에만 문구를 얹는다.
+    vi.mocked(getCachedInstrument).mockReturnValue({
+      instrumentId: 701,
+      market: 'CRYPTO',
+      symbol: 'SANDBOX_COIN_1',
+      name: '연습 코인',
+      tickSize: 1,
+      minOrderAmount: 5000,
+      tradable: true,
+      isTutorialSample: true,
+    })
+    const replayAttempt = attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk })
+    renderFlow(replayAttempt, progress(
+      evidence({ holdingId: 41, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0 }),
+      'COMPLETED',
+      'COMPLETED',
+    ))
+    await flushPromises()
+
+    expect(
+      await screen.findByText('알파코인이 주요 거래소에 추가 상장된다는 소식으로 주목받고 있습니다.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '처음부터 다시 시작' })).not.toBeInTheDocument()
   })
 })

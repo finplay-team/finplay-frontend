@@ -9,7 +9,7 @@ import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { formatKRW } from '../../lib/format'
 import { bumpTutorial } from '../../lib/tutorialPulse'
-import { loadInstruments } from '../../services/instrumentService'
+import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
 import { cancelLimitOrder, getPendingOrders, placeLimitOrder, placeOrder } from '../../services/orderService'
 import {
   getPracticeAttemptChart,
@@ -32,9 +32,11 @@ const REFLECTION_MAX = 2000
 type TutorialOrderType = 'MARKET' | 'LIMIT'
 
 /**
- * 종목 선택 화면에서 "왜 이 종목을 살 만한지" 감을 잡도록 보여주는 교육용 가상 시나리오다.
- * 실제 뉴스가 아니다 — 샌드박스 종목은 가상 종목이라 실제 뉴스가 존재할 수 없다. symbol별로 고정된
- * 문구이며 실행(run)마다 바뀌지 않는다.
+ * 종목 선택 화면과 완료 replay 화면에서 "왜 이 종목을 살 만한지" 감을 잡도록 보여주는 교육용 가상
+ * 시나리오다. 실제 뉴스가 아니다 — 샌드박스 종목은 가상 종목이라 실제 뉴스가 존재할 수 없다. symbol별로
+ * 고정된 문구이며 실행(run)마다 바뀌지 않는다. completed attempt는 재시작으로 초기화하지 않으므로
+ * (TUTORIAL-FLOW-005 — 보상 중복 지급 방지) 이 기능 이전에 완료한 사용자는 replay 화면에서만 문구를
+ * 볼 수 있다.
  */
 const INSTRUMENT_SCENARIOS: Record<string, string> = {
   SANDBOX_STK_1: '알파전자가 차세대 반도체 부품 양산 계약을 새로 체결했다는 소식이 전해졌습니다.',
@@ -131,6 +133,7 @@ export function AttemptTutorialFlow({
   const [answer, setAnswer] = useState('')
   const [reflecting, setReflecting] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const [replayInstrument, setReplayInstrument] = useState<Instrument | null>(null)
   const buyNonceRef = useRef(0)
   const sellNonceRef = useRef(0)
 
@@ -184,6 +187,22 @@ export function AttemptTutorialFlow({
       cancelled = true
     }
   }, [attempt.status, market])
+
+  useEffect(() => {
+    if (!replay || attempt.instrumentId === null) {
+      setReplayInstrument(null)
+      return
+    }
+    let cancelled = false
+    ensureInstrumentCache()
+      .catch(() => undefined)
+      .then(() => {
+        if (!cancelled) setReplayInstrument(getCachedInstrument(attempt.instrumentId as number) ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [replay, attempt.instrumentId])
 
   useEffect(() => {
     if (attempt.instrumentId === null) {
@@ -555,6 +574,12 @@ export function AttemptTutorialFlow({
           <p className="mt-2 text-sm leading-relaxed text-muted">
             완료 기록과 보상은 그대로 유지됩니다. 이 화면에서는 주문·관찰·복기·재시작을 실행하지 않습니다.
           </p>
+          {replayInstrument && INSTRUMENT_SCENARIOS[replayInstrument.symbol] && (
+            <p className="mt-3 text-xs leading-relaxed text-muted">
+              <span className="font-medium text-ink/70">교육용 가상 시나리오</span>{' '}
+              {INSTRUMENT_SCENARIOS[replayInstrument.symbol]}
+            </p>
+          )}
           <dl className="mt-5 grid gap-3 sm:grid-cols-3">
             <div><dt className="text-xs text-muted">매수 수량</dt><dd className="mt-1 tabular text-ink">{evidence?.buyQuantity ?? '-'}</dd></div>
             <div><dt className="text-xs text-muted">매도 수량</dt><dd className="mt-1 tabular text-ink">{evidence?.sellQuantity ?? '-'}</dd></div>
