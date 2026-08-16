@@ -413,35 +413,51 @@ export function AttemptTutorialFlow({
   // 매도 전 "관찰" 버튼을 수동으로 눌러야 하던 걸 없앴다 — 매수 체결 후 holding이 잡히는 즉시
   // 서버에 한 번 자동으로 기록한다. 보상·evidence 판정 조건 자체는 그대로다(서버가 여전히 요구),
   // 사용자가 직접 버튼을 눌러야 하는 수동 단계만 없앤 것.
+  //
+  // 매수 직후엔 서버 evidence 체인이 아직 반영되기 전이라 첫 시도가 PRACTICE_STEP_LOCKED·
+  // PRACTICE_EVIDENCE_MISSING으로 일시적으로 튕길 수 있다(실측, 2026-08-16 — 프로덕션에서 재현).
+  // 그래서 실패해도 바로 포기하지 않고 짧게 쉬었다 자동으로 몇 번 더 시도한 뒤에만 재시도 버튼을 보여준다.
   useEffect(() => {
     if (replay || holdingId === null || observed) return
     if (autoObserveHoldingIdRef.current === holdingId) return
     autoObserveHoldingIdRef.current = holdingId
     let cancelled = false
-    setObserving(true)
-    setObserveFailed(false)
-    setMutationError(null)
-    recordHoldingObservation(holdingId)
-      .then(() => {
-        if (cancelled) return
-        bumpTutorial()
-        return onRefresh()
-      })
-      .catch((error) => {
-        if (cancelled) return
-        autoObserveHoldingIdRef.current = null
-        setObserveFailed(true)
-        setMutationError(
-          toUserMessage(error, {
-            PRACTICE_EVIDENCE_MISSING: '가격을 관찰하려면 먼저 매수가 체결되어 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
-          }),
-        )
-      })
-      .finally(() => {
-        if (!cancelled) setObserving(false)
-      })
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+    const attemptObserve = (retriesLeft: number) => {
+      setObserving(true)
+      setObserveFailed(false)
+      setMutationError(null)
+      recordHoldingObservation(holdingId)
+        .then(() => {
+          if (cancelled) return
+          bumpTutorial()
+          return onRefresh().then(() => {
+            if (!cancelled) setObserving(false)
+          })
+        })
+        .catch((error) => {
+          if (cancelled) return
+          if (retriesLeft > 0) {
+            retryTimer = setTimeout(() => attemptObserve(retriesLeft - 1), 1500)
+            return
+          }
+          autoObserveHoldingIdRef.current = null
+          setObserveFailed(true)
+          setObserving(false)
+          setMutationError(
+            toUserMessage(error, {
+              PRACTICE_EVIDENCE_MISSING: '가격을 관찰하려면 먼저 매수가 체결되어 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
+            }),
+          )
+        })
+    }
+
+    attemptObserve(2)
+
     return () => {
       cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
     }
   }, [replay, holdingId, observed, onRefresh, observeRetryNonce])
 
