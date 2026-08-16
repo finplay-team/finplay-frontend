@@ -1,8 +1,15 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: true,
+    clearMocks: true,
+  },
   server: {
     proxy: {
       // 백엔드가 이제 CORS를 지원하지만(finplay-api ADR-0022), 로컬 dev는 여전히 이 프록시로

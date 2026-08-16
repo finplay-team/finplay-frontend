@@ -33,7 +33,7 @@ export class ApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   /** JSON.stringify 대상. undefined 면 본문·Content-Type 모두 없음 */
   body?: unknown
   /** undefined·null 값의 키는 쿼리에서 제외된다 */
@@ -170,6 +170,8 @@ export const api = {
   get: <T>(path: string, o?: BodylessOptions) => apiRequest<T>(path, { ...o, method: 'GET' }),
   post: <T>(path: string, body?: unknown, o?: BodyOptions) =>
     apiRequest<T>(path, { ...o, method: 'POST', body }),
+  put: <T>(path: string, body?: unknown, o?: BodyOptions) =>
+    apiRequest<T>(path, { ...o, method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown, o?: BodyOptions) =>
     apiRequest<T>(path, { ...o, method: 'PATCH', body }),
   // 'delete' 는 예약어라 del 로 둔다

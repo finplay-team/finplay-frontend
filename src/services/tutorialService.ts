@@ -1,50 +1,13 @@
-// 3단계 투자 실습 튜토리얼 서비스 — 즐겨찾기·의도 기록·합성 시세·관찰·복기·진행 조회
+// 영속 attempt 기반 투자 실습의 진입·차트·관찰·복기·진행 API를 제공하는 서비스
 import { api } from '../lib/apiClient'
 import type { Market } from './types'
 import type {
-  FavoriteListResponse,
-  FavoriteResponse,
   InvestmentPracticeResponse,
   PracticeHoldingObservationResponse,
   PracticeHoldingReflectionResponse,
-  PracticeIntentionCreateRequest,
-  PracticeIntentionResponse,
-  SyntheticPriceSeriesResponse,
+  PracticeAttemptResponse,
+  PracticeTutorialChartResponse,
 } from './tutorialTypes'
-
-/** createdAt DESC 순으로 온다. 페이지네이션 없음. */
-export async function getFavorites(): Promise<FavoriteResponse[]> {
-  const res = await api.get<FavoriteListResponse>('/favorites')
-  return res.content
-}
-
-/** 이미 등록된 종목은 409 DUPLICATE_RESOURCE, 거래정지 종목은 409 INSTRUMENT_NOT_TRADABLE. */
-export function addFavorite(instrumentId: number): Promise<FavoriteResponse> {
-  return api.post<FavoriteResponse>('/favorites', { instrumentId })
-}
-
-/** 타인 소유·재시작 후 유실은 모두 404 FAVORITE_NOT_FOUND 로 온다(존재 비노출). */
-export function removeFavorite(instrumentId: number): Promise<void> {
-  return api.del<void>(`/favorites/${instrumentId}`)
-}
-
-/**
- * 현재 본인 favorite 와 같은 종목만 허용한다(아니면 409 PRACTICE_STEP_LOCKED).
- * 이미 완료된 시장이면 저장 없이 409 PRACTICE_ALREADY_COMPLETED.
- */
-export function createPracticeIntention(
-  req: PracticeIntentionCreateRequest,
-): Promise<PracticeIntentionResponse> {
-  return api.post<PracticeIntentionResponse>('/education/practice/intentions', req)
-}
-
-/**
- * 튜토리얼 전용 순수 참고용 시세 — evidence 계산과 무관하고 어디에도 저장되지 않는다.
- * 거래정지 종목도 허용하고 시세가 없으면 fallback 값으로 생성해 PRICE_UNAVAILABLE 이 나지 않는다.
- */
-export function getSyntheticPrices(instrumentId: number): Promise<SyntheticPriceSeriesResponse> {
-  return api.get<SyntheticPriceSeriesResponse>(`/education/practice/synthetic-prices/${instrumentId}`)
-}
 
 /**
  * 3단계 가격 관찰 기록(append-only). 멱등키가 없다 — 호출마다 새 행이 쌓인다.
@@ -79,4 +42,29 @@ export function saveHoldingReflection(
  */
 export function getPracticeProgress(market: Market): Promise<InvestmentPracticeResponse> {
   return api.get<InvestmentPracticeResponse>('/education/practice', { query: { market } })
+}
+
+export function ensurePracticeAttempt(market: Market): Promise<PracticeAttemptResponse> {
+  return api.put<PracticeAttemptResponse>(`/education/practice/attempts/${market}`)
+}
+
+export function selectPracticeInstrument(
+  market: Market,
+  instrumentId: number,
+): Promise<PracticeAttemptResponse> {
+  return api.put<PracticeAttemptResponse>(`/education/practice/attempts/${market}/instrument`, {
+    instrumentId,
+  })
+}
+
+export function restartPracticeAttempt(market: Market): Promise<PracticeAttemptResponse> {
+  return api.post<PracticeAttemptResponse>(`/education/practice/attempts/${market}/restart`)
+}
+
+export function getPracticeAttemptChart(market: Market): Promise<PracticeTutorialChartResponse> {
+  return api.get<PracticeTutorialChartResponse>(`/education/practice/attempts/${market}/chart`)
+}
+
+export function tickPracticeAttempt(market: Market): Promise<PracticeTutorialChartResponse> {
+  return api.post<PracticeTutorialChartResponse>(`/education/practice/attempts/${market}/tick`)
 }
