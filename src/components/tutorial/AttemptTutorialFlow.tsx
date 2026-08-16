@@ -31,6 +31,20 @@ const TICK_MS = 3000
 const REFLECTION_MAX = 2000
 type TutorialOrderType = 'MARKET' | 'LIMIT'
 
+/**
+ * 종목 선택 화면에서 "왜 이 종목을 살 만한지" 감을 잡도록 보여주는 교육용 가상 시나리오다.
+ * 실제 뉴스가 아니다 — 샌드박스 종목은 가상 종목이라 실제 뉴스가 존재할 수 없다. symbol별로 고정된
+ * 문구이며 실행(run)마다 바뀌지 않는다.
+ */
+const INSTRUMENT_SCENARIOS: Record<string, string> = {
+  SANDBOX_STK_1: '알파전자가 차세대 반도체 부품 양산 계약을 새로 체결했다는 소식이 전해졌습니다.',
+  SANDBOX_STK_2: '베타바이오의 신약 후보물질이 임상 2상에서 긍정적인 결과를 얻었다는 소식입니다.',
+  SANDBOX_STK_3: '감마에너지가 대규모 태양광 발전 프로젝트를 수주했다는 소식이 발표됐습니다.',
+  SANDBOX_COIN_1: '알파코인이 주요 거래소에 추가 상장된다는 소식으로 주목받고 있습니다.',
+  SANDBOX_COIN_2: '베타코인 개발팀이 신규 네트워크 업그레이드 로드맵을 공개했습니다.',
+  SANDBOX_COIN_3: '감마코인이 대형 결제 플랫폼과 파트너십을 맺었다는 소식이 전해졌습니다.',
+}
+
 function latestEvidence(progress: InvestmentPracticeResponse): PracticeEvidenceResponse | null {
   return [...progress.steps]
     .reverse()
@@ -559,6 +573,12 @@ export function AttemptTutorialFlow({
               >
                 <span className="text-sm font-medium text-ink">{instrument.name}</span>
                 <span className="mt-1 block text-xs text-muted">{instrument.symbol}</span>
+                {INSTRUMENT_SCENARIOS[instrument.symbol] && (
+                  <p className="mt-2 text-xs leading-relaxed text-muted">
+                    <span className="font-medium text-ink/70">교육용 가상 시나리오</span>{' '}
+                    {INSTRUMENT_SCENARIOS[instrument.symbol]}
+                  </p>
+                )}
               </button>
             ))}
           </div>
