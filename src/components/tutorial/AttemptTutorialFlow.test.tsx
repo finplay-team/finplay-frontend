@@ -380,21 +380,33 @@ describe('AttemptTutorialFlow', () => {
     expect(recordHoldingObservation).toHaveBeenCalledTimes(1)
   })
 
-  it('자동 관찰 기록이 실패하면 재시도 버튼으로 다시 시도할 수 있다', async () => {
-    vi.mocked(recordHoldingObservation).mockRejectedValueOnce(new Error('network'))
+  it('자동 관찰 기록이 계속 실패하면 내부적으로 두 번 더 자동 재시도한 뒤에만 재시도 버튼을 보여준다', async () => {
+    vi.useFakeTimers()
+    vi.mocked(recordHoldingObservation).mockRejectedValue(new Error('network'))
     const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
     renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
     await flushPromises()
-
     expect(recordHoldingObservation).toHaveBeenCalledTimes(1)
-    const retry = await screen.findByRole('button', { name: '관찰 다시 시도' })
+    expect(screen.queryByRole('button', { name: '관찰 다시 시도' })).not.toBeInTheDocument()
+
+    // 매수 직후 서버 evidence 반영 지연을 흡수하려고 짧게 쉬었다 자동으로 최대 2번 더 시도한다.
+    await act(async () => vi.advanceTimersByTime(1500))
+    await flushPromises()
+    expect(recordHoldingObservation).toHaveBeenCalledTimes(2)
+
+    await act(async () => vi.advanceTimersByTime(1500))
+    await flushPromises()
+    expect(recordHoldingObservation).toHaveBeenCalledTimes(3)
+
+    const retry = screen.getByRole('button', { name: '관찰 다시 시도' })
 
     vi.mocked(recordHoldingObservation).mockResolvedValueOnce({} as never)
     fireEvent.click(retry)
     await flushPromises()
 
-    expect(recordHoldingObservation).toHaveBeenCalledTimes(2)
+    expect(recordHoldingObservation).toHaveBeenCalledTimes(4)
     expect(screen.queryByRole('button', { name: '관찰 다시 시도' })).not.toBeInTheDocument()
+    vi.useRealTimers()
   })
 
   it('재시작 확인창이 열려 있는 동안 attempt가 완료로 바뀌면 확인을 눌러도 재시작 API를 부르지 않는다', async () => {
