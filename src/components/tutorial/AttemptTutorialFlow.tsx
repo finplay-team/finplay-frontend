@@ -382,7 +382,11 @@ export function AttemptTutorialFlow({
       bumpTutorial()
       await onRefresh()
     } catch (error) {
-      setMutationError(toUserMessage(error))
+      setMutationError(
+        toUserMessage(error, {
+          PRACTICE_EVIDENCE_MISSING: '가격을 관찰하려면 먼저 매수가 체결되어 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
+        }),
+      )
     } finally {
       setObserving(false)
     }
