@@ -36,7 +36,9 @@
 - [x] 카카오 개발자센터 콘솔에 Redirect URI `https://finplay.site/oauth/kakao/callback` 추가 (사용자 확인 2026-08-12)
 - [x] 네이버 개발자센터 콘솔에 Callback URL을 `https://finplay.site/oauth/naver/callback`으로 교체 (사용자 확인 2026-08-12)
 - [ ] 배포 서버 `.env`의 `KAKAO_REDIRECT_URI`·`NAVER_REDIRECT_URI`를 위 값과 정확히 일치하도록 변경 — 확인 필요
-- [ ] 컨테이너 재기동 후 실제 카카오/네이버 계정으로 `https://finplay.site/login`에서 로그인 end-to-end 확인
+- [ ] 컨테이너 재기동 후 실제 카카오/네이버 계정으로 `https://www.finplay.site/login`에서 로그인 end-to-end 확인
+  (ADR-0022 §결정4 — `finplay.site`는 API 전용 도메인이고 프론트는 `www` 서브도메인에 있다. apex로 접속하면
+  로그인 화면 없이 백엔드 JSON 오류만 보인다 — 2026-08-17 실측)
 
 ---
 
