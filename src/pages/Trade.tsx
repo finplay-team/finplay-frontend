@@ -12,7 +12,7 @@ import { useCryptoPrices } from '../hooks/useCryptoPrices'
 import { useIdempotencyKey } from '../hooks/useIdempotencyKey'
 import { useInstruments } from '../hooks/useInstruments'
 import { useStockStream, type StreamConnectionState } from '../hooks/useStockStream'
-import { formatDateTime, formatHhMm, ratioToPercent } from '../lib/datetime'
+import { formatDateTime, formatHhMm } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import { formatKRW, formatPercent, pnlTone } from '../lib/format'
 import { sideLabels } from '../lib/labels'
@@ -660,7 +660,7 @@ export function Trade() {
             <p className="text-sm text-loss">{accountError}</p>
           ) : (
             <>
-              <dl className="grid grid-cols-2 gap-6 md:grid-cols-4">
+              <dl className="grid grid-cols-2 gap-6 md:grid-cols-3">
                 <Stat label="총 평가자산" value={account ? formatKRW(account.totalValue) : '—'} />
                 {/* 서버는 availableCash 를 주지 않는다 — 예약분을 뺀 값이 실제 주문 가능액이다. */}
                 <Stat
@@ -671,11 +671,6 @@ export function Trade() {
                   label="평가손익"
                   value={account ? signedKRW(account.unrealizedPnl) : '—'}
                   tone={account ? pnlTone(account.unrealizedPnl) : 'text-ink'}
-                />
-                <Stat
-                  label="수익률"
-                  value={account ? formatPercent(ratioToPercent(account.returnRate)) : '—'}
-                  tone={account ? pnlTone(account.returnRate) : 'text-ink'}
                 />
               </dl>
               {/* 예약이 있을 때만 알린다 — 총 현금과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
