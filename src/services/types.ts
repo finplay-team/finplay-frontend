@@ -78,6 +78,16 @@ export interface LogoutRequest {
   refreshToken: string
 }
 
+/** GET /api/auth/oauth/{provider}/authorize?purpose=reauth — 인증 필요, 200 JSON(로그인 purpose의 302와 다르다). */
+export interface OAuthReauthorizeResponse {
+  authorizationUri: string
+}
+/** POST /api/auth/oauth/reauth-exchange — 재인증 콜백이 리다이렉트로 실어 보낸 1회용 코드를 reauthToken으로 교환한다. */
+export interface ReauthExchangeResponse {
+  reauthToken: string
+  expiresInSeconds: number
+}
+
 /** 서버가 DB 의 가입 방식으로 필요한 재인증 수단을 판단한다 (EMAIL → currentPassword). */
 export interface NicknameChangeRequest {
   nickname: string

@@ -12,8 +12,10 @@ import { useInstruments } from '../hooks/useInstruments'
 import { getAccountSummary } from '../services/accountService'
 import { changeNickname, confirmEmailChange, requestEmailChange } from '../services/authService'
 import { getTrades } from '../services/tradeService'
-import type { AccountSummary, Market, SignupMethod, Trade } from '../services/types'
+import type { AccountSummary, Market, NicknameChangeRequest, SignupMethod, Trade } from '../services/types'
+import { ApiError } from '../lib/apiClient'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
+import { openReauthPopup, providerFromSignupMethod } from '../lib/reauthPopup'
 import { formatKRW, formatPercent, pnlTone } from '../lib/format'
 import { formatDateTime, ratioToPercent } from '../lib/datetime'
 import { sideLabels } from '../lib/labels'
@@ -167,7 +169,7 @@ export function MyPage() {
 
         {/* 3. 닉네임 변경 */}
         <NicknameSection
-          isEmailAccount={isEmailAccount}
+          signupMethod={member.signupMethod}
           currentNickname={member.nickname}
           onChanged={refreshMember}
         />
@@ -351,15 +353,21 @@ function SocialReauthNotice() {
   )
 }
 
+const providerLabels: Record<Exclude<SignupMethod, 'EMAIL'>, string> = {
+  KAKAO: '카카오',
+  NAVER: '네이버',
+}
+
 function NicknameSection({
-  isEmailAccount,
+  signupMethod,
   currentNickname,
   onChanged,
 }: {
-  isEmailAccount: boolean
+  signupMethod: SignupMethod
   currentNickname: string
   onChanged: () => Promise<void>
 }) {
+  const isEmailAccount = signupMethod === 'EMAIL'
   const [nickname, setNickname] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [error, setError] = useState('')
@@ -378,14 +386,19 @@ function NicknameSection({
       setNicknameError('닉네임은 2~50자로 입력해 주세요.')
       return
     }
-    if (!currentPassword) {
+    if (isEmailAccount && !currentPassword) {
       setError('현재 비밀번호를 입력해 주세요.')
       return
     }
 
     setPending(true)
     try {
-      await changeNickname({ nickname: trimmed, currentPassword })
+      // OAuth 전용 회원은 팝업으로 같은 provider 계정 재인증을 마쳐야 reauthToken을 받는다
+      // (finplay-api spec 039) — 이메일 회원의 현재 비밀번호 입력과 같은 자리를 대신한다.
+      const request: NicknameChangeRequest = isEmailAccount
+        ? { nickname: trimmed, currentPassword }
+        : { nickname: trimmed, reauthToken: await openReauthPopup(providerFromSignupMethod(signupMethod)) }
+      await changeNickname(request)
       await onChanged()
       setNickname('')
       setCurrentPassword('')
@@ -394,13 +407,20 @@ function NicknameSection({
       // 이 요청에서 중복될 수 있는 값은 닉네임뿐이므로 필드에 붙인다.
       if (isApiErrorCode(err, 'DUPLICATE_RESOURCE')) {
         setNicknameError('이미 사용 중인 닉네임입니다.')
-      } else {
+      } else if (err instanceof ApiError) {
         setError(
           toUserMessage(err, {
-            REAUTHENTICATION_FAILED: '현재 비밀번호가 올바르지 않습니다.',
+            REAUTHENTICATION_FAILED: isEmailAccount
+              ? '현재 비밀번호가 올바르지 않습니다.'
+              : '재인증에 실패했습니다. 연결된 계정으로 다시 시도해 주세요.',
             VALIDATION_ERROR: '닉네임은 2~50자로 입력해 주세요.',
           }),
         )
+      } else if (err instanceof Error) {
+        // 재인증 팝업 자체의 실패(차단·닫힘) — 백엔드 오류가 아니라 이 화면에서 만든 메시지다.
+        setError(err.message)
+      } else {
+        setError(toUserMessage(err))
       }
     } finally {
       setPending(false)
@@ -415,24 +435,22 @@ function NicknameSection({
         작성자 이름도 함께 바뀝니다.
       </p>
 
-      {!isEmailAccount ? (
-        <SocialReauthNotice />
-      ) : (
-        <form onSubmit={onSubmit} noValidate className="mt-5 space-y-4">
-          {error && <p className="text-sm text-rose-300">{error}</p>}
-          {done && <p className="text-sm text-brand">{done}</p>}
-          <Field
-            label="새 닉네임"
-            name="newNickname"
-            placeholder="2~50자"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            maxLength={50}
-            error={nicknameError}
-            /* autoComplete 이 없으면 Chrome 이 [텍스트][비밀번호] 조합을 로그인 폼으로 보고
-               이 칸에 저장된 이메일을 자동으로 채운다 (브라우저에서 재현 확인). */
-            autoComplete="nickname"
-          />
+      <form onSubmit={onSubmit} noValidate className="mt-5 space-y-4">
+        {error && <p className="text-sm text-rose-300">{error}</p>}
+        {done && <p className="text-sm text-brand">{done}</p>}
+        <Field
+          label="새 닉네임"
+          name="newNickname"
+          placeholder="2~50자"
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          maxLength={50}
+          error={nicknameError}
+          /* autoComplete 이 없으면 Chrome 이 [텍스트][비밀번호] 조합을 로그인 폼으로 보고
+             이 칸에 저장된 이메일을 자동으로 채운다 (브라우저에서 재현 확인). */
+          autoComplete="nickname"
+        />
+        {isEmailAccount ? (
           <Field
             label="현재 비밀번호"
             name="nicknameCurrentPassword"
@@ -442,11 +460,16 @@ function NicknameSection({
             onChange={(e) => setCurrentPassword(e.target.value)}
             autoComplete="new-password"
           />
-          <Button type="submit" disabled={pending}>
-            {pending ? '변경 중…' : '닉네임 변경'}
-          </Button>
-        </form>
-      )}
+        ) : (
+          <p className="text-xs leading-relaxed text-muted">
+            변경 버튼을 누르면 {providerLabels[signupMethod]} 재인증 창이 열립니다. 본인 확인을
+            위해 필요합니다.
+          </p>
+        )}
+        <Button type="submit" disabled={pending}>
+          {pending ? '변경 중…' : '닉네임 변경'}
+        </Button>
+      </form>
     </Card>
   )
 }

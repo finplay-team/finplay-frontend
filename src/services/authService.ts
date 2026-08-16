@@ -6,6 +6,8 @@ import type {
   Member,
   NicknameChangeRequest,
   OAuthProvider,
+  OAuthReauthorizeResponse,
+  ReauthExchangeResponse,
   SignupRequest,
   TokenResponse,
 } from './types'
@@ -66,6 +68,27 @@ export function exchangeOAuthCallback(
  */
 export function exchangeLoginCode(code: string): Promise<TokenResponse> {
   return api.post<TokenResponse>('/auth/oauth/login-exchange', { code }, { auth: false })
+}
+
+/**
+ * OAuth 전용 회원의 내 정보 수정용 재인증 인가 시작 — 인증된 사용자만 호출한다(finplay-api spec 039).
+ * `purpose=login`과 달리 302가 아니라 200 JSON으로 인가 URL을 받는다. 이 URL은 재인증 팝업이 열어야 하며,
+ * 팝업은 카카오·네이버 인가 후 백엔드 콜백을 거쳐 `/oauth/reauth-callback`(OAuthReauthCallback)으로
+ * 302 리다이렉트된다.
+ */
+export function requestReauthorize(provider: OAuthProvider): Promise<OAuthReauthorizeResponse> {
+  return api.get<OAuthReauthorizeResponse>(`/auth/oauth/${provider}/authorize`, {
+    query: { purpose: 'reauth' },
+  })
+}
+
+/**
+ * 재인증 콜백 교환 — `/oauth/reauth-callback?code=`로 실려 온 1회용 코드를 실제 reauthToken으로 바꾼다
+ * (finplay-api spec 039, `POST /api/auth/oauth/reauth-exchange`). login-exchange와 같은 성격의 공개
+ * 엔드포인트로, 코드는 발급 후 60초 안에 한 번만 쓸 수 있다.
+ */
+export function exchangeReauthCode(code: string): Promise<ReauthExchangeResponse> {
+  return api.post<ReauthExchangeResponse>('/auth/oauth/reauth-exchange', { code }, { auth: false })
 }
 
 export function logout(refreshToken: string): Promise<void> {
