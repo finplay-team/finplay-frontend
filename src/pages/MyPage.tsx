@@ -172,8 +172,9 @@ export function MyPage() {
           onChanged={refreshMember}
         />
 
-        {/* 4. 이메일 변경 */}
-        <EmailSection isEmailAccount={isEmailAccount} currentEmail={member.email} />
+        {/* 4. 이메일 변경 — OAuth 전용 회원에게는 재인증 팝업 왕복이 아직 없어 칸 자체를 숨긴다
+               (finplay-api docs/prd.md AUTH-005, 2026-08-16 결정). 이메일 회원만 이 카드를 본다. */}
+        {isEmailAccount && <EmailSection currentEmail={member.email} />}
 
         {/* 5. 최근 체결 내역 */}
         <Card innerClassName="p-8">
@@ -450,13 +451,7 @@ function NicknameSection({
   )
 }
 
-function EmailSection({
-  isEmailAccount,
-  currentEmail,
-}: {
-  isEmailAccount: boolean
-  currentEmail: string
-}) {
+function EmailSection({ currentEmail }: { currentEmail: string }) {
   const { logout } = useAuth()
   const navigate = useNavigate()
 
@@ -542,9 +537,7 @@ function EmailSection({
         위해 모든 기기에서 로그아웃되고 새 이메일로 다시 로그인해야 합니다.
       </p>
 
-      {!isEmailAccount ? (
-        <SocialReauthNotice />
-      ) : phase === 'request' ? (
+      {phase === 'request' ? (
         <form onSubmit={onRequest} noValidate className="mt-5 space-y-4">
           {error && <p className="text-sm text-rose-300">{error}</p>}
           <Field
