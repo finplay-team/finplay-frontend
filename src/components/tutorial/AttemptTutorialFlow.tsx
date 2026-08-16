@@ -572,6 +572,11 @@ export function AttemptTutorialFlow({
           {!attempt.riskSnapshot && (
             <Card innerClassName="p-5">
               <h2 className="text-base font-semibold text-ink">1. 매수해 위험 기준을 만듭니다</h2>
+              <p className="mt-2 text-sm text-muted">
+                수량을 정해 매수를 체결하면, 그 체결가를 기준으로 서버가 손절 -3% · 익절 +5% 선을 자동으로
+                계산해 고정합니다. 손절·익절 비율을 직접 입력할 필요는 없습니다 — 아래 2단계 차트에 표시되는
+                두 가격선을 기준으로 관찰하면 됩니다.
+              </p>
               {market === 'CRYPTO' && (
                 <div className="mt-4 flex rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
                   {(['MARKET', 'LIMIT'] as const).map((type) => (
