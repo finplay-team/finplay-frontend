@@ -210,7 +210,8 @@ export function CommunityPost() {
     setDeleteError(null)
     try {
       await deletePost(postId)
-      navigate('/community', { replace: true })
+      const target = post && post.instrumentId !== null ? `/community?instrumentId=${post.instrumentId}` : '/community'
+      navigate(target, { replace: true })
     } catch (err: unknown) {
       if (isApiErrorCode(err, 'NOT_FOUND')) {
         setGone(true)
