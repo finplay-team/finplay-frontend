@@ -125,11 +125,16 @@ async function decodeSuccess<T>(res: Response): Promise<T> {
   return JSON.parse(text) as T
 }
 
+/** FormData 는 브라우저가 boundary 를 붙여 Content-Type 을 직접 세팅해야 하므로 JSON 경로와 분기한다(이미지 업로드용). */
+function isFormData(body: unknown): body is FormData {
+  return typeof FormData !== 'undefined' && body instanceof FormData
+}
+
 async function send<T>(path: string, options: RequestOptions, isRetry: boolean): Promise<T> {
   const { method = 'GET', body, query, headers = {}, auth = true, signal } = options
 
   const requestHeaders: Record<string, string> = { ...headers }
-  if (body !== undefined) requestHeaders['Content-Type'] = 'application/json'
+  if (body !== undefined && !isFormData(body)) requestHeaders['Content-Type'] = 'application/json'
   if (auth) {
     const token = tokenStore.getAccessToken()
     if (token) requestHeaders.Authorization = `Bearer ${token}`
@@ -140,7 +145,7 @@ async function send<T>(path: string, options: RequestOptions, isRetry: boolean):
     res = await fetch(buildUrl(path, query), {
       method,
       headers: requestHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData(body) ? body : JSON.stringify(body),
       signal,
     })
   } catch (e) {
@@ -166,6 +171,38 @@ export function apiRequest<T>(path: string, options: RequestOptions = {}): Promi
 type BodylessOptions = Omit<RequestOptions, 'method' | 'body'>
 type BodyOptions = Omit<RequestOptions, 'method'>
 
+/** 이미지 다운로드처럼 JSON 이 아닌 바이너리 응답을 받을 때 쓴다. 인증·401 갱신 흐름은 send 와 같다. */
+async function sendBlob(path: string, options: BodylessOptions, isRetry: boolean): Promise<Blob> {
+  const { query, headers = {}, auth = true, signal } = options
+
+  const requestHeaders: Record<string, string> = { ...headers }
+  if (auth) {
+    const token = tokenStore.getAccessToken()
+    if (token) requestHeaders.Authorization = `Bearer ${token}`
+  }
+
+  let res: Response
+  try {
+    res = await fetch(buildUrl(path, query), { method: 'GET', headers: requestHeaders, signal })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    throw new ApiError(0, 'NETWORK_ERROR')
+  }
+
+  if (res.ok) return res.blob()
+
+  if (res.status === 401 && auth && !isRetry && !NO_REFRESH_PATHS.includes(path)) {
+    await refreshAccessToken()
+    return sendBlob(path, options, true)
+  }
+
+  throw await decodeFailure(res)
+}
+
+export function apiRequestBlob(path: string, options: BodylessOptions = {}): Promise<Blob> {
+  return sendBlob(path, options, false)
+}
+
 export const api = {
   get: <T>(path: string, o?: BodylessOptions) => apiRequest<T>(path, { ...o, method: 'GET' }),
   post: <T>(path: string, body?: unknown, o?: BodyOptions) =>
@@ -177,4 +214,6 @@ export const api = {
   // 'delete' 는 예약어라 del 로 둔다
   del: <T>(path: string, body?: unknown, o?: BodyOptions) =>
     apiRequest<T>(path, { ...o, method: 'DELETE', body }),
+  /** 이미지 등 바이너리 GET. blob 을 그대로 돌려주므로 호출부가 URL.createObjectURL 로 변환한다. */
+  getBlob: (path: string, o?: BodylessOptions) => apiRequestBlob(path, o),
 }

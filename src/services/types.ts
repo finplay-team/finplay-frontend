@@ -553,6 +553,9 @@ export interface Post {
   instrumentId: number | null
   instrumentSymbol: string | null
   instrumentName: string | null
+  /** 첨부 이미지. 게시물당 최대 1장이며 미첨부면 둘 다 null. imageUrl 은 Access Bearer 가 필요해 <img src> 로 바로 못 그린다 */
+  imageId: number | null
+  imageUrl: string | null
   createdAt: LocalDateTimeString
   updatedAt: LocalDateTimeString
 }
@@ -566,11 +569,21 @@ export interface PostPage {
   hasNext: boolean
 }
 
-/** title 최대 100자, content 최대 5000자. instrumentId 는 선택이며 미태그면 생략한다. */
+/**
+ * title 최대 100자, content 최대 5000자. instrumentId 는 선택이며 미태그면 생략한다.
+ * imageId 는 POST /community/posts/images 로 미리 업로드한 이미지의 id — 미첨부면 생략한다.
+ */
 export interface PostCreateRequest {
   title: string
   content: string
   instrumentId?: number | null
+  imageId?: number | null
+}
+
+/** POST /community/posts/images 성공(201) 응답. imageUrl 은 GET .../images/{imageId}/file 상대경로다. */
+export interface PostImageUploadResponse {
+  imageId: number
+  imageUrl: string
 }
 
 /**

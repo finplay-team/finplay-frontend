@@ -1,13 +1,14 @@
 // 커뮤니티 게시글 목록·페이지 이동·글쓰기 폼을 담당하는 페이지
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { AttachedImage } from '../components/community/AttachedImage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
 import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
-import { createPost, getPosts } from '../services/communityService'
+import { createPost, getPosts, uploadPostImage } from '../services/communityService'
 import { useInstruments } from '../hooks/useInstruments'
 import type { PostPage } from '../services/types'
 
@@ -15,6 +16,8 @@ const PAGE_SIZE = 10
 const TITLE_MAX = 100
 const CONTENT_MAX = 5000
 const EXCERPT_MAX = 140
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024
+const IMAGE_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 const inputClass =
   'w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-[15px] text-ink outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15'
@@ -37,6 +40,12 @@ export function Community() {
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  /** 선택한 사진의 로컬 미리보기. 업로드 성공 여부와 무관하게 "사진을 골랐다"는 사실을 바로 보여준다. */
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  /** 업로드가 끝나 게시물에 실어 보낼 수 있는 이미지 id. 업로드 중이거나 실패했으면 null. */
+  const [imageId, setImageId] = useState<number | null>(null)
+  const [imageUploading, setImageUploading] = useState(false)
+  const [imageError, setImageError] = useState<string | null>(null)
   const [searchParams] = useSearchParams()
   /**
    * 지금 보고 있는 종목 커뮤니티. null 이면 전체(미태그 포함) 피드. 모의투자 페이지의
@@ -78,7 +87,56 @@ export function Community() {
     }
   }, [page, reloadKey, filterInstrumentId])
 
-  const canSubmit = title.trim().length > 0 && content.trim().length > 0 && !submitting
+  // 로컬 미리보기용 object URL 은 바뀌거나(재선택) 페이지를 벗어날 때 해제해야 메모리가 새지 않는다.
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    }
+  }, [imagePreviewUrl])
+
+  const canSubmit =
+    title.trim().length > 0 && content.trim().length > 0 && !submitting && !imageUploading
+
+  const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null
+    e.target.value = '' // 같은 파일을 다시 골라도 onChange 가 뜨도록 초기화
+    if (!file) return
+
+    setImageError(null)
+    if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
+      setImageError('사진 파일만 첨부할 수 있어요 (JPEG, PNG, WEBP).')
+      return
+    }
+    if (file.size === 0) {
+      setImageError('빈 파일은 첨부할 수 없어요.')
+      return
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setImageError('사진 용량이 너무 커요. 5MB 이하로 줄여서 다시 올려 주세요.')
+      return
+    }
+
+    setImagePreviewUrl(URL.createObjectURL(file))
+    setImageId(null)
+    setImageUploading(true)
+    try {
+      const uploaded = await uploadPostImage(file)
+      setImageId(uploaded.imageId)
+    } catch (err: unknown) {
+      setImagePreviewUrl(null)
+      setImageError(
+        toUserMessage(err, { VALIDATION_ERROR: '허용하지 않는 사진 형식이거나 5MB를 넘었어요.' }),
+      )
+    } finally {
+      setImageUploading(false)
+    }
+  }
+
+  const handleImageRemove = () => {
+    setImagePreviewUrl(null)
+    setImageId(null)
+    setImageError(null)
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -90,9 +148,13 @@ export function Community() {
         title: title.trim(),
         content: content.trim(),
         instrumentId: filterInstrumentId,
+        imageId,
       })
       setTitle('')
       setContent('')
+      setImagePreviewUrl(null)
+      setImageId(null)
+      setImageError(null)
       setFormOpen(false)
       // 새 글은 최신순 목록의 첫 페이지에 있다.
       if (page !== 0) setPage(0)
@@ -177,6 +239,44 @@ export function Community() {
                 />
               </div>
 
+              <div>
+                <div className="mb-1.5 flex items-baseline justify-between">
+                  <span className="text-sm font-medium text-ink">사진 (선택)</span>
+                  {imageUploading && <span className="text-xs text-muted">업로드 중…</span>}
+                </div>
+                {imagePreviewUrl ? (
+                  <div className="relative inline-block">
+                    <img
+                      src={imagePreviewUrl}
+                      alt="첨부한 사진 미리보기"
+                      className="h-32 w-32 rounded-2xl border border-line object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleImageRemove}
+                      aria-label="사진 삭제"
+                      className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-ink text-xs text-surface"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-dashed border-line px-4 py-3 text-sm text-muted transition-colors duration-300 hover:border-brand hover:text-brand">
+                    사진 추가하기
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => void handleImageChange(e)}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+                <p className="mt-1.5 text-xs text-muted">
+                  JPEG, PNG, WEBP만 되고 5MB까지 올릴 수 있어요. 한 장만 첨부할 수 있어요.
+                </p>
+                {imageError && <p className="mt-1.5 text-sm text-rose-300">{imageError}</p>}
+              </div>
+
               {/* gain(=상승 적색) 은 시세용 토큰이다. 폼 오류는 Signup·Field 와 같은 rose 를 쓴다 */}
               {formError && <p className="text-sm text-rose-300">{formError}</p>}
 
@@ -249,6 +349,13 @@ export function Community() {
                         <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">
                           {toExcerpt(post.content)}
                         </p>
+                        {post.imageId !== null && (
+                          <AttachedImage
+                            imageId={post.imageId}
+                            alt={`${post.title} 첨부 사진`}
+                            className="mt-3 h-40 w-full rounded-2xl object-cover"
+                          />
+                        )}
                         <p className="mt-4 text-xs text-muted">
                           <span className="text-ink/80">{post.authorNickname}</span>
                           <span className="px-2 text-muted/50">·</span>

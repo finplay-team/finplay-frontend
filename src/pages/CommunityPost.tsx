@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { AttachedImage } from '../components/community/AttachedImage'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -419,6 +420,14 @@ export function CommunityPost() {
               <p className="mt-7 whitespace-pre-wrap text-[15px] leading-relaxed text-ink/90">
                 {post.content}
               </p>
+
+              {post.imageId !== null && (
+                <AttachedImage
+                  imageId={post.imageId}
+                  alt={`${post.title} 첨부 사진`}
+                  className="mt-6 max-h-[480px] w-full rounded-2xl object-cover"
+                />
+              )}
 
               {isMine && (
                 <div className="mt-8 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-6">
