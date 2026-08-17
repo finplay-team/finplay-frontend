@@ -16,8 +16,8 @@ import type { AccountSummary, Market, NicknameChangeRequest, SignupMethod, Trade
 import { ApiError } from '../lib/apiClient'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import { openReauthPopup, providerFromSignupMethod } from '../lib/reauthPopup'
-import { formatKRW, formatPercent, pnlTone } from '../lib/format'
-import { formatDateTime, ratioToPercent } from '../lib/datetime'
+import { formatKRW, pnlTone } from '../lib/format'
+import { formatDateTime } from '../lib/datetime'
 import { sideLabels } from '../lib/labels'
 
 const RECENT_TRADE_LIMIT = 8
@@ -321,11 +321,6 @@ function AccountCard({
       ) : (
         <dl className="mt-6 grid grid-cols-2 gap-4">
           <Stat label="총 평가자산" value={formatKRW(summary.totalValue)} />
-          <Stat
-            label="수익률"
-            value={formatPercent(ratioToPercent(summary.returnRate))}
-            tone={pnlTone(summary.returnRate)}
-          />
           <Stat label="주문가능 현금" value={formatKRW(summary.cashBalance)} />
           <Stat label="보유 평가금액" value={formatKRW(summary.holdingsValue)} />
           <Stat
