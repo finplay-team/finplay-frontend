@@ -1,7 +1,17 @@
 // 서비스 고지(모의투자·종목 비추천)와 네비게이션을 담은 하단 푸터
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 
 export function Footer() {
+  const { status, logout } = useAuth()
+  const navigate = useNavigate()
+  const isAuthenticated = status !== 'anonymous'
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/')
+  }
+
   return (
     <footer className="border-t border-line bg-white/[0.02]">
       <div className="mx-auto max-w-6xl px-6 py-16">
@@ -29,10 +39,17 @@ export function Footer() {
             />
             <FooterCol
               title="계정"
-              items={[
-                { label: '로그인', to: '/login' },
-                { label: '회원가입', to: '/signup' },
-              ]}
+              items={
+                isAuthenticated
+                  ? [
+                      { label: '내정보', to: '/me' },
+                      { label: '로그아웃', onClick: handleLogout },
+                    ]
+                  : [
+                      { label: '로그인', to: '/login' },
+                      { label: '회원가입', to: '/signup' },
+                    ]
+              }
             />
             <FooterCol title="문서" items={[{ label: '기술 스택', to: '/#tech' }]} />
           </div>
@@ -46,31 +63,36 @@ export function Footer() {
           </p>
         </div>
 
-        <p className="mt-8 text-xs text-muted/70">© 2026 FinPlay. 교육용 프로토타입.</p>
+        <p className="mt-8 text-xs text-muted/70">© 2026 FinPlay.</p>
       </div>
     </footer>
   )
 }
 
-function FooterCol({
-  title,
-  items,
-}: {
-  title: string
-  items: { label: string; to: string }[]
-}) {
+type FooterColItem = { label: string } & ({ to: string } | { onClick: () => void })
+
+function FooterCol({ title, items }: { title: string; items: FooterColItem[] }) {
   return (
     <div>
       <h4 className="text-xs font-medium uppercase tracking-eyebrow text-muted">{title}</h4>
       <ul className="mt-4 space-y-2.5">
         {items.map((i) => (
           <li key={i.label}>
-            <Link
-              to={i.to}
-              className="text-sm text-ink/80 transition-colors duration-300 hover:text-brand"
-            >
-              {i.label}
-            </Link>
+            {'to' in i ? (
+              <Link
+                to={i.to}
+                className="text-sm text-ink/80 transition-colors duration-300 hover:text-brand"
+              >
+                {i.label}
+              </Link>
+            ) : (
+              <button
+                onClick={i.onClick}
+                className="text-sm text-ink/80 transition-colors duration-300 hover:text-brand"
+              >
+                {i.label}
+              </button>
+            )}
           </li>
         ))}
       </ul>
