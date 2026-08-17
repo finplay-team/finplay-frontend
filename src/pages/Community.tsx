@@ -40,8 +40,11 @@ export function Community() {
   /** 작성 폼에서 고른 종목. null 이면 미태그로 보낸다. */
   const [formInstrumentId, setFormInstrumentId] = useState<number | null>(null)
   const [searchParams] = useSearchParams()
-  /** 목록 필터. null 이면 전체. 모의투자 페이지의 더보기가 ?instrumentId= 로 링크하면 이 값을 초기값으로 쓴다. */
-  const [filterInstrumentId, setFilterInstrumentId] = useState<number | null>(() => {
+  /**
+   * 목록 필터. null 이면 전체. 모의투자 페이지의 더보기가 ?instrumentId= 로 링크하면 이 값을 쓴다.
+   * 종목을 직접 바꾸는 UI는 없다 — 종목별 커뮤니티는 그 종목 화면에서 들어오는 진입점이다.
+   */
+  const [filterInstrumentId] = useState<number | null>(() => {
     const raw = searchParams.get('instrumentId')
     if (raw === null) return null
     const parsed = Number(raw)
@@ -244,40 +247,6 @@ export function Community() {
               )}
             </Card>
           )}
-
-          {/*
-            종목 필터는 조회 조건일 뿐이라 서버가 검증하지 않는다 —
-            없는 종목을 넣어도 400 이 아니라 빈 목록이 온다. 그래서 거래정지 종목도 후보에 남긴다.
-          */}
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted">종목 필터</span>
-            <select
-              value={filterInstrumentId ?? ''}
-              onChange={(e) => {
-                setFilterInstrumentId(e.target.value === '' ? null : Number(e.target.value))
-                setPage(0)
-              }}
-              className="rounded-full border border-line bg-elevated px-3 py-1.5 text-xs text-ink outline-none focus:border-brand"
-            >
-              <option value="">전체</option>
-              {(index ? [...index.byId.values()].filter((i) => !i.isTutorialSample) : []).map((i) => (
-                <option key={i.instrumentId} value={i.instrumentId}>
-                  {i.name} ({i.symbol})
-                </option>
-              ))}
-            </select>
-            {filterInstrumentId !== null && (
-              <button
-                onClick={() => {
-                  setFilterInstrumentId(null)
-                  setPage(0)
-                }}
-                className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs text-ink transition-colors hover:bg-white/[0.1]"
-              >
-                필터 해제
-              </button>
-            )}
-          </div>
 
           {!loading &&
             !loadError &&
