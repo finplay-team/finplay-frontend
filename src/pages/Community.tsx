@@ -119,9 +119,13 @@ export function Community() {
               {data ? `게시글 ${data.totalElements.toLocaleString('ko-KR')}개` : '게시글을 불러오는 중입니다.'}
             </p>
           </div>
-          <Button variant={formOpen ? 'ghost' : 'primary'} onClick={() => setFormOpen((v) => !v)}>
-            {formOpen ? '닫기' : '글쓰기'}
-          </Button>
+          {/* 글이 없으면 본문 빈 상태의 "첫 글 쓰기"만 보여준다 — 위아래 버튼이 겹쳐 보이지 않게.
+              단, 글쓰기 폼이 열려 있는 동안엔(그 사이 글이 지워지는 등) 닫을 방법이 있어야 하니 항상 보여준다. */}
+          {(formOpen || (data !== null && data.content.length > 0)) && (
+            <Button variant={formOpen ? 'ghost' : 'primary'} onClick={() => setFormOpen((v) => !v)}>
+              {formOpen ? '닫기' : '글쓰기'}
+            </Button>
+          )}
         </header>
 
         {formOpen && (
