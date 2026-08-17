@@ -422,40 +422,20 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('재완료(rewardGranted=false) 응답이면 replay 화면에 보상 미지급 안내가 뜬다 (040, 이슈 #402)', async () => {
-    vi.mocked(saveHoldingReflection).mockResolvedValue({
-      reflectionId: null,
-      holdingId: 41,
-      prompt: '복기',
-      answer: '재완료 복기',
-      createdAt: '2026-08-17T12:00:00',
-      rewardGranted: false,
-    })
+  it('replay 화면은 progress.rewardAmount(영속 값)로 보상 안내를 보여준다 — 새로고침해도 사라지지 않는다 (040, 이슈 #402)', async () => {
     const currentEvidence = evidence({
       holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
     })
-    const { rerender } = renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
-
-    fireEvent.change(screen.getByPlaceholderText('손절·익절 기준과 실제 판단을 돌아보세요.'), {
-      target: { value: '재완료 복기' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '복기 저장하고 완료' }))
-    await waitFor(() => expect(saveHoldingReflection).toHaveBeenCalledWith(41, '재완료 복기'))
-
-    // onRefresh는 mock이라 progress를 실제로 갱신하지 않으므로, 서버가 완료 처리한 뒤의 상태(부모가
-    // onRefresh로 다시 받아왔을 attempt)를 rerender로 흉내낸다.
-    rerender(
-      <AttemptTutorialFlow
-        market="CRYPTO"
-        attempt={attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk })}
-        progress={progress(currentEvidence, 'COMPLETED', 'COMPLETED')}
-        onAttemptChange={vi.fn()}
-        onRefresh={vi.fn().mockResolvedValue(undefined)}
-      />,
+    // handleReflection 응답을 거치지 않고 곧바로 completed 상태로 마운트한다 — 안내가 응답을 받은
+    // 이번 세션에서만 유효한 임시 state가 아니라, progress에 실려 오는 영속 값에서 나온다는 걸 검증한다.
+    renderFlow(
+      attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk }),
+      progress(currentEvidence, 'COMPLETED', 'COMPLETED'),
     )
+    await flushPromises()
 
     expect(
-      screen.getByText('이미 이 시장에서 완료 보상을 받았습니다 — 재완료는 기록만 남고 보상은 다시 지급되지 않습니다.'),
+      screen.getByText('완료 보상은 이 시장에서 최초 1회만 지급됩니다. 재시작해 다시 완료해도 보상은 추가로 지급되지 않습니다.'),
     ).toBeInTheDocument()
   })
 

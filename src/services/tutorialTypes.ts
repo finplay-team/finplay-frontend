@@ -134,7 +134,11 @@ export interface InvestmentPracticeResponse {
   steps: PracticeStepResponse[]
   /** 완료 전 null */
   completedAt: LocalDateTimeString | null
-  /** 이 시장 튜토리얼을 최초 완료했을 때 지급된 보상 금액(항상 5,000,000) — 완료 전에는 null(이슈 #343). */
+  /**
+   * 이 시장 튜토리얼을 최초 완료했을 때 지급된 보상 금액(항상 5,000,000) — 완료 전에는 null(이슈 #343).
+   * 한 번 non-null이 되면 계속 그 값을 유지한다 — 040(이슈 #402)부터 완료 후 재시작·재완료할 수 있지만
+   * 재완료는 보상을 다시 지급하지 않으므로, 이 필드가 "지금 막 보상을 받았는지"를 뜻하지는 않는다.
+   */
   rewardAmount: number | null
   /** attempt가 없는 기존 026 chain 사용자에게만 null이다. */
   attempt: PracticeAttemptResponse | null

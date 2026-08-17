@@ -135,7 +135,6 @@ export function AttemptTutorialFlow({
   const [cancellingPending, setCancellingPending] = useState(false)
   const [answer, setAnswer] = useState('')
   const [reflecting, setReflecting] = useState(false)
-  const [lastRewardGranted, setLastRewardGranted] = useState<boolean | null>(null)
   const [restarting, setRestarting] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
   const [replayInstrument, setReplayInstrument] = useState<Instrument | null>(null)
@@ -524,8 +523,7 @@ export function AttemptTutorialFlow({
     setReflecting(true)
     setMutationError(null)
     try {
-      const response = await saveHoldingReflection(holdingId, trimmed)
-      setLastRewardGranted(response.rewardGranted)
+      await saveHoldingReflection(holdingId, trimmed)
       bumpTutorial()
       await onRefresh()
     } catch (error) {
@@ -620,9 +618,10 @@ export function AttemptTutorialFlow({
             완료 기록과 보상은 그대로 유지됩니다. 이 화면에서는 주문·관찰·복기를 실행하지 않습니다 — 다시
             연습하고 싶으면 위의 "처음부터 다시 시작"으로 새 실행을 시작하세요.
           </p>
-          {lastRewardGranted === false && (
+          {progress.rewardAmount !== null && (
             <p className="mt-2 text-xs leading-relaxed text-muted">
-              이미 이 시장에서 완료 보상을 받았습니다 — 재완료는 기록만 남고 보상은 다시 지급되지 않습니다.
+              완료 보상은 이 시장에서 최초 1회만 지급됩니다. 재시작해 다시 완료해도 보상은 추가로
+              지급되지 않습니다.
             </p>
           )}
           {replayInstrument && INSTRUMENT_SCENARIOS[replayInstrument.symbol] && (
