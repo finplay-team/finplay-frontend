@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../lib/apiClient'
 import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
@@ -766,6 +767,25 @@ describe('AttemptTutorialFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
     await waitFor(() => expect(restartPracticeAttempt).toHaveBeenCalledWith('CRYPTO'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('재시작이 PRACTICE_EVIDENCE_MISSING으로 실패하면 단계 진행용 기본 문구 대신 재시작 문구를 보여준다 (백엔드 #433)', async () => {
+    // 기본 매핑은 "먼저 종목을 사고, 차트에서 가격을 한 번 확인해 주세요"인데, 재시작을 누른 사람에게는
+    // 무엇을 하라는 말인지 알 수 없다. 프로덕션에서 실제로 이 문장이 떴다.
+    vi.mocked(restartPracticeAttempt).mockRejectedValueOnce(
+      new ApiError(409, 'PRACTICE_EVIDENCE_MISSING', null, null),
+    )
+    renderFlow(
+      attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk }),
+      progress(evidence({ holdingId: 41, buyQuantity: 2, remainingQuantity: 0 }), 'COMPLETED', 'COMPLETED'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '처음부터 다시 시작' }))
+    fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/지금은 이 연습을 다시 시작할 수 없습니다/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/먼저 종목을 사고/)).not.toBeInTheDocument()
   })
 
   it('replay 화면은 progress.rewardAmount(영속 값)로 보상 안내를 보여준다 — 새로고침해도 사라지지 않는다 (040, 이슈 #402)', async () => {

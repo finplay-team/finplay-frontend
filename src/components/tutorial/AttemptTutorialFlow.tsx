@@ -1247,7 +1247,16 @@ export function AttemptTutorialFlow({
       onAttemptChange(restarted)
       await onRefresh()
     } catch (error) {
-      showError('restart', toUserMessage(error))
+      // 기본 문구("먼저 종목을 사고, 차트에서 가격을 한 번 확인해 주세요")는 단계 진행용이라 재시작에서는
+      // 완전히 엉뚱하게 읽힌다. 실제로 프로덕션에서 이 문장이 떴다(백엔드 #433 — 샌드박스 종목 도입 전에
+      // 실제 종목으로 완료한 계정의 코인 재시작이 409). 재시작 맥락의 문구로 덮는다.
+      showError(
+        'restart',
+        toUserMessage(error, {
+          PRACTICE_EVIDENCE_MISSING:
+            '지금은 이 연습을 다시 시작할 수 없습니다. 아직 정리되지 않은 주문이 남아 있거나, 예전 방식으로 만들어진 기록이라 서버가 정리하지 못하는 경우입니다. 잠시 뒤에 다시 시도해 주세요.',
+        }),
+      )
     } finally {
       setRestarting(false)
       setShowRestartConfirm(false)
