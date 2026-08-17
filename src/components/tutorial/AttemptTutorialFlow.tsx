@@ -5,7 +5,6 @@ import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
-import { bumpAccount } from '../../lib/accountPulse'
 import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { formatKRW } from '../../lib/format'
@@ -395,7 +394,6 @@ export function AttemptTutorialFlow({
         buyKey,
       )
       buyNonceRef.current += 1
-      bumpAccount()
       bumpTutorial()
       await onRefresh()
     } catch (error) {
@@ -492,7 +490,6 @@ export function AttemptTutorialFlow({
         sellKey,
       )
       sellNonceRef.current += 1
-      bumpAccount()
       bumpTutorial()
       await onRefresh()
     } catch (error) {

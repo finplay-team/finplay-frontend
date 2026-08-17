@@ -15,7 +15,6 @@ import { getHoldings } from '../services/holdingService'
 import { getTrades } from '../services/tradeService'
 import { getJournals } from '../services/journalService'
 import { PendingOrders } from '../components/trade/PendingOrders'
-import { bumpAccount } from '../lib/accountPulse'
 import { PostSellFeedback } from '../components/feedback/PostSellFeedback'
 import { JournalEditor } from '../components/journal/JournalEditor'
 import type { AccountSummary, Holding, JournalListItem, Market, OrderSide, Trade } from '../services/types'
@@ -393,7 +392,6 @@ export function Portfolio() {
                 onChanged={() => {
                   // 예약분 변화가 응답에 실려 오지 않아 계좌·보유를 다시 읽어야 한다.
                   setRefreshNonce((n) => n + 1)
-                  bumpAccount()
                 }}
               />
             </div>
