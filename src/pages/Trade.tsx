@@ -24,6 +24,12 @@ import { CommunityPreview } from '../components/trade/CommunityPreview'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { Star } from '../components/ui/icons'
 import { PriceMoveCards } from '../components/feedback/PriceMoveCards'
+import {
+  OrderTypeGuideButton,
+  OrderTypeGuideDialog,
+  hasSeenOrderTypeGuide,
+  markOrderTypeGuideSeen,
+} from '../components/tutorial/OrderTypeGuide'
 import type {
   AccountSummary,
   CandleInterval,
@@ -285,6 +291,20 @@ export function Trade() {
   const [pendingNonce, setPendingNonce] = useState(0)
   // disabled 상태만으로는 빠른 더블클릭이 두 핸들러를 모두 통과한다. 동기 플래그로 한 번 더 막는다.
   const submittingRef = useRef(false)
+  /**
+   * 시장가·지정가 설명. 주문 유형을 처음 마주하는 브라우저에서 한 번만 자동으로 띄우고,
+   * 그 뒤에는 주문 패널의 버튼으로만 연다.
+   */
+  const [orderTypeGuideOpen, setOrderTypeGuideOpen] = useState(false)
+  useEffect(() => {
+    if (hasSeenOrderTypeGuide()) return
+    setOrderTypeGuideOpen(true)
+  }, [])
+  const closeOrderTypeGuide = useCallback(() => {
+    // 직접 열어 본 경우에도 "봤다"로 남긴다 — 이미 읽은 설명을 나중에 또 자동으로 덮지 않는다.
+    markOrderTypeGuideSeen()
+    setOrderTypeGuideOpen(false)
+  }, [])
 
   const isLimit = isCrypto && orderType === 'LIMIT'
 
@@ -848,6 +868,10 @@ export function Trade() {
                     ? '시장가는 즉시 체결됩니다. 수수료는 서버가 계산합니다.'
                     : '시장가 주문만 지원합니다. 주문하면 즉시 체결되고 수수료는 서버가 계산합니다.'}
               </p>
+              {/* 자동으로 한 번 뜬 설명을 나중에 다시 볼 수 있는 경로. 주식 탭에도 그대로 둔다. */}
+              <div className="mt-3">
+                <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
+              </div>
 
               {/* 주문 유형 — 지정가는 코인 전용이라 주식 탭에서는 아예 보이지 않는다. */}
               {isCrypto && (
@@ -1170,6 +1194,8 @@ export function Trade() {
           </div>
         </div>
       </div>
+
+      <OrderTypeGuideDialog open={orderTypeGuideOpen} onClose={closeOrderTypeGuide} />
     </div>
   )
 }

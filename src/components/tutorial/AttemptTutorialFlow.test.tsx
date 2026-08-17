@@ -1251,4 +1251,32 @@ describe('AttemptTutorialFlow', () => {
     // 안내가 가리킬 대상이 하나도 없다 — 눌러도 아무 일이 없는 버튼은 두지 않는다.
     expect(screen.queryByRole('button', { name: '안내 다시 보기' })).not.toBeInTheDocument()
   })
+
+  it('시장가·지정가 설명은 눌러야 열리고 Escape 로 닫힌다 — 튜토리얼에서 자동으로 뜨지 않는다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await flushPromises()
+
+    // 스포트라이트 안내와 겹치면 화면 두 개가 동시에 덮인다 — 자동 1회 노출은 모의투자 화면이 맡는다.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '시장가·지정가가 뭔가요?' }))
+    const dialog = screen.getByRole('dialog', { name: '시장가와 지정가, 뭐가 다른가요?' })
+    expect(within(dialog).getByText(/지정가는 코인에서만 쓸 수 있습니다/)).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('주식 튜토리얼에도 시장가·지정가 설명 버튼을 둔다', async () => {
+    // 지정가 토글은 코인 전용이라 주식 화면에 없다. 설명까지 없으면 주식만 해 본 사용자는
+    // 이 개념을 실전 화면에서 처음 마주하게 된다.
+    renderFlow(
+      attempt({ market: 'STOCK', instrumentId: 801, riskSnapshot: null }),
+      { ...progress(), tutorialKey: 'INVESTMENT_PRACTICE_V1' },
+    )
+    await flushPromises()
+
+    expect(screen.queryByRole('button', { name: '지정가' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '시장가·지정가가 뭔가요?' })).toBeInTheDocument()
+  })
 })

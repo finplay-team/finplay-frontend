@@ -7,6 +7,7 @@ import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
+import { OrderTypeGuideButton, OrderTypeGuideDialog } from './OrderTypeGuide'
 import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
@@ -929,6 +930,7 @@ export function AttemptTutorialFlow({
   const [nowMs, setNowMs] = useState(() => Date.now())
   /** 안내를 처음부터 다시 보여 주기 위해 SpotlightTour를 리마운트시키는 값. */
   const [tourNonce, setTourNonce] = useState(0)
+  const [orderTypeGuideOpen, setOrderTypeGuideOpen] = useState(false)
   /** 예약을 새로 건 순간을 세어 두고, 그 뒤 렌더에서 예약 카드를 화면 안으로 스크롤한다. */
   const [pendingCreatedNonce, setPendingCreatedNonce] = useState(0)
   const pendingCardRef = useRef<HTMLDivElement>(null)
@@ -1836,6 +1838,13 @@ export function AttemptTutorialFlow({
                   </p>
                 </>
               )}
+              {/*
+                주식에는 지정가 토글 자체가 없지만(코인 전용) 설명은 볼 수 있어야 한다 —
+                주식만 해 본 사용자는 이 개념을 아예 못 보고 실전 화면에서 처음 마주치게 된다.
+              */}
+              <div className="mt-3">
+                <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
+              </div>
               <div className="mt-4 flex flex-wrap items-end gap-3">
                 <label className="min-w-40 flex-1 text-xs text-muted">
                   몇 개 구매할까요{market === 'STOCK' ? ' (1주 단위)' : ''}
@@ -1937,6 +1946,9 @@ export function AttemptTutorialFlow({
                       ))}
                     </div>
                   )}
+                  <div>
+                    <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
+                  </div>
                   {market === 'CRYPTO' && sellOrderType === 'LIMIT' && (
                     <LimitPriceField
                       id="tutorial-sell-limit-price"
@@ -2092,6 +2104,12 @@ export function AttemptTutorialFlow({
         onConfirm={() => void handleRestartConfirm()}
         onCancel={handleRestartCancel}
       />
+
+      {/*
+        튜토리얼에서는 자동으로 열지 않는다 — 스포트라이트 안내와 겹쳐 화면 두 개가 동시에 덮인다.
+        누를 때만 연다. 자동 1회 노출은 모의투자 화면(pages/Trade.tsx)이 맡는다.
+      */}
+      <OrderTypeGuideDialog open={orderTypeGuideOpen} onClose={() => setOrderTypeGuideOpen(false)} />
 
       <CompletionCelebration
         open={celebrating}
