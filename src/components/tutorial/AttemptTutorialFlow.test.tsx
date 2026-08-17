@@ -505,6 +505,47 @@ describe('AttemptTutorialFlow', () => {
     expect(recordHoldingObservation).toHaveBeenLastCalledWith(41)
   })
 
+  it('evidence 없이 전량 매도된 상태에서도 tick마다 관찰을 계속 기록해 스스로 복구한다', async () => {
+    // 백엔드 #423 이후 매도 뒤의 관찰도 정상 접수된다(201이지만 evidenceType은 null). 조건 B를 채울
+    // 때까지 쌓는 것이 evidence 없이 팔려 버린 사용자의 유일한 복구 경로다 — fullySold로 막으면
+    // 4단계가 잠긴 채 빠져나올 길이 없다(프로덕션 재현).
+    vi.useFakeTimers()
+    const currentEvidence = evidence({
+      buyTradeId: 31, holdingId: 41, buyQuantity: 10, sellQuantity: 10, remainingQuantity: 0,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    expect(recordHoldingObservation).toHaveBeenCalledTimes(1)
+
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => vi.advanceTimersByTime(3000))
+      await flushPromises()
+    }
+
+    expect(recordHoldingObservation).toHaveBeenCalledTimes(3)
+    expect(recordHoldingObservation).toHaveBeenLastCalledWith(41)
+  })
+
+  it('복구가 도는 동안 진행 중임을 알리고 복기 저장을 잠근다', async () => {
+    const currentEvidence = evidence({
+      buyTradeId: 31, holdingId: 41, buyQuantity: 10, sellQuantity: 10, remainingQuantity: 0,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    expect(screen.getByText('3. 가격 확인 기록을 남기는 중입니다. 잠시만 기다려 주세요.')).toBeInTheDocument()
+    // 관찰이 인정되기 전에 "지켜보기 완료"라고 쓰면 거짓이다 — 실제로 4단계는 아직 잠겨 있다.
+    expect(screen.queryByText(/3\. 지켜보기 완료/)).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.'), {
+      target: { value: '한 줄 기록' },
+    })
+    // 지금 누르면 PRACTICE_EVIDENCE_MISSING으로 반드시 실패한다 — 실패 문구 대신 잠그고 이유를 말한다.
+    expect(screen.getByRole('button', { name: '적은 내용 저장하고 끝내기' })).toBeDisabled()
+    expect(screen.getByText('가격 확인 기록을 남기는 중입니다. 잠시만 기다려 주세요.')).toBeInTheDocument()
+  })
+
   it('관찰 evidence가 이미 붙었으면 tick이 돌아도 더 기록하지 않는다', async () => {
     vi.useFakeTimers()
     const currentEvidence = evidence({
