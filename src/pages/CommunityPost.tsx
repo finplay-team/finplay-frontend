@@ -34,10 +34,20 @@ function isEdited(post: Post): boolean {
  * 부모·자식 어느 쪽이든 제거한다. 부모를 지우면 서버가 자식까지 CASCADE 로 지우므로
  * 화면에서도 가지째 걷어내야 서버 상태와 어긋나지 않는다.
  */
-function removeComment(list: Comment[], commentId: number): Comment[] {
-  return list
-    .filter((c) => c.commentId !== commentId)
-    .map((c) => ({ ...c, replies: c.replies.filter((r) => r.commentId !== commentId) }))
+// 백엔드 PostCommentResponse 가 tombstone 시 채우는 값과 정확히 같아야 새로고침 후에도 화면이 안 바뀐다.
+const TOMBSTONED_CONTENT = '삭제된 댓글입니다'
+const TOMBSTONED_AUTHOR_DISPLAY = '(삭제됨)'
+
+/**
+ * 부모 댓글은 서버가 실제로 지우지 않고 내용·작성자만 치환한다(tombstone) — 대댓글은 그대로 남는다.
+ * 대댓글(자식)은 서버가 실제로 하드 삭제하므로 목록에서 걷어낸다.
+ */
+function tombstoneOrRemoveComment(list: Comment[], commentId: number): Comment[] {
+  return list.map((c) =>
+    c.commentId === commentId
+      ? { ...c, content: TOMBSTONED_CONTENT, authorNickname: TOMBSTONED_AUTHOR_DISPLAY }
+      : { ...c, replies: c.replies.filter((r) => r.commentId !== commentId) },
+  )
 }
 
 export function CommunityPost() {
@@ -151,9 +161,10 @@ export function CommunityPost() {
             {mine &&
               (armed ? (
                 <span className="flex items-center gap-2">
-                  {/* 부모를 지우면 남의 대댓글까지 함께 사라지므로 그 사실을 미리 알린다. */}
+                  {/* 부모를 지워도 서버는 실제로 지우지 않고 내용만 치환한다(tombstone). 답글은 그대로 남으므로
+                      "답글까지 삭제된다"는 인상을 주지 않도록 안내한다. */}
                   <span className="text-muted">
-                    {!isReply && c.replies.length > 0 ? '답글까지 함께 삭제됩니다.' : '정말 삭제할까요?'}
+                    {!isReply && c.replies.length > 0 ? '삭제해도 답글은 그대로 남아요.' : '정말 삭제할까요?'}
                   </span>
                   <button
                     onClick={() => handleCommentDelete(c.commentId)}
@@ -281,12 +292,11 @@ export function CommunityPost() {
     setCommentDeleteError(null)
     try {
       await deleteComment(commentId)
-      // 부모를 지우면 서버가 자식 대댓글까지 CASCADE 로 지운다 → 화면에서도 가지째 걷어낸다.
-      setComments((prev) => removeComment(prev, commentId))
+      setComments((prev) => tombstoneOrRemoveComment(prev, commentId))
     } catch (err: unknown) {
       if (isApiErrorCode(err, 'NOT_FOUND')) {
-        // 이미 지워진 댓글이므로 목록에서만 치운다.
-        setComments((prev) => removeComment(prev, commentId))
+        // 대댓글이 이미 하드 삭제된 경우다(부모는 tombstone 이라 404 가 나지 않는다). 목록에서 치운다.
+        setComments((prev) => tombstoneOrRemoveComment(prev, commentId))
         return
       }
       setCommentDeleteError(

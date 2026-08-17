@@ -591,7 +591,8 @@ export interface PostUpdateRequest {
  * 최상위 배열에는 **부모 댓글만** 들어가고 대댓글은 각 부모의 replies 에 중첩된다.
  * 정렬은 양쪽 모두 createdAt 오름차순 + commentId 오름차순이다.
  * 중첩은 1단계뿐이라 **대댓글의 replies 는 항상 빈 배열**이고, 대댓글에 답글을 달면 400 이다.
- * 부모를 삭제하면 자식 대댓글도 CASCADE 로 함께 사라진다(타인 것이라도).
+ * 부모 댓글을 삭제해도 실제로는 지워지지 않고 tombstone 된다(content="삭제된 댓글입니다",
+ * authorNickname="(삭제됨)") — 대댓글은 그대로 남는다. 대댓글(자식)을 삭제하면 실제로 하드 삭제된다.
  */
 export interface Comment {
   commentId: number
