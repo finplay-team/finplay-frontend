@@ -1,7 +1,9 @@
 // 영속 attempt 튜토리얼의 단일 차트 폴링·재시작·주문·replay 상태를 DOM에서 검증한다.
+import { useEffect } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../lib/apiClient'
 import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
@@ -35,10 +37,14 @@ vi.mock('../CandleChart', () => ({
 // 초보자 안내 카드와 스포트라이트 투어는 각각 자체 테스트가 있다 — 여기서는 흐름만 본다.
 // 다만 어떤 단계 배열을 넘겼는지는 이 화면의 책임이라, 오버레이는 그리지 않고 target만 받아 둔다.
 vi.mock('./CandleGuide', () => ({ CandleGuide: () => <div data-testid="candle-guide" /> }))
-const tourSpy = vi.hoisted(() => ({ targets: [] as string[] }))
+const tourSpy = vi.hoisted(() => ({ targets: [] as string[], mounts: 0 }))
 vi.mock('./SpotlightTour', () => ({
   SpotlightTour: ({ steps }: { steps: { target: string }[] }) => {
     tourSpy.targets = steps.map((step) => step.target)
+    // "안내 다시 보기"는 key 를 바꿔 리마운트시키는 방식이라, 마운트 횟수가 곧 검증 대상이다.
+    useEffect(() => {
+      tourSpy.mounts += 1
+    }, [])
     return null
   },
 }))
@@ -763,6 +769,25 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('재시작이 PRACTICE_EVIDENCE_MISSING으로 실패하면 단계 진행용 기본 문구 대신 재시작 문구를 보여준다 (백엔드 #433)', async () => {
+    // 기본 매핑은 "먼저 종목을 사고, 차트에서 가격을 한 번 확인해 주세요"인데, 재시작을 누른 사람에게는
+    // 무엇을 하라는 말인지 알 수 없다. 프로덕션에서 실제로 이 문장이 떴다.
+    vi.mocked(restartPracticeAttempt).mockRejectedValueOnce(
+      new ApiError(409, 'PRACTICE_EVIDENCE_MISSING', null, null),
+    )
+    renderFlow(
+      attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk }),
+      progress(evidence({ holdingId: 41, buyQuantity: 2, remainingQuantity: 0 }), 'COMPLETED', 'COMPLETED'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '처음부터 다시 시작' }))
+    fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/지금은 이 연습을 다시 시작할 수 없습니다/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/먼저 종목을 사고/)).not.toBeInTheDocument()
+  })
+
   it('replay 화면은 progress.rewardAmount(영속 값)로 보상 안내를 보여준다 — 새로고침해도 사라지지 않는다 (040, 이슈 #402)', async () => {
     const currentEvidence = evidence({
       holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
@@ -1178,5 +1203,100 @@ describe('AttemptTutorialFlow', () => {
     expect(tourSpy.targets).toEqual([
       'instrument', 'order-type', 'quantity', 'buy', 'chart', 'pending', 'sell', 'reflection',
     ])
+  })
+
+  it('판매를 예약하면 확인 카드가 4단계 판매 카드 안에 뜨고 잠긴 이유도 그 자리에서 알린다', async () => {
+    // 위치가 요점이다. 예전에는 차트보다도 위(판매 카드 바깥)에 떠서, 4단계에서 예약을 걸면
+    // 방금 누른 자리에서는 버튼이 조용히 잠기기만 하고 아무 변화도 보이지 않았다.
+    const currentEvidence = evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      buyQuantity: 2,
+      remainingQuantity: 2,
+    })
+    vi.mocked(placeLimitOrder).mockResolvedValue({
+      orderId: 91,
+      market: 'CRYPTO',
+      instrumentId: 701,
+      side: 'SELL',
+      orderType: 'LIMIT',
+      status: 'PENDING',
+      quantity: 2,
+      limitPrice: 130,
+      requestedAt: '2026-08-14T12:00:00',
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '지정가' }))
+    fireEvent.click(screen.getByRole('button', { name: '현재가' }))
+    fireEvent.click(screen.getByRole('button', { name: '가진 2개 정한 값에 판매하기' }))
+
+    const pendingCard = await screen.findByText(/정한 값이 되기를 기다리는 중입니다/)
+    const sellCard = screen.getByRole('heading', { name: /4\. 판매/ }).closest('.bezel-core')
+    expect(sellCard).not.toBeNull()
+    expect(sellCard).toContainElement(pendingCard)
+    // 두 곳에 동시에 나오면 사용자는 예약을 두 개 건 줄 안다.
+    expect(screen.getAllByText(/정한 값이 되기를 기다리는 중입니다/)).toHaveLength(1)
+
+    expect(screen.getByRole('button', { name: '가진 2개 정한 값에 판매하기' })).toBeDisabled()
+    expect(sellCard).toContainElement(
+      screen.getByText(/바로 아래 예약해 둔 주문이 기다리는 중이라 지금은 새로 주문할 수 없어요/),
+    )
+  })
+
+  it('"안내 다시 보기"는 본 기록을 지우고 안내를 처음부터 다시 마운트한다', async () => {
+    // localStorage 에 한 번 기록되면 영구히 다시 뜨지 않아, 다시 볼 방법이 아예 없었다.
+    localStorage.setItem('finplay.tour.tutorial.CRYPTO', 'done')
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await flushPromises()
+    const mountsBefore = tourSpy.mounts
+
+    fireEvent.click(screen.getByRole('button', { name: '안내 다시 보기' }))
+    await flushPromises()
+
+    expect(localStorage.getItem('finplay.tour.tutorial.CRYPTO')).toBeNull()
+    expect(tourSpy.mounts).toBe(mountsBefore + 1)
+    localStorage.clear()
+  })
+
+  it('완료 기록 화면에는 "안내 다시 보기"를 두지 않는다', async () => {
+    renderFlow(
+      attempt({ status: 'COMPLETED', riskSnapshot: risk, completedAt: '2026-08-14T12:10:00' }),
+      progress(evidence({ holdingId: 41, observationId: 51 }), 'COMPLETED'),
+    )
+    await flushPromises()
+
+    // 안내가 가리킬 대상이 하나도 없다 — 눌러도 아무 일이 없는 버튼은 두지 않는다.
+    expect(screen.queryByRole('button', { name: '안내 다시 보기' })).not.toBeInTheDocument()
+  })
+
+  it('시장가·지정가 설명은 눌러야 열리고 Escape 로 닫힌다 — 튜토리얼에서 자동으로 뜨지 않는다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await flushPromises()
+
+    // 스포트라이트 안내와 겹치면 화면 두 개가 동시에 덮인다 — 자동 1회 노출은 모의투자 화면이 맡는다.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '시장가·지정가가 뭔가요?' }))
+    const dialog = screen.getByRole('dialog', { name: '시장가와 지정가, 뭐가 다른가요?' })
+    expect(within(dialog).getByText(/지정가는 코인에서만 쓸 수 있습니다/)).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('주식 튜토리얼에도 시장가·지정가 설명 버튼을 둔다', async () => {
+    // 지정가 토글은 코인 전용이라 주식 화면에 없다. 설명까지 없으면 주식만 해 본 사용자는
+    // 이 개념을 실전 화면에서 처음 마주하게 된다.
+    renderFlow(
+      attempt({ market: 'STOCK', instrumentId: 801, riskSnapshot: null }),
+      { ...progress(), tutorialKey: 'INVESTMENT_PRACTICE_V1' },
+    )
+    await flushPromises()
+
+    expect(screen.queryByRole('button', { name: '지정가' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '시장가·지정가가 뭔가요?' })).toBeInTheDocument()
   })
 })
