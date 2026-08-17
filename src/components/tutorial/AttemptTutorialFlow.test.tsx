@@ -1,5 +1,5 @@
 // 영속 attempt 튜토리얼의 단일 차트 폴링·재시작·주문·replay 상태를 DOM에서 검증한다.
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
@@ -18,7 +18,14 @@ import {
   tickPracticeAttempt,
 } from '../../services/tutorialService'
 import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
-import { cancelLimitOrder, getPendingOrders, placeLimitOrder, placeOrder } from '../../services/orderService'
+import {
+  amendLimitOrder,
+  cancelLimitOrder,
+  getOrders,
+  getPendingOrders,
+  placeLimitOrder,
+  placeOrder,
+} from '../../services/orderService'
 import type { OrderSummary } from '../../services/types'
 import { AttemptTutorialFlow } from './AttemptTutorialFlow'
 
@@ -26,8 +33,15 @@ vi.mock('../CandleChart', () => ({
   CandleChart: ({ candles }: { candles: unknown[] }) => <div data-testid="practice-chart">{candles.length}</div>,
 }))
 // 초보자 안내 카드와 스포트라이트 투어는 각각 자체 테스트가 있다 — 여기서는 흐름만 본다.
+// 다만 어떤 단계 배열을 넘겼는지는 이 화면의 책임이라, 오버레이는 그리지 않고 target만 받아 둔다.
 vi.mock('./CandleGuide', () => ({ CandleGuide: () => <div data-testid="candle-guide" /> }))
-vi.mock('./SpotlightTour', () => ({ SpotlightTour: () => null }))
+const tourSpy = vi.hoisted(() => ({ targets: [] as string[] }))
+vi.mock('./SpotlightTour', () => ({
+  SpotlightTour: ({ steps }: { steps: { target: string }[] }) => {
+    tourSpy.targets = steps.map((step) => step.target)
+    return null
+  },
+}))
 vi.mock('../../hooks/useIdempotencyKey', () => ({ useIdempotencyKey: () => 'tutorial-key' }))
 vi.mock('../../lib/tutorialPulse', () => ({ bumpTutorial: vi.fn() }))
 vi.mock('../../services/instrumentService', () => ({
@@ -36,7 +50,9 @@ vi.mock('../../services/instrumentService', () => ({
   getCachedInstrument: vi.fn(),
 }))
 vi.mock('../../services/orderService', () => ({
+  amendLimitOrder: vi.fn(),
   cancelLimitOrder: vi.fn(),
+  getOrders: vi.fn(),
   getPendingOrders: vi.fn(),
   placeLimitOrder: vi.fn(),
   placeOrder: vi.fn(),
@@ -194,6 +210,8 @@ describe('AttemptTutorialFlow', () => {
       },
     ])
     vi.mocked(getPendingOrders).mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
+    vi.mocked(getOrders).mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
+    vi.mocked(amendLimitOrder).mockResolvedValue({} as never)
     vi.mocked(placeOrder).mockResolvedValue({} as never)
     vi.mocked(placeLimitOrder).mockResolvedValue({} as never)
     vi.mocked(cancelLimitOrder).mockResolvedValue(undefined)
@@ -274,8 +292,8 @@ describe('AttemptTutorialFlow', () => {
     renderFlow(attempt({ riskSnapshot: null }), progress())
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
 
-    // 개발 용어를 걷어내며 매수 버튼 문구를 바꿨다 — 시장가 매수 → "지금 값에 사기".
-    expect(screen.getByRole('button', { name: '지금 값에 사기' })).toBeInTheDocument()
+    // 개발 용어를 걷어내되 구어체는 피한다 — 시장가 매수 버튼은 "지금 값에 구매하기"다.
+    expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '지정가' }))
     fireEvent.click(screen.getByRole('button', { name: '현재가' }))
     expect(screen.getByLabelText('지정가')).toHaveValue('123')
@@ -342,7 +360,7 @@ describe('AttemptTutorialFlow', () => {
     })
     renderFlow()
 
-    fireEvent.click(await screen.findByRole('button', { name: '기다리지 않고 지금 값에 사기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '기다리지 않고 지금 값에 구매하기' }))
 
     await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(83))
     await waitFor(() => expect(placeOrder).toHaveBeenCalledWith(
@@ -358,10 +376,10 @@ describe('AttemptTutorialFlow', () => {
     )
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalledWith('STOCK'))
 
-    expect(screen.getByRole('button', { name: '지금 값에 사기' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '지정가' })).not.toBeInTheDocument()
     // 주식은 1주 단위라는 걸 오류로 처음 알게 되면 안 된다 — 라벨에 미리 병기한다.
-    expect(screen.getByText(/몇 개 살까요 \(1주 단위\)/)).toBeInTheDocument()
+    expect(screen.getByText(/몇 개 구매할까요 \(1주 단위\)/)).toBeInTheDocument()
   })
 
   it('uses server risk values and reload-safe remaining quantity for SELL', async () => {
@@ -380,7 +398,7 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText('10,500원')).toBeInTheDocument()
     // 복기 입력은 전량 매도 뒤에만 열린다. placeholder에 숨겼던 질문을 고정 라벨로 올렸다.
     expect(screen.queryByLabelText('오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '가진 1.25개 전부 팔기' }))
+    fireEvent.click(screen.getByRole('button', { name: '가진 1.25개 전부 판매하기' }))
 
     await waitFor(() => expect(placeOrder).toHaveBeenCalledWith(
       {
@@ -401,7 +419,7 @@ describe('AttemptTutorialFlow', () => {
     renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
     await flushPromises()
 
-    expect(screen.getByRole('button', { name: '가진 2개 전부 팔기' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeDisabled()
     expect(screen.getByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).toBeInTheDocument()
   })
 
@@ -430,7 +448,7 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(screen.getByText(/지금 값이면 손절선은/)).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText(/몇 개 살까요/), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText(/몇 개 구매할까요/), { target: { value: '' } })
     expect(screen.queryByText(/지금 값이면 손절선은/)).not.toBeInTheDocument()
   })
 
@@ -462,9 +480,9 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(screen.queryByText(/0개/)).not.toBeInTheDocument()
-    expect(screen.getByText('2. 사기 완료 · 10,000원에 샀습니다')).toBeInTheDocument()
+    expect(screen.getByText('2. 구매 완료 · 10,000원에 샀습니다')).toBeInTheDocument()
 
-    const sell = screen.getByRole('button', { name: '가진 만큼 전부 팔기' })
+    const sell = screen.getByRole('button', { name: '가진 만큼 전부 판매하기' })
     expect(sell).toBeDisabled()
     // 수량을 모르는 게 진짜 이유다 — "잠시 뒤 팔 수 있어요"는 오지 않을 일을 약속하는 문구라 띄우지 않는다.
     expect(screen.queryByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).not.toBeInTheDocument()
@@ -480,7 +498,7 @@ describe('AttemptTutorialFlow', () => {
     renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
     await flushPromises()
 
-    expect(screen.getByRole('button', { name: '가진 2개 전부 팔기' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeEnabled()
     expect(screen.queryByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).not.toBeInTheDocument()
     expect(screen.getByText('확인 완료')).toBeInTheDocument()
   })
@@ -619,7 +637,7 @@ describe('AttemptTutorialFlow', () => {
     await act(async () => vi.advanceTimersByTime(1500))
     await flushPromises()
 
-    expect(screen.queryByRole('button', { name: '가진 0개 전부 팔기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '가진 0개 전부 판매하기' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '관찰 다시 시도' })).toBeInTheDocument()
     vi.useRealTimers()
   })
@@ -728,7 +746,7 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(screen.getByText(/1\. 고르기 완료/)).toBeInTheDocument()
-    expect(screen.getByText(/2\. 사기 완료 · 2개를 10,000원에 샀습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/2\. 구매 완료 · 2개를 10,000원에 샀습니다/)).toBeInTheDocument()
     expect(screen.getByText('4단계 중 3단계 · 지켜보기')).toBeInTheDocument()
   })
 
@@ -889,8 +907,8 @@ describe('AttemptTutorialFlow', () => {
     // 만료 문구는 실패가 아니라는 것부터 말한다.
     expect(screen.getByText(/시간이 끝나서 이번 연습은 여기까지입니다/)).toBeInTheDocument()
     const restart = screen.getByRole('button', { name: '처음부터 다시 시작' })
-    // 문구 교체로 "매수/매도" 라는 말 자체가 사라졌다 — 새 문구 기준으로 같은 취지를 지킨다.
-    expect(screen.queryByRole('button', { name: /팔기|사기/ })).not.toBeInTheDocument()
+    // 만료 화면에는 주문 버튼이 하나도 남지 않아야 한다 — 새 문구(구매하기·판매하기) 기준으로 확인한다.
+    expect(screen.queryByRole('button', { name: /구매하기|판매하기/ })).not.toBeInTheDocument()
 
     fireEvent.click(restart)
     fireEvent.click(screen.getByRole('button', { name: '취소' }))
@@ -950,5 +968,215 @@ describe('AttemptTutorialFlow', () => {
       await screen.findByText('알파코인이 주요 거래소에 추가 상장된다는 소식으로 주목받고 있습니다.'),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '처음부터 다시 시작' })).toBeInTheDocument()
+  })
+
+  it('구매 단계는 구어체 대신 구매하기를 쓰고 전문용어를 한 곳에만 병기한다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+
+    expect(screen.getByRole('heading', { name: '2. 몇 개 구매할지 정합니다 (매수)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
+    expect(screen.getByText(/몇 개 구매할까요/)).toBeInTheDocument()
+    // 모든 문장에 (매수)를 달면 읽기가 나빠진다 — 단계마다 처음 나오는 한 곳에만 병기한다.
+    expect(screen.getAllByText(/\(매수\)/)).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: /사기|팔기/ })).not.toBeInTheDocument()
+  })
+
+  it('판매 단계도 같은 규칙으로 판매하기를 쓰고 (매도)를 한 곳에만 병기한다', async () => {
+    const currentEvidence = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    expect(
+      screen.getByRole('heading', { name: '4. 판매(매도)하고, 왜 그랬는지 적어 봅니다' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeInTheDocument()
+    expect(screen.getAllByText(/\(매도\)/)).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: /사기|팔기/ })).not.toBeInTheDocument()
+  })
+
+  it('주문 카드 안에서 지금 값을 보여주고 값이 바뀌면 잠깐 색으로 알린다', async () => {
+    // 지금까지는 주문 카드에 "1개 × 10,567원"만 있어서 그게 지금 값인지 보려면 차트까지 올라가야 했다.
+    vi.useFakeTimers()
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await flushPromises()
+
+    const priceBox = screen.getByText('지금 값').parentElement as HTMLElement
+    expect(within(priceBox).getByText('123원')).toBeInTheDocument()
+
+    vi.mocked(tickPracticeAttempt).mockResolvedValue({
+      ...chart,
+      candles: [{ date: '2026-08-14', open: 100, high: 130, low: 90, close: 130, current: true }],
+    })
+    await act(async () => vi.advanceTimersByTime(3000))
+    await flushPromises()
+
+    expect(within(priceBox).getByText('130원')).toHaveClass('text-gain')
+    await act(async () => vi.advanceTimersByTime(800))
+    expect(within(priceBox).getByText('130원')).toHaveClass('text-ink')
+    vi.useRealTimers()
+  })
+
+  it('현재가 버튼은 소수점을 정리한 값을 넣고, 올리기·내리기가 가격대에 맞는 폭으로 움직인다', async () => {
+    // 코인이 소수점 주문을 지원한다고 해서 사용자가 9,699.786원에 걸겠다는 뜻은 아니다.
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      candles: [{ date: '2026-08-14', open: 9000, high: 9900, low: 8900, close: 9699.786, current: true }],
+    })
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '지정가' }))
+    fireEvent.click(screen.getByRole('button', { name: '현재가' }))
+    expect(screen.getByLabelText('지정가')).toHaveValue('9700')
+
+    // 9,700원의 0.5%는 48.5 → 50원 격자. 고정 1,000원이면 한 번에 10%가 움직여 손절선(-3%)을 넘긴다.
+    fireEvent.click(screen.getByRole('button', { name: '지정가 올리기' }))
+    expect(screen.getByLabelText('지정가')).toHaveValue('9750')
+    fireEvent.click(screen.getByRole('button', { name: '지정가 내리기' }))
+    expect(screen.getByLabelText('지정가')).toHaveValue('9700')
+    expect(screen.getByText(/지금 값과 거의 같습니다/)).toBeInTheDocument()
+  })
+
+  it('지정가 내리기를 계속 눌러도 0 이하로는 내려가지 않는다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '지정가' }))
+    fireEvent.click(screen.getByRole('button', { name: '현재가' }))
+    const down = screen.getByRole('button', { name: '지정가 내리기' })
+    for (let i = 0; i < 40; i += 1) fireEvent.click(down)
+
+    const input = screen.getByLabelText('지정가') as HTMLInputElement
+    expect(Number(input.value)).toBeGreaterThan(0)
+  })
+
+  it('미체결 카드의 정정은 취소 후 재주문이 아니라 amendLimitOrder를 부른다', async () => {
+    vi.mocked(getPendingOrders).mockResolvedValue({
+      content: [pendingSummary({ orderId: 83 })],
+      nextCursor: null,
+      hasNext: false,
+    })
+    vi.mocked(amendLimitOrder).mockResolvedValue({
+      orderId: 83,
+      market: 'CRYPTO',
+      instrumentId: 701,
+      side: 'BUY',
+      orderType: 'LIMIT',
+      status: 'PENDING',
+      quantity: 2,
+      limitPrice: 130,
+      requestedAt: '2026-08-14T12:00:00',
+    })
+    renderFlow()
+
+    fireEvent.click(await screen.findByRole('button', { name: '예약 값 고치기' }))
+    fireEvent.change(screen.getByLabelText('바꿀 지정가'), { target: { value: '130' } })
+    fireEvent.change(screen.getByLabelText('바꿀 개수'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: '이 값으로 고치기' }))
+
+    await waitFor(() =>
+      expect(amendLimitOrder).toHaveBeenCalledWith(83, { limitPrice: '130', quantity: '2' }),
+    )
+    // 취소 후 재주문이면 예약이 잠깐 사라지고 주문 순서도 바뀐다 — 정정 API는 그러지 않는다.
+    expect(cancelLimitOrder).not.toHaveBeenCalled()
+    expect(placeLimitOrder).not.toHaveBeenCalled()
+    expect(await screen.findByText('130원')).toBeInTheDocument()
+  })
+
+  it('미체결 카드의 취소는 그대로 동작하고 취소됐다는 사실을 남긴다', async () => {
+    vi.mocked(getPendingOrders).mockResolvedValue({
+      content: [pendingSummary({ orderId: 83 })],
+      nextCursor: null,
+      hasNext: false,
+    })
+    renderFlow()
+
+    fireEvent.click(await screen.findByRole('button', { name: '지정가 주문 취소' }))
+    await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(83))
+
+    expect(await screen.findByText('예약을 취소했습니다. 체결되지 않았습니다.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '예약 값 고치기' })).not.toBeInTheDocument()
+    expect(amendLimitOrder).not.toHaveBeenCalled()
+  })
+
+  it('예약이 대기 목록에서 사라지면 주문 상태를 읽어 체결 사실을 알린다', async () => {
+    // 체결 알림이 없어 폴링이 유일한 감지 수단이다 — 카드를 조용히 지우면 팔렸는지 알 수 없다.
+    vi.useFakeTimers()
+    vi.mocked(getPendingOrders)
+      .mockResolvedValueOnce({ content: [pendingSummary({ orderId: 83 })], nextCursor: null, hasNext: false })
+      .mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
+    vi.mocked(getOrders).mockResolvedValue({
+      content: [pendingSummary({ orderId: 83, status: 'FILLED' })],
+      nextCursor: null,
+      hasNext: false,
+    })
+    renderFlow()
+    await flushPromises()
+    await flushPromises()
+    expect(screen.getByText(/정한 값이 되기를 기다리는 중입니다/)).toBeInTheDocument()
+
+    await act(async () => vi.advanceTimersByTime(3000))
+    await flushPromises()
+    await flushPromises()
+    await flushPromises()
+
+    expect(screen.queryByText(/정한 값이 되기를 기다리는 중입니다/)).not.toBeInTheDocument()
+    expect(screen.getByText('예약한 값에 체결됐습니다. 1개를 123원에 구매했습니다.')).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('사라진 예약의 최종 상태를 읽지 못하면 체결됐다고 지어내지 않는다', async () => {
+    vi.useFakeTimers()
+    vi.mocked(getPendingOrders)
+      .mockResolvedValueOnce({ content: [pendingSummary({ orderId: 83 })], nextCursor: null, hasNext: false })
+      .mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
+    vi.mocked(getOrders).mockRejectedValue(new Error('network'))
+    renderFlow()
+    await flushPromises()
+    await flushPromises()
+
+    await act(async () => vi.advanceTimersByTime(3000))
+    await flushPromises()
+    await flushPromises()
+    await flushPromises()
+
+    expect(
+      screen.getByText('예약이 대기 목록에서 사라졌습니다. 체결됐는지 취소됐는지는 확인하지 못했습니다.'),
+    ).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('안내 단계는 대상이 있을 수 있는 것만 담는다 — 주식엔 지정가, 예약 없으면 미체결을 뺀다', async () => {
+    // SpotlightTour는 대상 없는 단계를 건너뛰지만 1초를 기다린다. 오지 않을 대상을 기다리게 두지 않는다.
+    const stock = renderFlow(
+      attempt({ market: 'STOCK', instrumentId: 801, riskSnapshot: null }),
+      { ...progress(), tutorialKey: 'INVESTMENT_PRACTICE_V1' },
+    )
+    await flushPromises()
+    expect(tourSpy.targets).toEqual(['instrument', 'quantity', 'buy', 'chart', 'sell', 'reflection'])
+    stock.unmount()
+
+    const crypto = renderFlow(attempt({ riskSnapshot: null }), progress())
+    await flushPromises()
+    expect(tourSpy.targets).toEqual([
+      'instrument', 'order-type', 'quantity', 'buy', 'chart', 'sell', 'reflection',
+    ])
+    crypto.unmount()
+
+    vi.mocked(getPendingOrders).mockResolvedValue({
+      content: [pendingSummary({ orderId: 83 })],
+      nextCursor: null,
+      hasNext: false,
+    })
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(tourSpy.targets).toContain('pending'))
+    expect(tourSpy.targets).toEqual([
+      'instrument', 'order-type', 'quantity', 'buy', 'chart', 'pending', 'sell', 'reflection',
+    ])
   })
 })
