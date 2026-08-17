@@ -380,7 +380,7 @@ export function CandleChart({
   return (
     <div ref={ref} className={`relative w-full ${className}`}>
       {/* 확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다. */}
-      <div className="absolute right-1 top-1 z-10 flex items-center gap-1">
+      <div className="absolute right-1 -top-10 z-10 flex items-center gap-1">
         {isModified && (
           <button
             type="button"
