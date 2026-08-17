@@ -927,6 +927,8 @@ export function AttemptTutorialFlow({
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
+  /** 안내를 처음부터 다시 보여 주기 위해 SpotlightTour를 리마운트시키는 값. */
+  const [tourNonce, setTourNonce] = useState(0)
   /** 예약을 새로 건 순간을 세어 두고, 그 뒤 렌더에서 예약 카드를 화면 안으로 스크롤한다. */
   const [pendingCreatedNonce, setPendingCreatedNonce] = useState(0)
   const pendingCardRef = useRef<HTMLDivElement>(null)
@@ -1003,6 +1005,21 @@ export function AttemptTutorialFlow({
     setFlowError({ scope, message })
   }, [])
   const clearError = useCallback(() => setFlowError(null), [])
+
+  const tourStorageKey = `finplay.tour.tutorial.${market}`
+
+  /**
+   * 안내를 처음부터 다시 튼다. SpotlightTour는 마운트 시점에 localStorage를 한 번만 읽으므로
+   * 키를 지우는 것만으로는 부족하고 리마운트까지 해야 한다.
+   */
+  const handleReplayTour = useCallback(() => {
+    try {
+      localStorage.removeItem(tourStorageKey)
+    } catch {
+      // 저장소가 막힌 환경에서도 리마운트만으로 안내는 다시 뜬다.
+    }
+    setTourNonce((n) => n + 1)
+  }, [tourStorageKey])
 
   // 예약을 새로 건 직후에만 카드를 화면 안으로 옮긴다. setState 직후에는 아직 DOM이 없어
   // 동기 호출로는 잡히지 않으므로, 카드가 마운트된 뒤의 효과에서 부른다.
@@ -1562,7 +1579,12 @@ export function AttemptTutorialFlow({
 
   return (
     <div className="space-y-5">
-      <SpotlightTour active={!replay} storageKey={`finplay.tour.tutorial.${market}`} steps={tourSteps} />
+      <SpotlightTour
+        key={tourNonce}
+        active={!replay}
+        storageKey={tourStorageKey}
+        steps={tourSteps}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -1575,9 +1597,20 @@ export function AttemptTutorialFlow({
           <p className="mt-1 text-xs text-muted">새로고침해도 같은 연습과 가격 흐름이 이어집니다.</p>
         </div>
         <div>
-          <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={handleRestartClick}>
-            {restarting ? '정리하는 중…' : '처음부터 다시 시작'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/*
+              끝난 연습(replay)에는 안내가 가리킬 대상이 하나도 없다 — 눌러도 아무 일이 없는
+              버튼이라 아예 숨긴다.
+            */}
+            {!replay && (
+              <Button type="button" size="sm" variant="ghost" onClick={handleReplayTour}>
+                안내 다시 보기
+              </Button>
+            )}
+            <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={handleRestartClick}>
+              {restarting ? '정리하는 중…' : '처음부터 다시 시작'}
+            </Button>
+          </div>
           <ErrorNote error={flowError} scope="restart" />
         </div>
       </div>

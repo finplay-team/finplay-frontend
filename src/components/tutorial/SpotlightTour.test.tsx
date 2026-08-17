@@ -83,6 +83,21 @@ describe('SpotlightTour', () => {
     expect(screen.queryByText(steps[0].title)).not.toBeInTheDocument()
   })
 
+  it('본 기록을 지우고 key 로 리마운트하면 이미 본 안내도 처음 단계부터 다시 뜬다', () => {
+    // "안내 다시 보기"가 기대는 성질이다 — dismissed 초기값이 마운트 시점의 localStorage 라서
+    // 키만 지우고 그대로 두면 화면은 바뀌지 않는다.
+    mountTargets(['instrument', 'buy'])
+    localStorage.setItem(STORAGE_KEY, 'done')
+    const view = render(<SpotlightTour key="1" steps={steps} storageKey={STORAGE_KEY} active />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    localStorage.removeItem(STORAGE_KEY)
+    view.rerender(<SpotlightTour key="2" steps={steps} storageKey={STORAGE_KEY} active />)
+
+    expect(screen.getByRole('dialog', { name: '화면 사용법 안내' })).toBeInTheDocument()
+    expect(screen.getByText(steps[0].title)).toBeInTheDocument()
+  })
+
   it('대상이 있으면 첫 단계의 제목과 본문을 보여준다', () => {
     mountTargets(['instrument', 'buy'])
     renderTour()
