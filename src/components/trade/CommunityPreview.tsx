@@ -8,7 +8,7 @@ import { toUserMessage } from '../../lib/errorMessages'
 import { getPosts } from '../../services/communityService'
 import type { Post } from '../../services/types'
 
-const PREVIEW_SIZE = 3
+const PREVIEW_SIZE = 1
 const EXCERPT_MAX = 60
 
 interface Props {
@@ -53,8 +53,7 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
         {loadError && <p className="mt-3 text-sm text-rose-300">{loadError}</p>}
 
         {posts === null && !loadError && (
-          <div className="mt-4 space-y-2">
-            <div className="skeleton h-12" />
+          <div className="mt-4">
             <div className="skeleton h-12" />
           </div>
         )}
