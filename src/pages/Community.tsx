@@ -8,6 +8,7 @@ import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
 import { createPost, getPosts } from '../services/communityService'
+import { useInstruments } from '../hooks/useInstruments'
 import type { PostPage } from '../services/types'
 
 const PAGE_SIZE = 10
@@ -50,6 +51,11 @@ export function Community() {
     const parsed = Number(raw)
     return Number.isFinite(parsed) ? parsed : null
   })
+
+  /** 종목 배지 표시용 — 글이 하나도 없어도(목록에서 이름을 뽑을 수 없어도) 어느 종목인지 알 수 있게 한다. */
+  const { index } = useInstruments()
+  const filterInstrument =
+    filterInstrumentId !== null ? (index?.byId.get(filterInstrumentId) ?? null) : null
 
   useEffect(() => {
     let cancelled = false
@@ -111,7 +117,14 @@ export function Community() {
       <div className="relative mx-auto max-w-3xl">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Eyebrow>커뮤니티</Eyebrow>
+            <div className="flex items-center gap-2">
+              <Eyebrow>커뮤니티</Eyebrow>
+              {filterInstrument && (
+                <span className="inline-block rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-brand">
+                  {filterInstrument.name} · {filterInstrument.symbol}
+                </span>
+              )}
+            </div>
             <h1 className="mt-4 font-display text-3xl font-semibold leading-tight text-ink md:text-4xl">
               매매 경험을 나누는 곳
             </h1>
