@@ -35,9 +35,9 @@ type TutorialOrderType = 'MARKET' | 'LIMIT'
 /**
  * 종목 선택 화면과 완료 replay 화면에서 "왜 이 종목을 살 만한지" 감을 잡도록 보여주는 교육용 가상
  * 시나리오다. 실제 뉴스가 아니다 — 샌드박스 종목은 가상 종목이라 실제 뉴스가 존재할 수 없다. symbol별로
- * 고정된 문구이며 실행(run)마다 바뀌지 않는다. completed attempt는 재시작으로 초기화하지 않으므로
- * (TUTORIAL-FLOW-005 — 보상 중복 지급 방지) 이 기능 이전에 완료한 사용자는 replay 화면에서만 문구를
- * 볼 수 있다.
+ * 고정된 문구이며 실행(run)마다 바뀌지 않는다. 040(이슈 #402)부터 완료 attempt도 재시작할 수 있어
+ * replay 화면에 머물지 않고 종목 선택부터 다시 볼 수 있지만, 재시작하지 않고 완료 기록만 다시 보는
+ * 사용자를 위해 replay 화면에서도 계속 노출한다.
  */
 const INSTRUMENT_SCENARIOS: Record<string, string> = {
   SANDBOX_STK_1: '알파전자가 차세대 반도체 부품 양산 계약을 새로 체결했다는 소식이 전해졌습니다.',
@@ -326,21 +326,16 @@ export function AttemptTutorialFlow({
   )
 
   const handleRestartClick = useCallback(() => {
-    if (replay) return
     setShowRestartConfirm(true)
-  }, [replay])
+  }, [])
 
   const handleRestartCancel = useCallback(() => {
     setShowRestartConfirm(false)
   }, [])
 
   const handleRestartConfirm = useCallback(async () => {
-    // 다이얼로그가 열려 있는 동안 백그라운드 폴링으로 attempt가 완료(replay)로 바뀔 수 있다 —
-    // 그 경우 다이얼로그만 닫고 재시작 API는 부르지 않는다.
-    if (replay) {
-      setShowRestartConfirm(false)
-      return
-    }
+    // 040(이슈 #402)부터 완료(replay)된 attempt도 재시작할 수 있다 — 서버가 보상은
+    // 사용자·market 조합당 최초 완료 1회만 지급하고 재완료 때는 지급하지 않는다.
     setRestarting(true)
     setMutationError(null)
     try {
@@ -357,7 +352,7 @@ export function AttemptTutorialFlow({
       setRestarting(false)
       setShowRestartConfirm(false)
     }
-  }, [market, onAttemptChange, onRefresh, replay])
+  }, [market, onAttemptChange, onRefresh])
 
   const handleBuy = useCallback(async () => {
     if (attempt.instrumentId === null) return
@@ -554,11 +549,9 @@ export function AttemptTutorialFlow({
             새로고침해도 같은 실행과 가격 흐름이 이어집니다.
           </p>
         </div>
-        {!replay && (
-          <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={handleRestartClick}>
-            {restarting ? '정리하는 중…' : '처음부터 다시 시작'}
-          </Button>
-        )}
+        <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={handleRestartClick}>
+          {restarting ? '정리하는 중…' : '처음부터 다시 시작'}
+        </Button>
       </div>
 
       {attempt.instrumentId !== null && (
@@ -622,8 +615,15 @@ export function AttemptTutorialFlow({
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
           <p className="text-lg font-semibold text-ink">이 시장의 실습을 완료했습니다</p>
           <p className="mt-2 text-sm leading-relaxed text-muted">
-            완료 기록과 보상은 그대로 유지됩니다. 이 화면에서는 주문·관찰·복기·재시작을 실행하지 않습니다.
+            완료 기록과 보상은 그대로 유지됩니다. 이 화면에서는 주문·관찰·복기를 실행하지 않습니다 — 다시
+            연습하고 싶으면 위의 "처음부터 다시 시작"으로 새 실행을 시작하세요.
           </p>
+          {progress.rewardAmount !== null && (
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              완료 보상은 이 시장에서 최초 1회만 지급됩니다. 재시작해 다시 완료해도 보상은 추가로
+              지급되지 않습니다.
+            </p>
+          )}
           {replayInstrument && INSTRUMENT_SCENARIOS[replayInstrument.symbol] && (
             <p className="mt-3 text-xs leading-relaxed text-muted">
               <span className="font-medium text-ink/70">교육용 가상 시나리오</span>{' '}
