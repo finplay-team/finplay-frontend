@@ -29,7 +29,6 @@ vi.mock('../CandleChart', () => ({
 vi.mock('./CandleGuide', () => ({ CandleGuide: () => <div data-testid="candle-guide" /> }))
 vi.mock('./SpotlightTour', () => ({ SpotlightTour: () => null }))
 vi.mock('../../hooks/useIdempotencyKey', () => ({ useIdempotencyKey: () => 'tutorial-key' }))
-vi.mock('../../lib/accountPulse', () => ({ bumpAccount: vi.fn() }))
 vi.mock('../../lib/tutorialPulse', () => ({ bumpTutorial: vi.fn() }))
 vi.mock('../../services/instrumentService', () => ({
   loadInstruments: vi.fn(),

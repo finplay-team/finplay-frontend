@@ -8,7 +8,6 @@ import { CandleGuide } from './CandleGuide'
 import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
-import { bumpAccount } from '../../lib/accountPulse'
 import { formatDateTime, parseLocalDateTime, ratioToPercent } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { formatKRW, formatPercent } from '../../lib/format'
@@ -801,7 +800,6 @@ export function AttemptTutorialFlow({
         buyKey,
       )
       buyNonceRef.current += 1
-      bumpAccount()
       bumpTutorial()
       await onRefresh()
     } catch (error) {
@@ -896,7 +894,6 @@ export function AttemptTutorialFlow({
         sellKey,
       )
       sellNonceRef.current += 1
-      bumpAccount()
       bumpTutorial()
       await onRefresh()
     } catch (error) {
@@ -945,7 +942,6 @@ export function AttemptTutorialFlow({
         sellNonceRef.current += 1
         setSellOrderType('MARKET')
       }
-      bumpAccount()
       bumpTutorial()
       await onRefresh()
     } catch (error) {
