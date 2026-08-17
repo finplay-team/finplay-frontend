@@ -5,6 +5,7 @@ import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CandleGuide } from './CandleGuide'
+import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
 import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
@@ -475,6 +476,11 @@ export function AttemptTutorialFlow({
   const [answer, setAnswer] = useState('')
   const [reflecting, setReflecting] = useState(false)
   const [savedReflection, setSavedReflection] = useState<PracticeHoldingReflectionResponse | null>(null)
+  /**
+   * 축하 모달은 **이번에 실제로 보상을 받은 순간의 응답**으로만 열린다. 어디에도 영속하지 않으므로
+   * 새로고침·재진입에는 뜨지 않고, 재완료(rewardGranted=false)에도 뜨지 않는다.
+   */
+  const [celebrating, setCelebrating] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
@@ -516,6 +522,7 @@ export function AttemptTutorialFlow({
   const uiStep =
     attempt.status === 'SELECTING_INSTRUMENT' ? 1 : !attempt.riskSnapshot ? 2 : !fullySold ? 3 : 4
   const railTone = market === 'CRYPTO' ? 'bg-coin' : 'bg-brand'
+  const rewardSentence = rewardSentenceParts(market)
 
   const buyKey = useIdempotencyKey([
     attempt.attemptId,
@@ -970,6 +977,8 @@ export function AttemptTutorialFlow({
       setSavedReflection(saved)
       bumpTutorial()
       await onRefresh()
+      // 보상 금액은 갱신된 progress.rewardAmount에서 읽으므로 onRefresh 뒤에 연다.
+      if (saved.rewardGranted) setCelebrating(true)
     } catch (error) {
       showError(
         'reflection',
@@ -1113,10 +1122,17 @@ export function AttemptTutorialFlow({
 
       {replay ? (
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
-          <p className="text-lg font-semibold text-ink">이 시장의 실습을 완료했습니다</p>
+          <p className="text-lg font-semibold text-ink">{completionTitle(market)}</p>
+          {/*
+            문구는 축하 모달과 같은 곳(CompletionCelebration)에서 파생시킨다 — 같은 완료를 두 문구로
+            말하면 사용자가 다른 일로 읽는다. 다만 "축하합니다"는 완료한 그 순간의 말이라 모달에만 둔다.
+            이 카드는 나중에 다시 들어와도 보이는 기록 화면이라 매번 축하하면 어색해진다.
+          */}
           {progress.rewardAmount !== null && (
             <p className="mt-2 text-sm leading-relaxed text-ink">
-              축하합니다. 연습용 자금 {formatKRW(progress.rewardAmount)}이 계좌에 들어왔습니다.
+              {rewardSentence.before}
+              {formatKRW(progress.rewardAmount)}
+              {rewardSentence.after}
             </p>
           )}
           {tradeResult && (
@@ -1146,18 +1162,19 @@ export function AttemptTutorialFlow({
             실전에는 실제로 거래되는 종목이 있습니다. 여기서 연습한 종목은 가상이라 포트폴리오와 랭킹에는
             잡히지 않습니다. 다른 시장은 위쪽 주식·코인 탭에서 바꿀 수 있습니다.
           </p>
-          {progress.rewardAmount !== null && (
-            <p className="mt-2 text-xs leading-relaxed text-muted">
-              완료 보상은 이 시장에서 최초 1회만 지급됩니다. 재시작해 다시 완료해도 보상은 추가로
-              지급되지 않습니다.
-            </p>
-          )}
           <dl className="mt-5 grid gap-3 sm:grid-cols-3">
             <div><dt className="text-xs text-muted">산 개수</dt><dd className="mt-1 tabular text-ink">{evidence?.buyQuantity ?? '-'}</dd></div>
             <div><dt className="text-xs text-muted">판 개수</dt><dd className="mt-1 tabular text-ink">{evidence?.sellQuantity ?? '-'}</dd></div>
             <div><dt className="text-xs text-muted">남은 개수</dt><dd className="mt-1 tabular text-ink">{evidence?.remainingQuantity ?? '-'}</dd></div>
           </dl>
           {progress.completedAt && <p className="mt-4 text-xs text-muted">완료 {formatDateTime(progress.completedAt)}</p>}
+          {/* 재지급 제한은 사실이지만 축하보다 먼저 읽히면 안 된다 — 카드 맨 아래 작은 글씨로 둔다. */}
+          {progress.rewardAmount !== null && (
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              완료 보상은 이 시장에서 최초 1회만 지급됩니다. 재시작해 다시 완료해도 보상은 추가로
+              지급되지 않습니다.
+            </p>
+          )}
         </Card>
       ) : attempt.status === 'SELECTING_INSTRUMENT' ? (
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
@@ -1486,6 +1503,13 @@ export function AttemptTutorialFlow({
         busy={restarting}
         onConfirm={() => void handleRestartConfirm()}
         onCancel={handleRestartCancel}
+      />
+
+      <CompletionCelebration
+        open={celebrating}
+        market={market}
+        rewardAmount={progress.rewardAmount}
+        onClose={() => setCelebrating(false)}
       />
     </div>
   )
