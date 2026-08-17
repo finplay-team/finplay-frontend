@@ -161,6 +161,8 @@ export interface Candle {
   low: Decimal
   close: Decimal
   volume: Decimal
+  /** 아직 마감되지 않은 진행 중 봉이면 true. 서버 응답에는 없고 화면단에서 표시용으로만 붙인다. */
+  current?: boolean
 }
 
 /* ---------- SSE (GET /api/stocks/stream, Bearer 필수 → EventSource 사용 불가) ---------- */

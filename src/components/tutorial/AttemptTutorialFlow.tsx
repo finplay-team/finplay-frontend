@@ -1,14 +1,17 @@
 // 영속 attempt를 정본으로 종목 선택부터 완료 replay까지 단일 차트 실습 흐름을 제공하는 컴포넌트
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CandleChart } from '../CandleChart'
-import { Button } from '../ui/Button'
+import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { CandleGuide } from './CandleGuide'
+import { SpotlightTour } from './SpotlightTour'
+import type { SpotlightStep } from './SpotlightTour'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { bumpAccount } from '../../lib/accountPulse'
-import { formatDateTime } from '../../lib/datetime'
+import { formatDateTime, parseLocalDateTime, ratioToPercent } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
-import { formatKRW } from '../../lib/format'
+import { formatKRW, formatPercent } from '../../lib/format'
 import { bumpTutorial } from '../../lib/tutorialPulse'
 import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
 import { cancelLimitOrder, getPendingOrders, placeLimitOrder, placeOrder } from '../../services/orderService'
@@ -24,13 +27,68 @@ import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
   PracticeEvidenceResponse,
+  PracticeHoldingReflectionResponse,
+  PracticeSellVerdict,
+  PracticeTradeResultResponse,
   PracticeTutorialChartResponse,
 } from '../../services/tutorialTypes'
 import type { Candle, Instrument, LimitOrderResponse, Market } from '../../services/types'
 
 const TICK_MS = 3000
 const REFLECTION_MAX = 2000
+/**
+ * 관찰을 몇 번의 tick마다 반복할지. tick이 3초이므로 약 6초에 한 번이다.
+ *
+ * 서버가 evidence로 인정하는 조건은 (A) 손절·익절선에 더 가까워진 순간의 관찰 1회이거나
+ * (B) 최소 2분 범위에 걸친 관찰 3회다. 매수 직후 한 번만 기록하면 B는 구조적으로 불가능하고
+ * A는 가격 운에 달려, 실제로 튜토리얼이 완료 불가 상태로 막히는 것을 프로덕션에서 재현했다.
+ * 그래서 evidence가 붙을 때까지(observed) 주기적으로 계속 기록한다.
+ */
+const OBSERVE_EVERY_N_TICKS = 2
+/** 이 시간 이하로 남으면 카운트다운을 경고색으로 바꾼다. */
+const SALE_URGENT_MS = 60_000
 type TutorialOrderType = 'MARKET' | 'LIMIT'
+/** 오류를 "그 오류를 낸 액션 바로 아래"에 그리기 위한 위치 표시. 페이지 맨 아래 한 곳에만 두면 아무도 못 본다. */
+type ErrorScope = 'select' | 'buy' | 'sell' | 'pending' | 'observe' | 'reflection' | 'restart'
+interface FlowError {
+  scope: ErrorScope
+  message: string
+}
+
+const chartSummaryId = 'tutorial-chart-summary'
+
+/** 이 화면이 사용자에게 약속하는 4단계. 서버 chain의 단계 번호와는 별개다(아래 uiStep 주석 참고). */
+const STEP_TITLES = ['고르기', '사기', '지켜보기', '팔고 돌아보기'] as const
+
+const SELL_VERDICT_TEXT: Record<PracticeSellVerdict, string> = {
+  ABOVE_TAKE_PROFIT: '익절선 위에서 파셨습니다.',
+  BELOW_STOP_LOSS: '손절선 아래에서 파셨습니다.',
+  BETWEEN_LINES: '두 선 사이에서 파셨습니다.',
+}
+
+const REFLECTION_CHIPS = [
+  '값이 내려갈 때 불안했다',
+  '정해둔 선보다 일찍 팔았다',
+  '그냥 궁금해서 눌러봤다',
+] as const
+
+/**
+ * 게임식 스포트라이트 안내. 화면이 3초마다 갱신되고 매도 제한 시간도 흐르므로 한 단계를 한 호흡에
+ * 읽을 수 있게 짧게 쓴다. target 값은 아래 JSX의 data-tour 속성과 1:1로 대응한다.
+ *
+ * SpotlightTour는 최초 마운트에서만 유예 없이 즉시 앞으로 훑는다 — 1단계(instrument)가 종목 목록
+ * 로딩 때문에 늦게 떠도 안전한 이유는 타이머가 아니라 **그 시점에 뒤 단계 대상이 DOM에 하나도 없다**는
+ * 것 하나다(instrumentId가 null인 동안 차트 카드와 매수 카드를 아예 렌더하지 않는다). 로딩 중에
+ * 차트·매수 카드의 스켈레톤을 미리 띄우도록 바꾸면 이 전제가 깨져 1단계가 통째로 건너뛰어진다.
+ */
+const TOUR_STEPS: SpotlightStep[] = [
+  { target: 'instrument', title: '먼저 종목을 고릅니다', body: '연습용으로 만든 가상 종목이에요. 아무거나 골라도 괜찮습니다.' },
+  { target: 'quantity', title: '몇 개 살지 정합니다', body: '바로 아래에 얼마가 드는지 나옵니다. 연습용 가짜 돈입니다.' },
+  { target: 'buy', title: '여기를 누르면 삽니다', body: '산 값을 기준으로 팔 기준선 두 개가 자동으로 만들어집니다.' },
+  { target: 'chart', title: '값은 3초마다 움직입니다', body: '맨 오른쪽 막대 하나가 오늘입니다. 오르내리는 걸 지켜보세요.' },
+  { target: 'sell', title: '팔 때는 이 버튼입니다', body: '조금 지켜본 뒤에 눌립니다. 정해진 시간 안에 파는 연습이에요.' },
+  { target: 'reflection', title: '마지막은 한 줄 기록', body: '왜 그렇게 했는지 적어 보세요. 정답도 점수도 없습니다.' },
+]
 
 /**
  * 종목 선택 화면과 완료 replay 화면에서 "왜 이 종목을 살 만한지" 감을 잡도록 보여주는 교육용 가상
@@ -70,7 +128,212 @@ function toChartCandles(chart: PracticeTutorialChartResponse | null): Candle[] {
     low: candle.low,
     close: candle.close,
     volume: 0,
+    current: candle.current,
   }))
+}
+
+/** "+216원" / "-1,200원". 원화는 소수가 없으므로 formatKRW의 반올림을 그대로 쓴다. */
+function formatSignedKRW(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
+  return `${sign}${formatKRW(Math.abs(value))}`
+}
+
+/**
+ * 2단계 완료 한 줄. 수량이 null 이면 개수를 아예 말하지 않는다 — `?? 0` 으로 메우면
+ * "0개를 샀습니다"라는 **거짓 문장**이 된다. 0은 "모른다"가 아니라 "0개"라는 사실 주장이다.
+ *
+ * 실제로 서버가 이 상태를 만든다(실측): 완료한 시장을 재시작하면 attempt 는 IN_PROGRESS 인데
+ * 진행 조회는 예전 완료 응답을 돌려줘서 buyQuantity·sellQuantity·remainingQuantity 가 전부
+ * null 로 온다. 체결가와 손절·익절선은 정상이라 수량만 비어 있다.
+ */
+function buyDoneText(buyQuantity: number | null, entryPrice: number | null): string {
+  if (entryPrice === null) return '2. 사기 완료'
+  if (buyQuantity === null) return `2. 사기 완료 · ${formatKRW(entryPrice)}에 샀습니다`
+  return `2. 사기 완료 · ${buyQuantity}개를 ${formatKRW(entryPrice)}에 샀습니다`
+}
+
+function formatMmSs(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000))
+  const mm = String(Math.floor(total / 60)).padStart(2, '0')
+  const ss = String(total % 60).padStart(2, '0')
+  return `${mm}:${ss}`
+}
+
+/** 액션이 낸 오류를 그 액션 바로 아래에 그린다 — 페이지 맨 아래 한 곳에만 두면 아무도 못 본다. */
+function ErrorNote({ error, scope }: { error: FlowError | null; scope: ErrorScope }) {
+  if (!error || error.scope !== scope) return null
+  return <p className="mt-3 text-sm text-loss">{error.message}</p>
+}
+
+function StepRail({ current, tone }: { current: number; tone: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <p className="text-xs font-medium text-ink">
+        4단계 중 {current}단계 · {STEP_TITLES[current - 1]}
+      </p>
+      <div className="flex gap-1" aria-hidden="true">
+        {STEP_TITLES.map((title, index) => (
+          <span
+            key={title}
+            className={`h-1.5 w-7 rounded-full ${index < current ? tone : 'bg-white/[0.08]'}`}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** 끝낸 단계를 DOM에서 지우지 않고 한 줄로 남긴다 — 방금 자기가 한 게 몇 번이었는지 확인시켜 준다. */
+function DoneLine({ text }: { text: string }) {
+  return (
+    <p className="rounded-2xl border border-line bg-elevated/60 px-4 py-3 text-sm text-muted">
+      <span className="text-gain">✓</span> {text}
+    </p>
+  )
+}
+
+function SaleCountdown({ remainingMs }: { remainingMs: number }) {
+  const urgent = remainingMs <= SALE_URGENT_MS
+  return (
+    <div
+      className={`rounded-2xl border px-4 py-3 text-sm ${urgent ? 'border-loss/30 bg-loss/10 text-loss' : 'border-line bg-elevated/60 text-muted'}`}
+    >
+      <span className="tabular font-medium">{formatMmSs(remainingMs)}</span> 안에 파는 연습입니다.
+      {urgent ? ' 이제 파는 게 좋습니다.' : ' 시간이 끝나면 이번 연습은 여기서 멈춥니다.'}
+    </div>
+  )
+}
+
+/**
+ * 차트 옆 상시 텍스트 요약. 호버가 안 되는 모바일과 화면 읽기 도구를 함께 구제한다 —
+ * CandleChart의 describedById로도 연결한다.
+ */
+function ChartSummary({
+  latestPrice,
+  high,
+  low,
+  dayCount,
+  entryPrice,
+  stopLossPrice,
+  takeProfitPrice,
+}: {
+  latestPrice: number | null
+  high: number | null
+  low: number | null
+  dayCount: number
+  entryPrice: number | null
+  stopLossPrice: number | null
+  takeProfitPrice: number | null
+}) {
+  if (latestPrice === null) {
+    return (
+      <p id={chartSummaryId} className="mt-3 text-sm leading-relaxed text-muted">
+        가격을 불러오는 중입니다.
+      </p>
+    )
+  }
+
+  if (entryPrice === null || stopLossPrice === null || takeProfitPrice === null) {
+    return (
+      <p id={chartSummaryId} className="mt-3 text-sm leading-relaxed text-muted">
+        지금 가격은 {formatKRW(latestPrice)}입니다.
+        {high !== null && low !== null &&
+          ` 최근 ${dayCount}일 중 가장 높았던 값은 ${formatKRW(high)}, 가장 낮았던 값은 ${formatKRW(low)}입니다.`}
+      </p>
+    )
+  }
+
+  const fromEntry = entryPrice === 0 ? 0 : ((latestPrice - entryPrice) / entryPrice) * 100
+  const toTakeProfit = ((takeProfitPrice - latestPrice) / latestPrice) * 100
+  const toStopLoss = ((latestPrice - stopLossPrice) / latestPrice) * 100
+  const entryPhrase =
+    fromEntry > 0
+      ? `${Math.abs(fromEntry).toFixed(1)}% 높습니다`
+      : fromEntry < 0
+        ? `${Math.abs(fromEntry).toFixed(1)}% 낮습니다`
+        : '같습니다'
+
+  return (
+    <p id={chartSummaryId} className="mt-3 text-sm leading-relaxed text-muted">
+      지금 가격은 {formatKRW(latestPrice)}으로, 산 값({formatKRW(entryPrice)})보다 {entryPhrase}.{' '}
+      {toTakeProfit > 0
+        ? `익절선(${formatKRW(takeProfitPrice)})까지 ${toTakeProfit.toFixed(1)}% 남았고, `
+        : `익절선(${formatKRW(takeProfitPrice)})은 이미 지났고, `}
+      {toStopLoss > 0
+        ? `손절선(${formatKRW(stopLossPrice)})까지는 ${toStopLoss.toFixed(1)}% 남았습니다.`
+        : `손절선(${formatKRW(stopLossPrice)})은 이미 지났습니다.`}
+    </p>
+  )
+}
+
+/** 매도 전 "지금 팔면 얼마". riskSnapshot.entryPrice와 차트 최신가만으로 계산한다. */
+function LivePnl({
+  entryPrice,
+  latestPrice,
+  quantity,
+}: {
+  entryPrice: number
+  latestPrice: number
+  quantity: number
+}) {
+  const diff = (latestPrice - entryPrice) * quantity
+  const percent = entryPrice === 0 ? 0 : ((latestPrice - entryPrice) / entryPrice) * 100
+  const tone = diff > 0 ? 'text-gain' : diff < 0 ? 'text-loss' : 'text-muted'
+  return (
+    <p className="text-sm text-muted">
+      {quantity}개를 {formatKRW(entryPrice)}에 샀고 지금은 {formatKRW(latestPrice)}입니다. 지금 팔면{' '}
+      <span className={`tabular font-medium ${tone}`}>
+        {formatSignedKRW(diff)} ({formatPercent(percent)})
+      </span>
+      .
+    </p>
+  )
+}
+
+/**
+ * 매도 후 실현 손익. tradeResult는 백엔드 PR 머지 전이라 운영 응답에 아직 없다 —
+ * 없으면 이 블록 전체를 조용히 숨긴다(화면이 깨지면 안 된다).
+ */
+function TradeResultBlock({ result }: { result: PracticeTradeResultResponse }) {
+  const pnl = result.realizedPnl
+  const tone = pnl === null ? 'text-muted' : pnl > 0 ? 'text-gain' : pnl < 0 ? 'text-loss' : 'text-muted'
+  return (
+    <div className="rounded-2xl border border-line bg-elevated/60 p-4">
+      <dl className="grid gap-3 sm:grid-cols-4">
+        <div>
+          <dt className="text-xs text-muted">산 값</dt>
+          <dd className="mt-1 tabular text-sm text-ink">
+            {result.buyPrice === null ? '-' : formatKRW(result.buyPrice)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">판 값</dt>
+          <dd className="mt-1 tabular text-sm text-ink">
+            {result.sellPrice === null ? '-' : formatKRW(result.sellPrice)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">번 돈 / 잃은 돈</dt>
+          <dd className={`mt-1 tabular text-sm ${tone}`}>{pnl === null ? '-' : formatSignedKRW(pnl)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">수익률</dt>
+          <dd className={`mt-1 tabular text-sm ${tone}`}>
+            {result.returnRate === null ? '-' : formatPercent(ratioToPercent(result.returnRate))}
+          </dd>
+        </div>
+      </dl>
+      {result.sellVerdict !== null && (
+        <p className="mt-3 text-sm text-muted">{SELL_VERDICT_TEXT[result.sellVerdict]}</p>
+      )}
+      {pnl !== null && pnl < 0 && (
+        <p className="mt-3 text-sm leading-relaxed text-muted">
+          잘못하신 게 아닙니다. 값이 오를지 내릴지는 아무도 미리 알 수 없고, 그래서 투자하는 사람은 모두
+          손실을 겪습니다. 중요한 건 손실이 났느냐가 아니라 얼마나 크게 났느냐입니다.
+        </p>
+      )}
+    </div>
+  )
 }
 
 function RiskEducationCard({ attempt }: { attempt: PracticeAttemptResponse }) {
@@ -78,25 +341,36 @@ function RiskEducationCard({ attempt }: { attempt: PracticeAttemptResponse }) {
   if (!risk) return null
   return (
     <Card accent={attempt.market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">서버가 고정한 위험 기준</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">내가 팔 기준선</p>
       <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         <div>
-          <dt className="text-xs text-muted">매수 체결가</dt>
+          <dt className="text-xs text-muted">내가 산 값</dt>
           <dd className="mt-1 tabular text-base text-ink">{formatKRW(risk.entryPrice)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">손절 교육선 · -3%</dt>
+          <dt className="text-xs text-muted">더 떨어지면 파는 선 (손절, -3%)</dt>
           <dd className="mt-1 tabular text-base text-loss">{formatKRW(risk.stopLossPrice)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">익절 교육선 · +5%</dt>
+          <dt className="text-xs text-muted">더 오르면 파는 선 (익절, +5%)</dt>
           <dd className="mt-1 tabular text-base text-gain">{formatKRW(risk.takeProfitPrice)}</dd>
         </div>
       </dl>
-      <p className="mt-4 text-xs leading-relaxed text-muted">
-        이 값은 정답이나 자동 주문이 아니라 위험을 숫자로 바라보는 연습 기준입니다. 최초 매수 체결가에서
-        서버가 한 번만 계산하며, 현재 가격이 움직여도 이번 실행 동안 바뀌지 않습니다.
-      </p>
+      <div className="mt-4 space-y-3 text-xs leading-relaxed text-muted">
+        <p className="text-ink">이 선에 닿아도 자동으로 팔리지는 않습니다. 팔지 말지는 직접 정하세요.</p>
+        <p>
+          <span className="font-medium text-ink">손절선</span>은 "여기까지 내려가면 더 버티지 않고
+          팔겠다"고 미리 정해두는 값입니다. 손실을 확정하는 대신 더 큰 손실을 막는 행동입니다.{' '}
+          <span className="font-medium text-ink">익절선</span>은 "여기까지 오르면 욕심내지 않고 팔겠다"고
+          정해두는 값입니다.
+        </p>
+        <p>
+          <span className="font-medium text-ink">왜 -3%와 +5%인가요.</span> 손실 쪽을 이익 쪽보다 좁게
+          잡았습니다. 잃을 때는 작게 잃고 벌 때는 크게 번다는 뜻이고, 이렇게 하면 열 번 중 네 번만 맞아도
+          전체로는 손해를 보지 않습니다. 숫자 자체가 정답인 건 아니지만 이 원칙은 어디서나 통합니다.
+        </p>
+        <p>처음 산 값으로 한 번 정해진 뒤에는 가격이 움직여도 바뀌지 않습니다.</p>
+      </div>
     </Card>
   )
 }
@@ -121,7 +395,7 @@ export function AttemptTutorialFlow({
   const [instruments, setInstruments] = useState<Instrument[]>([])
   const [busyInstrumentId, setBusyInstrumentId] = useState<number | null>(null)
   const [quantity, setQuantity] = useState(market === 'STOCK' ? '1' : '1')
-  const [mutationError, setMutationError] = useState<string | null>(null)
+  const [flowError, setFlowError] = useState<FlowError | null>(null)
   const [buying, setBuying] = useState(false)
   const [buyOrderType, setBuyOrderType] = useState<TutorialOrderType>('MARKET')
   const [buyLimitPrice, setBuyLimitPrice] = useState('')
@@ -135,9 +409,11 @@ export function AttemptTutorialFlow({
   const [cancellingPending, setCancellingPending] = useState(false)
   const [answer, setAnswer] = useState('')
   const [reflecting, setReflecting] = useState(false)
+  const [savedReflection, setSavedReflection] = useState<PracticeHoldingReflectionResponse | null>(null)
   const [restarting, setRestarting] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
-  const [replayInstrument, setReplayInstrument] = useState<Instrument | null>(null)
+  const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const buyNonceRef = useRef(0)
   const sellNonceRef = useRef(0)
   const autoObserveHoldingIdRef = useRef<number | null>(null)
@@ -155,6 +431,21 @@ export function AttemptTutorialFlow({
   const expired = progress.steps.find((step) => step.step === 4)?.status === 'EXPIRED'
   const candles = useMemo(() => toChartCandles(chart), [chart])
   const latestPrice = chart && chart.candles.length > 0 ? chart.candles[chart.candles.length - 1].close : null
+  const chartHigh = chart && chart.candles.length > 0 ? Math.max(...chart.candles.map((c) => c.high)) : null
+  const chartLow = chart && chart.candles.length > 0 ? Math.min(...chart.candles.map((c) => c.low)) : null
+  const tradeResult = evidence?.tradeResult ?? null
+  const saleDeadlineAt = evidence?.saleDeadlineAt ?? null
+  const scenario = selectedInstrument ? INSTRUMENT_SCENARIOS[selectedInstrument.symbol] : undefined
+
+  /**
+   * 이 화면이 사용자에게 보여 주는 4단계는 서버 chain의 단계 번호(progress.currentStep)와 대응하지
+   * 않는다 — 서버 chain은 관심등록·매수의사까지 포함하지만 이 화면은 고르기·사기·지켜보기·팔고
+   * 돌아보기로 다시 묶었다. 그래서 화면에 쓰는 번호는 attempt·evidence 상태에서 직접 만든다.
+   */
+  const uiStep =
+    attempt.status === 'SELECTING_INSTRUMENT' ? 1 : !attempt.riskSnapshot ? 2 : !fullySold ? 3 : 4
+  const railTone = market === 'CRYPTO' ? 'bg-coin' : 'bg-brand'
+
   const buyKey = useIdempotencyKey([
     attempt.attemptId,
     attempt.runNumber,
@@ -178,6 +469,18 @@ export function AttemptTutorialFlow({
     pendingOrderRef.current = pendingOrder
   }, [pendingOrder])
 
+  // tick 루프가 매번 다시 구독되지 않도록, 반복 관찰 판단에 쓰는 값만 ref로 흘려보낸다.
+  const observeStateRef = useRef({ holdingId, observed, fullySold })
+  useEffect(() => {
+    observeStateRef.current = { holdingId, observed, fullySold }
+  }, [holdingId, observed, fullySold])
+  const ticksSinceObserveRef = useRef(0)
+
+  const showError = useCallback((scope: ErrorScope, message: string) => {
+    setFlowError({ scope, message })
+  }, [])
+  const clearError = useCallback(() => setFlowError(null), [])
+
   useEffect(() => {
     if (attempt.status !== 'SELECTING_INSTRUMENT') return
     let cancelled = false
@@ -186,28 +489,29 @@ export function AttemptTutorialFlow({
         if (!cancelled) setInstruments(items.filter((item) => item.isTutorialSample && item.tradable))
       })
       .catch((error) => {
-        if (!cancelled) setMutationError(toUserMessage(error))
+        if (!cancelled) showError('select', toUserMessage(error))
       })
     return () => {
       cancelled = true
     }
-  }, [attempt.status, market])
+  }, [attempt.status, market, showError])
 
+  // 고른 종목 이름은 완료 요약과 시나리오 문구에 필요하다 — replay뿐 아니라 진행 중에도 읽는다.
   useEffect(() => {
-    if (!replay || attempt.instrumentId === null) {
-      setReplayInstrument(null)
+    if (attempt.instrumentId === null) {
+      setSelectedInstrument(null)
       return
     }
     let cancelled = false
     ensureInstrumentCache()
       .catch(() => undefined)
       .then(() => {
-        if (!cancelled) setReplayInstrument(getCachedInstrument(attempt.instrumentId as number) ?? null)
+        if (!cancelled) setSelectedInstrument(getCachedInstrument(attempt.instrumentId as number) ?? null)
       })
     return () => {
       cancelled = true
     }
-  }, [replay, attempt.instrumentId])
+  }, [attempt.instrumentId])
 
   useEffect(() => {
     if (attempt.instrumentId === null) {
@@ -261,6 +565,17 @@ export function AttemptTutorialFlow({
     }
   }, [attempt.instrumentId, market, replay])
 
+  // 매도 제한 시각이 있을 때만 초 단위로 다시 그린다 — 제한이 없으면 타이머 자체를 걸지 않는다.
+  useEffect(() => {
+    if (saleDeadlineAt === null || replay) return
+    setNowMs(Date.now())
+    const timer = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [saleDeadlineAt, replay])
+
+  const saleRemainingMs =
+    saleDeadlineAt === null ? null : parseLocalDateTime(saleDeadlineAt).getTime() - nowMs
+
   useEffect(() => {
     if (replay || !chartReady || attempt.status !== 'IN_PROGRESS' || attempt.instrumentId === null) return
     let stopped = false
@@ -286,6 +601,27 @@ export function AttemptTutorialFlow({
           }
         }
         await onRefresh()
+        // evidence가 붙을 때까지 관찰을 주기적으로 반복한다. 실패해도 화면을 오류로 덮지 않고
+        // 다음 주기에 조용히 다시 시도한다.
+        const state = observeStateRef.current
+        ticksSinceObserveRef.current += 1
+        if (
+          !stopped &&
+          !state.observed &&
+          !state.fullySold &&
+          state.holdingId !== null &&
+          ticksSinceObserveRef.current >= OBSERVE_EVERY_N_TICKS
+        ) {
+          ticksSinceObserveRef.current = 0
+          try {
+            await recordHoldingObservation(state.holdingId)
+            if (stopped) return
+            bumpTutorial()
+            await onRefresh()
+          } catch {
+            // 다음 주기에 재시도한다.
+          }
+        }
       } catch (error) {
         if (!stopped) setChartError(toUserMessage(error))
       } finally {
@@ -311,18 +647,18 @@ export function AttemptTutorialFlow({
   const handleSelect = useCallback(
     async (instrumentId: number) => {
       setBusyInstrumentId(instrumentId)
-      setMutationError(null)
+      clearError()
       try {
         const selected = await selectPracticeInstrument(market, instrumentId)
         onAttemptChange(selected)
         await onRefresh()
       } catch (error) {
-        setMutationError(toUserMessage(error))
+        showError('select', toUserMessage(error))
       } finally {
         setBusyInstrumentId(null)
       }
     },
-    [market, onAttemptChange, onRefresh],
+    [clearError, market, onAttemptChange, onRefresh, showError],
   )
 
   const handleRestartClick = useCallback(() => {
@@ -337,37 +673,41 @@ export function AttemptTutorialFlow({
     // 040(이슈 #402)부터 완료(replay)된 attempt도 재시작할 수 있다 — 서버가 보상은
     // 사용자·market 조합당 최초 완료 1회만 지급하고 재완료 때는 지급하지 않는다.
     setRestarting(true)
-    setMutationError(null)
+    clearError()
     try {
       const restarted = await restartPracticeAttempt(market)
       setChart(null)
       setChartReady(false)
       setAnswer('')
       setQuantity('1')
+      setSavedReflection(null)
       onAttemptChange(restarted)
       await onRefresh()
     } catch (error) {
-      setMutationError(toUserMessage(error))
+      showError('restart', toUserMessage(error))
     } finally {
       setRestarting(false)
       setShowRestartConfirm(false)
     }
-  }, [market, onAttemptChange, onRefresh])
+  }, [clearError, market, onAttemptChange, onRefresh, showError])
 
   const handleBuy = useCallback(async () => {
     if (attempt.instrumentId === null) return
     const parsed = Number(quantity)
     if (!(parsed > 0) || (market === 'STOCK' && !Number.isInteger(parsed))) {
-      setMutationError(market === 'STOCK' ? '주식 수량은 1주 이상의 정수로 입력해 주세요.' : '수량을 입력해 주세요.')
+      showError(
+        'buy',
+        market === 'STOCK' ? '주식은 1주 단위입니다. 1 이상의 정수로 적어 주세요.' : '몇 개 살지 적어 주세요.',
+      )
       return
     }
     setBuying(true)
-    setMutationError(null)
+    clearError()
     try {
       if (buyOrderType === 'LIMIT') {
         const parsedLimit = Number(buyLimitPrice)
         if (market !== 'CRYPTO' || !(parsedLimit > 0)) {
-          setMutationError('지정가를 입력해 주세요.')
+          showError('buy', '얼마가 되면 살지 값을 적어 주세요.')
           return
         }
         const created = await placeLimitOrder(
@@ -399,19 +739,16 @@ export function AttemptTutorialFlow({
       bumpTutorial()
       await onRefresh()
     } catch (error) {
-      setMutationError(toUserMessage(error))
+      showError('buy', toUserMessage(error))
     } finally {
       setBuying(false)
     }
-  }, [attempt.instrumentId, buyKey, buyLimitPrice, buyOrderType, market, onRefresh, quantity])
+  }, [attempt.instrumentId, buyKey, buyLimitPrice, buyOrderType, clearError, market, onRefresh, quantity, showError])
 
-  // 매도 전 "관찰" 버튼을 수동으로 눌러야 하던 걸 없앴다 — 매수 체결 후 holding이 잡히는 즉시
-  // 서버에 한 번 자동으로 기록한다. 보상·evidence 판정 조건 자체는 그대로다(서버가 여전히 요구),
-  // 사용자가 직접 버튼을 눌러야 하는 수동 단계만 없앤 것.
-  //
-  // 매수 직후엔 서버 evidence 체인이 아직 반영되기 전이라 첫 시도가 PRACTICE_STEP_LOCKED·
+  // 매수 체결 직후 첫 관찰. 서버 evidence 체인이 아직 반영되기 전이라 첫 시도가 PRACTICE_STEP_LOCKED·
   // PRACTICE_EVIDENCE_MISSING으로 일시적으로 튕길 수 있다(실측, 2026-08-16 — 프로덕션에서 재현).
   // 그래서 실패해도 바로 포기하지 않고 짧게 쉬었다 자동으로 몇 번 더 시도한 뒤에만 재시도 버튼을 보여준다.
+  // 여기서 끝이 아니라, 위 tick 루프가 evidence가 붙을 때까지 관찰을 계속 반복한다.
   useEffect(() => {
     if (replay || holdingId === null || observed) return
     if (autoObserveHoldingIdRef.current === holdingId) return
@@ -422,7 +759,7 @@ export function AttemptTutorialFlow({
     const attemptObserve = (retriesLeft: number) => {
       setObserving(true)
       setObserveFailed(false)
-      setMutationError(null)
+      setFlowError(null)
       recordHoldingObservation(holdingId)
         .then(() => {
           if (cancelled) return
@@ -440,11 +777,12 @@ export function AttemptTutorialFlow({
           autoObserveHoldingIdRef.current = null
           setObserveFailed(true)
           setObserving(false)
-          setMutationError(
-            toUserMessage(error, {
-              PRACTICE_EVIDENCE_MISSING: '가격을 관찰하려면 먼저 매수가 체결되어 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
+          setFlowError({
+            scope: 'observe',
+            message: toUserMessage(error, {
+              PRACTICE_EVIDENCE_MISSING: '가격을 지켜보려면 먼저 사기가 끝나 있어야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
             }),
-          )
+          })
         })
     }
 
@@ -459,12 +797,12 @@ export function AttemptTutorialFlow({
   const handleSell = useCallback(async () => {
     if (attempt.instrumentId === null || remainingQuantity === null || remainingQuantity <= 0) return
     setSelling(true)
-    setMutationError(null)
+    clearError()
     try {
       if (sellOrderType === 'LIMIT') {
         const parsedLimit = Number(sellLimitPrice)
         if (market !== 'CRYPTO' || !(parsedLimit > 0)) {
-          setMutationError('지정가를 입력해 주세요.')
+          showError('sell', '얼마가 되면 팔지 값을 적어 주세요.')
           return
         }
         const created = await placeLimitOrder(
@@ -496,95 +834,173 @@ export function AttemptTutorialFlow({
       bumpTutorial()
       await onRefresh()
     } catch (error) {
-      setMutationError(toUserMessage(error))
+      showError('sell', toUserMessage(error))
     } finally {
       setSelling(false)
     }
-  }, [attempt.instrumentId, market, onRefresh, remainingQuantity, sellKey, sellLimitPrice, sellOrderType])
+  }, [attempt.instrumentId, clearError, market, onRefresh, remainingQuantity, sellKey, sellLimitPrice, sellOrderType, showError])
 
   const handleCancelPending = useCallback(async () => {
     if (!pendingOrder || cancellingPending) return
     setCancellingPending(true)
-    setMutationError(null)
+    clearError()
     try {
       await cancelLimitOrder(pendingOrder.orderId)
       setPendingOrder(null)
       await onRefresh()
     } catch (error) {
-      setMutationError(toUserMessage(error))
+      showError('pending', toUserMessage(error))
     } finally {
       setCancellingPending(false)
     }
-  }, [cancellingPending, onRefresh, pendingOrder])
+  }, [cancellingPending, clearError, onRefresh, pendingOrder, showError])
+
+  /**
+   * 지정가 대기 탈출로. 정한 값에 영영 안 닿아 연습이 멈추는 걸 막는다 —
+   * 대기 주문을 취소하고 같은 수량을 지금 값으로 바로 체결한다.
+   */
+  const handleFillPendingNow = useCallback(async () => {
+    if (!pendingOrder || cancellingPending || attempt.instrumentId === null) return
+    const side = pendingOrder.side
+    const orderQuantity = String(pendingOrder.quantity)
+    setCancellingPending(true)
+    clearError()
+    try {
+      await cancelLimitOrder(pendingOrder.orderId)
+      setPendingOrder(null)
+      await placeOrder(
+        { market, instrumentId: attempt.instrumentId, side, orderType: 'MARKET', quantity: orderQuantity },
+        side === 'BUY' ? buyKey : sellKey,
+      )
+      if (side === 'BUY') {
+        buyNonceRef.current += 1
+        setBuyOrderType('MARKET')
+      } else {
+        sellNonceRef.current += 1
+        setSellOrderType('MARKET')
+      }
+      bumpAccount()
+      bumpTutorial()
+      await onRefresh()
+    } catch (error) {
+      showError('pending', toUserMessage(error))
+    } finally {
+      setCancellingPending(false)
+    }
+  }, [attempt.instrumentId, buyKey, cancellingPending, clearError, market, onRefresh, pendingOrder, sellKey, showError])
 
   const handleReflection = useCallback(async () => {
     const trimmed = answer.trim()
     if (holdingId === null || trimmed.length === 0 || trimmed.length > REFLECTION_MAX) return
     setReflecting(true)
-    setMutationError(null)
+    clearError()
     try {
-      await saveHoldingReflection(holdingId, trimmed)
+      const saved = await saveHoldingReflection(holdingId, trimmed)
+      setSavedReflection(saved)
       bumpTutorial()
       await onRefresh()
     } catch (error) {
-      setMutationError(
+      showError(
+        'reflection',
         toUserMessage(error, {
           PRACTICE_EVIDENCE_MISSING:
-            '복기를 남기려면 먼저 매도를 완료하고, 매도 시점까지 가격을 한 번 이상 관찰해야 합니다. 관찰 기록을 남긴 뒤 다시 시도해 주세요.',
+            '기록을 남기려면 파는 것까지 끝내고, 그전에 가격을 한 번 이상 지켜본 기록이 있어야 합니다. 아래 버튼으로 다시 시도해 주세요.',
         }),
       )
     } finally {
       setReflecting(false)
     }
-  }, [answer, holdingId, onRefresh])
+  }, [answer, clearError, holdingId, onRefresh, showError])
+
+  const retryObserve = useCallback(() => setObserveRetryNonce((n) => n + 1), [])
+
+  const buyUnitPrice =
+    buyOrderType === 'LIMIT' && Number(buyLimitPrice) > 0 ? Number(buyLimitPrice) : latestPrice
+  const buyQuantityNumber = Number(quantity)
 
   return (
     <div className="space-y-5">
+      <SpotlightTour active={!replay} storageKey={`finplay.tour.tutorial.${market}`} steps={TOUR_STEPS} />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-ink">
-            실행 #{attempt.runNumber} · {replay ? '완료 기록 다시 보기' : '진행 중'}
+            {attempt.runNumber}번째 연습 · {replay ? '완료 기록 다시 보기' : '진행 중'}
           </p>
-          <p className="mt-1 text-xs text-muted">
-            새로고침해도 같은 실행과 가격 흐름이 이어집니다.
-          </p>
+          <div className="mt-2">
+            <StepRail current={uiStep} tone={railTone} />
+          </div>
+          <p className="mt-1 text-xs text-muted">새로고침해도 같은 연습과 가격 흐름이 이어집니다.</p>
         </div>
-        <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={handleRestartClick}>
-          {restarting ? '정리하는 중…' : '처음부터 다시 시작'}
-        </Button>
+        <div>
+          <Button type="button" size="sm" variant="ghost" disabled={restarting} onClick={handleRestartClick}>
+            {restarting ? '정리하는 중…' : '처음부터 다시 시작'}
+          </Button>
+          <ErrorNote error={flowError} scope="restart" />
+        </div>
       </div>
 
+      {!replay && !expired && !fullySold && saleRemainingMs !== null && (
+        <SaleCountdown remainingMs={saleRemainingMs} />
+      )}
+
       {attempt.instrumentId !== null && (
-        <Card innerClassName="p-5">
-          <div className="flex items-baseline justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-ink">이번 실행의 29+1 일봉</p>
-              <p className="mt-1 text-xs text-muted">29개 완결 일봉과 가상 12:00부터 진행 중인 오늘 일봉입니다.</p>
+        <div data-tour="chart">
+          <Card innerClassName="p-5">
+            <div className="flex items-baseline justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-ink">최근 30일 가격 흐름</p>
+                <p className="mt-1 text-xs text-muted">
+                  막대 하나가 하루입니다. 왼쪽은 이미 끝난 날이고, 맨 오른쪽 하나가 지금 움직이는 오늘입니다.
+                </p>
+              </div>
+              <p className="tabular text-sm text-ink">{latestPrice === null ? '불러오는 중…' : formatKRW(latestPrice)}</p>
             </div>
-            <p className="tabular text-sm text-ink">{latestPrice === null ? '불러오는 중…' : formatKRW(latestPrice)}</p>
-          </div>
-          <div className="mt-4">
-            <CandleChart
-              candles={candles}
-              interval="1d"
-              maxBars={30}
-              height={260}
-              emptyMessage="차트를 불러오는 중입니다."
-              referenceLines={
-                attempt.riskSnapshot
-                  ? [
-                      { value: attempt.riskSnapshot.stopLossPrice, tone: 'loss', label: '손절 -3%' },
-                      { value: attempt.riskSnapshot.takeProfitPrice, tone: 'gain', label: '익절 +5%' },
-                    ]
-                  : undefined
-              }
+            <div className="mt-4">
+              <CandleChart
+                candles={candles}
+                interval="1d"
+                maxBars={30}
+                height={260}
+                showVolume={false}
+                beginnerLabels
+                describedById={chartSummaryId}
+                emptyMessage="차트를 불러오는 중입니다."
+                referenceLines={
+                  attempt.riskSnapshot
+                    ? [
+                        { value: attempt.riskSnapshot.stopLossPrice, tone: 'loss', label: '손절 -3%' },
+                        { value: attempt.riskSnapshot.takeProfitPrice, tone: 'gain', label: '익절 +5%' },
+                      ]
+                    : undefined
+                }
+              />
+            </div>
+            <ChartSummary
+              latestPrice={latestPrice}
+              high={chartHigh}
+              low={chartLow}
+              dayCount={chart?.candles.length ?? 0}
+              entryPrice={attempt.riskSnapshot?.entryPrice ?? null}
+              stopLossPrice={attempt.riskSnapshot?.stopLossPrice ?? null}
+              takeProfitPrice={attempt.riskSnapshot?.takeProfitPrice ?? null}
             />
-          </div>
-          <p className="mt-2 text-[11px] text-muted">
-            {replay ? '완료 replay에서는 차트를 읽기만 하며 주문과 tick을 실행하지 않습니다.' : '서버 시간이 3초 지날 때마다 가상 1분이 진행됩니다.'}
-          </p>
-          {chartError && <p className="mt-2 text-sm text-loss">{chartError}</p>}
-        </Card>
+            <div className="mt-4">
+              <CandleGuide />
+            </div>
+            {scenario && (
+              <p className="mt-3 text-xs leading-relaxed text-muted">
+                <span className="font-medium text-ink/70">교육용 가상 시나리오</span> {scenario}
+              </p>
+            )}
+            <p className="mt-2 text-[11px] text-muted">
+              {replay
+                ? '끝난 연습이라 화면만 볼 수 있어요. 여기서는 사고팔 수 없고 가격도 멈춰 있습니다.'
+                : '3초마다 1분씩, 실제보다 빠르게 시간이 흐릅니다. 맨 오른쪽 막대 하나만 오르내립니다.'}
+            </p>
+            {chartError && <p className="mt-2 text-sm text-loss">{chartError}</p>}
+          </Card>
+        </div>
       )}
 
       <RiskEducationCard attempt={attempt} />
@@ -592,31 +1008,72 @@ export function AttemptTutorialFlow({
       {pendingOrder && !replay && (
         <Card innerClassName="p-5">
           <p className="text-sm font-medium text-ink">
-            {pendingOrder.side === 'BUY' ? '매수' : '매도'} 지정가 주문이 체결을 기다리고 있습니다.
+            정한 값이 되기를 기다리는 중입니다 ({pendingOrder.side === 'BUY' ? '사기' : '팔기'}).
           </p>
-          <p className="mt-2 text-xs text-muted">
-            {pendingOrder.quantity}개 · {formatKRW(pendingOrder.limitPrice)} — 위 단일 차트의 tick이 이 주문을
-            정산합니다.
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            {pendingOrder.quantity}개 · {formatKRW(pendingOrder.limitPrice)}
+            {latestPrice !== null && ` — 지금 값은 ${formatKRW(latestPrice)}이라 ${formatKRW(Math.abs(pendingOrder.limitPrice - latestPrice))} 차이가 납니다.`}
           </p>
-          <Button
-            type="button"
-            className="mt-4"
-            size="sm"
-            variant="ghost"
-            disabled={cancellingPending}
-            onClick={() => void handleCancelPending()}
-          >
-            {cancellingPending ? '취소하는 중…' : '지정가 주문 취소'}
-          </Button>
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            값이 여기까지 오지 않으면 끝까지 체결되지 않습니다. 기다리기 어렵다면 지금 값에 바로 하셔도 됩니다.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={cancellingPending}
+              onClick={() => void handleFillPendingNow()}
+            >
+              {cancellingPending ? '처리하는 중…' : `기다리지 않고 지금 값에 ${pendingOrder.side === 'BUY' ? '사기' : '팔기'}`}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={cancellingPending}
+              onClick={() => void handleCancelPending()}
+            >
+              {cancellingPending ? '취소하는 중…' : '지정가 주문 취소'}
+            </Button>
+          </div>
+          <ErrorNote error={flowError} scope="pending" />
         </Card>
       )}
 
       {replay ? (
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
           <p className="text-lg font-semibold text-ink">이 시장의 실습을 완료했습니다</p>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            완료 기록과 보상은 그대로 유지됩니다. 이 화면에서는 주문·관찰·복기를 실행하지 않습니다 — 다시
-            연습하고 싶으면 위의 "처음부터 다시 시작"으로 새 실행을 시작하세요.
+          {progress.rewardAmount !== null && (
+            <p className="mt-2 text-sm leading-relaxed text-ink">
+              축하합니다. 연습용 자금 {formatKRW(progress.rewardAmount)}이 계좌에 들어왔습니다.
+            </p>
+          )}
+          {tradeResult && (
+            <div className="mt-4">
+              <TradeResultBlock result={tradeResult} />
+            </div>
+          )}
+          {savedReflection && (
+            <div className="mt-4 rounded-2xl border border-line bg-elevated/60 p-4">
+              <p className="text-xs text-muted">{savedReflection.prompt}</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink">{savedReflection.answer}</p>
+            </div>
+          )}
+          <div className="mt-5 flex flex-wrap gap-2">
+            <LinkButton to="/trade" withIcon>
+              실전 거래 시작하기
+            </LinkButton>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            >
+              다른 시장도 연습해 보기
+            </Button>
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-muted">
+            실전에는 실제로 거래되는 종목이 있습니다. 여기서 연습한 종목은 가상이라 포트폴리오와 랭킹에는
+            잡히지 않습니다. 다른 시장은 위쪽 주식·코인 탭에서 바꿀 수 있습니다.
           </p>
           {progress.rewardAmount !== null && (
             <p className="mt-2 text-xs leading-relaxed text-muted">
@@ -624,28 +1081,25 @@ export function AttemptTutorialFlow({
               지급되지 않습니다.
             </p>
           )}
-          {replayInstrument && INSTRUMENT_SCENARIOS[replayInstrument.symbol] && (
-            <p className="mt-3 text-xs leading-relaxed text-muted">
-              <span className="font-medium text-ink/70">교육용 가상 시나리오</span>{' '}
-              {INSTRUMENT_SCENARIOS[replayInstrument.symbol]}
-            </p>
-          )}
           <dl className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div><dt className="text-xs text-muted">매수 수량</dt><dd className="mt-1 tabular text-ink">{evidence?.buyQuantity ?? '-'}</dd></div>
-            <div><dt className="text-xs text-muted">매도 수량</dt><dd className="mt-1 tabular text-ink">{evidence?.sellQuantity ?? '-'}</dd></div>
-            <div><dt className="text-xs text-muted">남은 수량</dt><dd className="mt-1 tabular text-ink">{evidence?.remainingQuantity ?? '-'}</dd></div>
+            <div><dt className="text-xs text-muted">산 개수</dt><dd className="mt-1 tabular text-ink">{evidence?.buyQuantity ?? '-'}</dd></div>
+            <div><dt className="text-xs text-muted">판 개수</dt><dd className="mt-1 tabular text-ink">{evidence?.sellQuantity ?? '-'}</dd></div>
+            <div><dt className="text-xs text-muted">남은 개수</dt><dd className="mt-1 tabular text-ink">{evidence?.remainingQuantity ?? '-'}</dd></div>
           </dl>
           {progress.completedAt && <p className="mt-4 text-xs text-muted">완료 {formatDateTime(progress.completedAt)}</p>}
         </Card>
       ) : attempt.status === 'SELECTING_INSTRUMENT' ? (
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
-          <h2 className="text-lg font-semibold text-ink">연습할 샘플 종목을 선택하세요</h2>
-          <p className="mt-2 text-sm text-muted">선택하면 이번 실행의 결정적 가격 시계와 단일 차트가 시작됩니다.</p>
+          <h2 className="text-lg font-semibold text-ink">1. 연습할 종목을 고릅니다</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            고르면 바로 가격이 움직이기 시작합니다. 실제 회사가 아니라 연습용으로 만든 가상 종목이에요.
+          </p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {instruments.map((instrument) => (
+            {instruments.map((instrument, index) => (
               <button
                 key={instrument.instrumentId}
                 type="button"
+                data-tour={index === 0 ? 'instrument' : undefined}
                 disabled={busyInstrumentId !== null}
                 onClick={() => void handleSelect(instrument.instrumentId)}
                 className="rounded-2xl border border-line bg-elevated p-4 text-left transition hover:border-brand/50 disabled:opacity-50"
@@ -661,41 +1115,56 @@ export function AttemptTutorialFlow({
               </button>
             ))}
           </div>
+          <ErrorNote error={flowError} scope="select" />
         </Card>
       ) : expired ? (
-        <p className="rounded-2xl border border-loss/30 bg-loss/10 p-4 text-sm text-loss">
-          이번 실행의 매도 시간이 만료되었습니다. 위의 “처음부터 다시 시작”으로 안전하게 정리한 뒤 다시 선택하세요.
-        </p>
+        <div className="rounded-2xl border border-loss/30 bg-loss/10 p-4">
+          <p className="text-sm leading-relaxed text-loss">
+            시간이 끝나서 이번 연습은 여기까지입니다. 잘못하신 게 아니라 연습 시간이 정해져 있어서
+            그렇습니다. 다시 해 보시겠어요?
+          </p>
+          <Button type="button" className="mt-3" size="sm" onClick={handleRestartClick}>
+            다시 해 보기
+          </Button>
+        </div>
       ) : (
         <div className="space-y-4">
-          {!attempt.riskSnapshot && (
+          <DoneLine text={`1. 고르기 완료${selectedInstrument ? ` · ${selectedInstrument.name}` : ''}`} />
+
+          {!attempt.riskSnapshot ? (
             <Card innerClassName="p-5">
-              <h2 className="text-base font-semibold text-ink">1. 매수해 위험 기준을 만듭니다</h2>
-              <p className="mt-2 text-sm text-muted">
-                수량을 정해 매수를 체결하면, 그 체결가를 기준으로 서버가 손절 -3% · 익절 +5% 선을 자동으로
-                계산해 고정합니다. 손절·익절 비율을 직접 입력할 필요는 없습니다 — 아래 2단계 차트에 표시되는
-                두 가격선을 기준으로 관찰하면 됩니다.
+              <h2 className="text-base font-semibold text-ink">2. 몇 개 살지 정하고 사 봅니다</h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                사는 순간의 값을 기준으로 팔 기준선 두 개(손절 -3% · 익절 +5%)가 자동으로 만들어집니다.
+                비율을 직접 입력할 필요는 없습니다.
               </p>
               {market === 'CRYPTO' && (
-                <div className="mt-4 flex rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
-                  {(['MARKET', 'LIMIT'] as const).map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      aria-pressed={buyOrderType === type}
-                      onClick={() => setBuyOrderType(type)}
-                      className={`flex-1 rounded-full px-4 py-2 text-sm ${buyOrderType === type ? 'bg-coin text-coin-ink' : 'text-muted'}`}
-                    >
-                      {type === 'MARKET' ? '시장가' : '지정가'}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="mt-4 flex rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
+                    {(['MARKET', 'LIMIT'] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        aria-pressed={buyOrderType === type}
+                        onClick={() => setBuyOrderType(type)}
+                        className={`flex-1 rounded-full px-4 py-2 text-sm ${buyOrderType === type ? 'bg-coin text-coin-ink' : 'text-muted'}`}
+                      >
+                        {type === 'MARKET' ? '시장가' : '지정가'}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-muted">
+                    시장가는 지금 값에 바로 삽니다(처음이라면 이걸 추천합니다). 지정가는 원하는 값이 될
+                    때까지 기다립니다.
+                  </p>
+                </>
               )}
               <div className="mt-4 flex flex-wrap items-end gap-3">
                 <label className="min-w-40 flex-1 text-xs text-muted">
-                  수량
+                  몇 개 살까요{market === 'STOCK' ? ' (1주 단위)' : ''}
                   <input
                     value={quantity}
+                    data-tour="quantity"
                     onChange={(event) => setQuantity(event.target.value.replace(/[^0-9.]/g, ''))}
                     inputMode="decimal"
                     className="mt-2 w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-ink outline-none focus:border-brand"
@@ -717,43 +1186,49 @@ export function AttemptTutorialFlow({
                     </div>
                   </label>
                 )}
-                <Button type="button" disabled={buying || pendingOrder !== null} onClick={() => void handleBuy()}>
-                  {buying ? '주문하는 중…' : buyOrderType === 'LIMIT' ? '지정가 매수 주문' : '시장가 매수'}
+                <Button type="button" data-tour="buy" disabled={buying || pendingOrder !== null} onClick={() => void handleBuy()}>
+                  {buying ? '주문하는 중…' : buyOrderType === 'LIMIT' ? '정한 값에 주문 넣기' : '지금 값에 사기'}
                 </Button>
               </div>
+              {buyUnitPrice !== null && buyQuantityNumber > 0 && (
+                <p className="mt-3 text-sm text-muted">
+                  {quantity}개 × {formatKRW(buyUnitPrice)} = 약 {formatKRW(buyUnitPrice * buyQuantityNumber)} ·
+                  연습용 가짜 돈입니다
+                </p>
+              )}
+              <ErrorNote error={flowError} scope="buy" />
             </Card>
+          ) : (
+            <DoneLine text={buyDoneText(evidence?.buyQuantity ?? null, attempt.riskSnapshot.entryPrice)} />
           )}
 
           {attempt.riskSnapshot && !fullySold && (
             <Card innerClassName="p-5">
-              <h2 className="text-base font-semibold text-ink">2. 단일 차트를 보고 가격을 관찰합니다</h2>
-              <p className="mt-2 text-sm text-muted">
-                가격이 손절·익절선에 가까워졌는지 차트로 확인하세요. 관찰 기록은 서버가 자동으로 남깁니다.
+              <h2 className="text-base font-semibold text-ink">3. 값이 어디로 가는지 지켜봅니다</h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                값이 두 기준선에 얼마나 가까워졌는지 차트로 확인하세요. 지켜본 기록은 자동으로 남습니다.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                {observing && <span className="text-xs text-muted">관찰을 기록하는 중…</span>}
-                {observed && <span className="text-xs text-gain">관찰 evidence가 저장되었습니다.</span>}
-                {observeFailed && !observing && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setObserveRetryNonce((n) => n + 1)}
-                  >
-                    관찰 다시 시도
-                  </Button>
-                )}
+                {observing && <span className="text-xs text-muted">기록하는 중…</span>}
+                {observed && <span className="text-xs text-gain">확인 완료</span>}
               </div>
+              {latestPrice !== null && remainingQuantity !== null && remainingQuantity > 0 && (
+                <div className="mt-3">
+                  <LivePnl
+                    entryPrice={attempt.riskSnapshot.entryPrice}
+                    latestPrice={latestPrice}
+                    quantity={remainingQuantity}
+                  />
+                </div>
+              )}
             </Card>
           )}
+          {attempt.riskSnapshot && fullySold && <DoneLine text="3. 지켜보기 완료 · 값이 어떻게 움직이는지 확인했습니다" />}
 
           {attempt.riskSnapshot && (
             <Card innerClassName="p-5">
-              <h2 className="text-base font-semibold text-ink">3. 남은 수량을 매도하고 복기합니다</h2>
-              <p className="mt-2 text-sm text-muted">
-                이번 실행 매수 {evidence?.buyQuantity ?? 0} · 매도 {evidence?.sellQuantity ?? 0} · 남은 수량 {remainingQuantity ?? 0}
-              </p>
-              {!fullySold && (
+              <h2 className="text-base font-semibold text-ink">4. 팔고, 왜 그랬는지 적어 봅니다</h2>
+              {!fullySold ? (
                 <div className="mt-4 space-y-4">
                   {market === 'CRYPTO' && (
                     <div className="flex rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
@@ -786,36 +1261,105 @@ export function AttemptTutorialFlow({
                       </div>
                     </label>
                   )}
-                  <Button
-                    type="button"
-                    disabled={selling || pendingOrder !== null || remainingQuantity === null || remainingQuantity <= 0}
-                    onClick={() => void handleSell()}
-                  >
-                    {selling
-                      ? '주문하는 중…'
-                      : sellOrderType === 'LIMIT'
-                        ? `남은 ${remainingQuantity ?? 0} 지정가 매도 주문`
-                        : `남은 ${remainingQuantity ?? 0} 전량 시장가 매도`}
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      data-tour="sell"
+                      disabled={
+                        selling ||
+                        !observed ||
+                        pendingOrder !== null ||
+                        remainingQuantity === null ||
+                        remainingQuantity <= 0
+                      }
+                      onClick={() => void handleSell()}
+                    >
+                      {selling
+                        ? '주문하는 중…'
+                        : remainingQuantity === null
+                          // 수량을 모르는 상태다. 0으로 지어내지 않고 개수를 뺀다 — 버튼은 위에서 이미 잠긴다.
+                          ? sellOrderType === 'LIMIT'
+                            ? '가진 만큼 정한 값에 팔기'
+                            : '가진 만큼 전부 팔기'
+                          : sellOrderType === 'LIMIT'
+                            ? `가진 ${remainingQuantity}개 정한 값에 팔기`
+                            : `가진 ${remainingQuantity}개 전부 팔기`}
+                    </Button>
+                    {/*
+                      잠긴 이유가 둘이면 하나만 말한다. 수량을 모르는 상태에서 "잠시 뒤 팔 수 있어요"는
+                      영원히 오지 않을 일을 약속하는 거짓말이라, 그때는 관찰 안내를 밀어내고 실제 이유를 쓴다.
+                    */}
+                    {remainingQuantity === null ? (
+                      <p className="text-xs text-muted">
+                        지금 가진 수량을 불러오지 못했습니다. 잠시 뒤에도 그대로면 위의 "처음부터 다시 시작"으로
+                        다시 해 주세요.
+                      </p>
+                    ) : (
+                      !observed && (
+                        <p className="text-xs text-muted">
+                          가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.
+                        </p>
+                      )
+                    )}
+                  </div>
+                  <ErrorNote error={flowError} scope="sell" />
                 </div>
-              )}
-              {fullySold && (
+              ) : (
                 <div className="mt-4 space-y-3">
-                  <textarea
-                    value={answer}
-                    onChange={(event) => setAnswer(event.target.value)}
-                    maxLength={REFLECTION_MAX}
-                    rows={5}
-                    placeholder="손절·익절 기준과 실제 판단을 돌아보세요."
-                    className="w-full resize-y rounded-2xl border border-line bg-elevated px-4 py-3 text-sm text-ink outline-none focus:border-brand"
-                  />
+                  {tradeResult ? (
+                    <TradeResultBlock result={tradeResult} />
+                  ) : (
+                    <p className="text-sm text-muted">
+                      산 개수 {evidence?.buyQuantity ?? '-'} · 판 개수 {evidence?.sellQuantity ?? '-'} · 남은 개수{' '}
+                      {remainingQuantity ?? '-'}
+                    </p>
+                  )}
+                  <div>
+                    <label htmlFor="tutorial-reflection" className="block text-sm font-medium text-ink">
+                      오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.
+                    </label>
+                    <textarea
+                      id="tutorial-reflection"
+                      data-tour="reflection"
+                      value={answer}
+                      onChange={(event) => setAnswer(event.target.value)}
+                      maxLength={REFLECTION_MAX}
+                      rows={5}
+                      className="mt-2 w-full resize-y rounded-2xl border border-line bg-elevated px-4 py-3 text-sm text-ink outline-none focus:border-brand"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {REFLECTION_CHIPS.map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setAnswer(chip)}
+                        className="rounded-full border border-line bg-elevated px-3 py-1.5 text-xs text-muted transition hover:border-brand/50 hover:text-ink"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted">
+                    정답도 점수도 없고 누구에게도 공개되지 않습니다. 한 줄이면 충분합니다.
+                  </p>
                   <Button
                     type="button"
                     disabled={reflecting || answer.trim().length === 0}
                     onClick={() => void handleReflection()}
                   >
-                    {reflecting ? '완료하는 중…' : '복기 저장하고 완료'}
+                    {reflecting ? '완료하는 중…' : '적은 내용 저장하고 끝내기'}
                   </Button>
+                  {flowError?.scope === 'reflection' && (
+                    <div className="rounded-2xl border border-loss/30 bg-loss/10 p-3">
+                      <p className="text-sm text-loss">{flowError.message}</p>
+                      {!observed && (
+                        <Button type="button" size="sm" variant="ghost" className="mt-2" onClick={retryObserve}>
+                          관찰 다시 시도
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -823,12 +1367,24 @@ export function AttemptTutorialFlow({
         </div>
       )}
 
-      {mutationError && <p className="text-sm text-loss">{mutationError}</p>}
+      {/*
+        전량 매도하면 3단계 카드가 사라진다 — 재시도 버튼을 그 안에 두면 오류가 시키는 행동을 할
+        버튼이 화면에서 없어진다. 그래서 카드 밖에서 조건만 보고 항상 노출하고, 관찰 실패 메시지도
+        버튼과 같은 자리에 둔다(복기 오류 안에도 같은 버튼이 있으므로 그때는 여기서 뺀다).
+      */}
+      {!replay && observeFailed && !observing && !observed && flowError?.scope !== 'reflection' && (
+        <div className="rounded-2xl border border-loss/30 bg-loss/10 p-3">
+          {flowError?.scope === 'observe' && <p className="mb-2 text-sm text-loss">{flowError.message}</p>}
+          <Button type="button" variant="ghost" size="sm" onClick={retryObserve}>
+            관찰 다시 시도
+          </Button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={showRestartConfirm}
         title="처음부터 다시 시작할까요?"
-        message="현재 실행의 미체결 주문과 샘플 보유를 정리하고 종목 선택부터 다시 시작합니다."
+        message="지금 연습의 대기 주문과 가진 종목을 정리하고 종목 고르기부터 다시 시작합니다."
         confirmLabel="다시 시작"
         busy={restarting}
         onConfirm={() => void handleRestartConfirm()}

@@ -8,7 +8,7 @@ const MESSAGES: Record<string, string> = {
   FORBIDDEN: '권한이 없습니다.',
   NOT_FOUND: '대상을 찾을 수 없습니다.',
   VALIDATION_ERROR: '입력값을 다시 확인해 주세요.',
-  INTERNAL_ERROR: '서버에 문제가 발생했습니다.',
+  INTERNAL_ERROR: '서버에 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
   UNKNOWN: '알 수 없는 오류가 발생했습니다.',
   // 인증·회원
   TOO_MANY_REQUESTS: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
@@ -26,22 +26,24 @@ const MESSAGES: Record<string, string> = {
   PRICE_UNAVAILABLE: '현재 이 종목의 시세를 받을 수 없어 주문할 수 없습니다.',
   INSUFFICIENT_CASH: '주문 가능 현금이 부족합니다.',
   INSUFFICIENT_QTY: '보유 수량이 부족합니다.',
-  IDEMPOTENCY_CONFLICT: '이전 주문과 내용이 충돌했습니다. 다시 시도해 주세요.',
+  // 실거래·튜토리얼 양쪽에서 뜨는 코드다 — "연습" 같은 튜토리얼 전용 단어를 쓰면 실거래 주문
+  // 화면에서 거짓말이 된다. 중립적으로 쓰고, 화면별 사정은 override 로 덮는다(Trade.tsx).
+  IDEMPOTENCY_CONFLICT: '주문이 겹쳐 처리하지 못했어요. 잠시 후 다시 눌러 주세요.',
   UNSUPPORTED_ORDER_TYPE: '지원하지 않는 주문 유형입니다.',
-  MARKET_DATA_PROVIDER_ERROR: '시세 공급자에 일시적인 문제가 있습니다.',
+  MARKET_DATA_PROVIDER_ERROR: '가격 정보를 받아오지 못했어요. 잠시 후 다시 시도해 주세요.',
   INSTRUMENT_NOT_TRADABLE: '지금은 거래할 수 없는 종목입니다.',
-  // 코인 실습 가상 가격 세션·지정가 (030)
-  PRACTICE_PRICE_SESSION_ALREADY_ACTIVE: '이미 진행 중인 가상 가격 세션이 있습니다. 화면을 새로고침해 주세요.',
-  PRACTICE_PRICE_SESSION_CLOSED: '이미 종료된 가격 세션입니다. 다시 시작해 주세요.',
-  PRACTICE_PRICE_TICK_CONFLICT: '시세가 이미 진행되었습니다. 화면을 새로고침해 주세요.',
-  PRACTICE_PRICE_SESSION_MISMATCH: '이 세션의 종목과 일치하지 않습니다.',
-  PRACTICE_LIMIT_ORDER_ALREADY_PENDING: '이미 대기 중인 주문이 있습니다.',
+  // 코인 실습 가상 가격 세션·지정가 (030) — 튜토리얼에서만 던지는 코드라 "연습"이라고 불러도 된다
+  PRACTICE_PRICE_SESSION_ALREADY_ACTIVE: '이미 연습이 진행 중이에요. 화면을 새로고침해 주세요.',
+  PRACTICE_PRICE_SESSION_CLOSED: '이 연습은 끝났어요. 처음부터 다시 시작해 주세요.',
+  PRACTICE_PRICE_TICK_CONFLICT: '가격이 그새 움직였어요. 화면을 새로고침해 주세요.',
+  PRACTICE_PRICE_SESSION_MISMATCH: '지금 연습 중인 종목이 아니에요. 화면을 새로고침해 주세요.',
+  PRACTICE_LIMIT_ORDER_ALREADY_PENDING: '걸어 둔 주문이 아직 남아 있어요. 그 주문이 체결되거나 취소된 뒤에 다시 시도해 주세요.',
   // 튜토리얼 샘플 종목 4단계(매도) 5분 제한 (026·031 legacy 경로 + 039 attempt 경로 공통 — 둘 다 이
   // 코드를 던지므로 특정 화면의 버튼 이름(예: "처음부터 다시 시작")을 문구에 넣지 않는다)
-  PRACTICE_SANDBOX_TIME_EXPIRED: '매수 후 5분이 지나 이 시도는 만료됐습니다. 다시 시도해 주세요.',
+  PRACTICE_SANDBOX_TIME_EXPIRED: '산 지 5분이 지나 이번 연습은 끝났어요. 처음부터 다시 해 주세요.',
   // 튜토리얼 실습 공통 (026·031·039)
   PRACTICE_ALREADY_COMPLETED: '이미 완료한 튜토리얼입니다.',
-  PRACTICE_EVIDENCE_MISSING: '아직 조건이 충족되지 않았습니다. 매수 후 가격을 한 번 이상 관찰한 뒤 다시 시도해 주세요.',
+  PRACTICE_EVIDENCE_MISSING: '아직 다음 단계로 갈 수 없어요. 먼저 종목을 사고, 차트에서 가격을 한 번 확인해 주세요.',
   PRACTICE_STEP_LOCKED: '먼저 이전 단계를 완료해야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
 }
 

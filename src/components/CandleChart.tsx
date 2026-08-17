@@ -24,6 +24,15 @@ interface CandleChartProps {
    * 범위 밖이어도 가격축 자동 맞춤에 포함시켜 항상 화면에 보이게 한다(튜토리얼 참고선 용도).
    */
   referenceLines?: ReferenceLine[]
+  /**
+   * 거래량 영역을 그릴지. 기본 true. false 면 하단 거래량 띠와 툴팁의 거래량 행을 아예 빼고
+   * 그 높이를 캔들에 돌려준다 — 거래량이 늘 0 인 튜토리얼용 봉에서 빈 칸과 "거래량 0" 오해를 없앤다.
+   */
+  showVolume?: boolean
+  /** svg 의 aria-describedby 로 연결할 설명 요소 id. */
+  describedById?: string
+  /** 툴팁 라벨을 투자 용어 대신 초보자용 문구로 바꾼다. 기본 false. */
+  beginnerLabels?: boolean
 }
 
 /** right 는 가격축, bottom 은 시간축 + 거래량 영역을 담는다. */
@@ -34,6 +43,11 @@ const VOLUME_RATIO = 0.18
 const NARROW_PX = 480
 /** 이보다 적게 보여주면 봉이 서로 겹친다. */
 const MIN_VISIBLE_BARS = 15
+/**
+ * 툴팁 히트 판정의 최소 가로 허용치(px). 봉이 얇아도 이만큼은 잡아 준다 —
+ * 손가락 접지면은 보통 8~10mm 라 몸통 폭(좁은 화면에서 3px 남짓)으로는 아무도 열지 못한다.
+ */
+const TOUCH_SLOP_PX = 12
 /** 버튼 클릭 한 번에 곱하는 배수 — 클릭은 이산적이라 큼직하게 반응해도 된다. */
 const ZOOM_STEP = 1.4
 /**
@@ -83,16 +97,31 @@ function axisLabel(value: string, interval: CandleInterval, multiYear: boolean):
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-/** 툴팁 머리글. 집계봉은 "무엇의 구간인지"를 밝혀야 사용자가 오해하지 않는다. */
+/**
+ * 툴팁 머리글. 집계봉은 "무엇의 구간인지"를 밝혀야 사용자가 오해하지 않는다.
+ * 일봉을 `(일)` 로 줄여 쓰면 일요일로 읽힌다 — 주기는 괄호 약어 대신 풀어서 적는다.
+ */
 function tooltipLabel(value: string, interval: CandleInterval): string {
   const d = parseLocalDateTime(value)
   const md = `${d.getMonth() + 1}월 ${d.getDate()}일`
   if (interval === '1m') {
-    return `${md} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    return `${md} ${hm}부터 1분`
   }
-  if (interval === '1d') return `${md} (일)`
-  if (interval === '1w') return `${md} 주간`
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월`
+  if (interval === '1d') return `${md} 하루`
+  if (interval === '1w') return `${md}부터 한 주`
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 한 달`
+}
+
+/**
+ * 툴팁의 등락률은 그 봉의 종가를 **같은 봉의 시가**와 비교한 값이다(아래 activeChange).
+ * 초보자에게는 "무엇 대비인지"를 밝혀 줘야 전일 대비로 오해하지 않는다.
+ */
+function changeBasisLabel(interval: CandleInterval): string {
+  if (interval === '1m') return '그 1분 시작가 대비'
+  if (interval === '1d') return '그날 시작가 대비'
+  if (interval === '1w') return '그 주 시작가 대비'
+  return '그달 시작가 대비'
 }
 
 const won = (v: number) => Math.round(v).toLocaleString('ko-KR')
@@ -105,6 +134,9 @@ export function CandleChart({
   emptyMessage = '표시할 봉이 없습니다.',
   className = '',
   referenceLines,
+  showVolume = true,
+  describedById,
+  beginnerLabels = false,
 }: CandleChartProps) {
   const { ref, width: boxWidth } = useElementWidth<HTMLDivElement>()
   const svgRef = useRef<SVGSVGElement>(null)
@@ -157,7 +189,11 @@ export function CandleChart({
     if (!el) return
     const distance = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) pinchDistRef.current = distance(e.touches)
+      if (e.touches.length === 2) {
+        pinchDistRef.current = distance(e.touches)
+        // 핀치를 시작하면 첫 손가락이 탭으로 열어 둔 툴팁은 방해만 된다.
+        setHover(null)
+      }
     }
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 2) return
@@ -236,13 +272,21 @@ export function CandleChart({
   const n = bars.length
   const plotW = width - PAD.left - PAD.right
   const fullH = chartH - PAD.top - PAD.bottom
-  const volH = Math.round(fullH * VOLUME_RATIO)
-  const plotH = fullH - volH - 6
+  // 거래량을 감추면 그 높이(구분 여백 6px 포함)를 캔들에 그대로 돌려준다.
+  const volH = showVolume ? Math.round(fullH * VOLUME_RATIO) : 0
+  const plotH = showVolume ? fullH - volH - 6 : fullH
 
   if (n === 0) {
     return (
       <div ref={ref} className={`w-full ${className}`}>
-        <svg viewBox={`0 0 ${width} ${chartH}`} width="100%" height={chartH} role="img" aria-label="캔들 차트 (데이터 없음)">
+        <svg
+          viewBox={`0 0 ${width} ${chartH}`}
+          width="100%"
+          height={chartH}
+          role="img"
+          aria-label="캔들 차트 (데이터 없음)"
+          aria-describedby={describedById}
+        >
           <text x={width / 2} y={chartH / 2} textAnchor="middle" fontSize={13} fill="currentColor" className="text-muted">
             {emptyMessage}
           </text>
@@ -281,6 +325,8 @@ export function CandleChart({
   const maxVol = Math.max(...bars.map((b) => b.volume), 1)
   const volTop = PAD.top + plotH + 6
   const volY = (v: number) => volTop + volH - (v / maxVol) * volH
+  /** 십자선·터치 판정이 닿는 아래 끝. 거래량을 감추면 캔들 영역 바닥이 곧 끝이다. */
+  const plotBottom = showVolume ? volTop + volH : PAD.top + plotH
 
   // 가격축 4단. 두 개(고·저)만 있으면 중간 가격을 눈으로 못 읽는다.
   const levels = [0, 1, 2, 3].map((k) => hi - ((hi - lo) / 3) * k)
@@ -301,6 +347,58 @@ export function CandleChart({
   const active = hover !== null && hover >= 0 && hover < n ? bars[hover] : null
   const activeChange =
     active !== null && active.open !== 0 ? ((active.close - active.open) / active.open) * 100 : 0
+  /** 툴팁 네 줄. 초보자 모드에서는 투자 용어 대신 뜻이 그대로 보이는 말로 바꾼다. */
+  const tooltipRows: [string, number][] =
+    active === null
+      ? []
+      : beginnerLabels
+        ? [
+            ['시작가', active.open],
+            ['최고', active.high],
+            ['최저', active.low],
+            ['끝난값', active.close],
+          ]
+        : [
+            ['시가', active.open],
+            ['고가', active.high],
+            ['저가', active.low],
+            ['종가', active.close],
+          ]
+
+  /**
+   * 참고선 라벨의 세로 위치를 미리 잡는다. 기본은 선 위지만, 바로 위 라벨과 겹치면 선 아래로,
+   * 그래도 겹치면 앞 라벨 바로 밑으로 밀어 둘 다 읽히게 한다. 손절·익절이 몇 % 차이면
+   * 두 선이 10px 안쪽으로 붙어 라벨끼리 포개지던 문제를 없앤다.
+   */
+  const REF_CHIP_H = 14
+  let refChipBottom = -Infinity
+  const refLabels = (referenceLines ?? [])
+    .map((r) => ({ ...r, lineY: y(r.value) }))
+    .sort((a, b) => a.lineY - b.lineY)
+    .map((r) => {
+      let chipY = r.lineY - REF_CHIP_H - 3
+      if (chipY < refChipBottom + 2) chipY = r.lineY + 3
+      if (chipY < refChipBottom + 2) chipY = refChipBottom + 2
+      chipY = Math.min(Math.max(chipY, PAD.top), PAD.top + plotH - REF_CHIP_H)
+      refChipBottom = chipY + REF_CHIP_H
+      return { ...r, chipY }
+    })
+
+  /**
+   * 포인터 좌표를 봉 인덱스로 바꾼다. 닿는 곳이 없으면 null.
+   *
+   * 예전에는 "실제 캔들(몸통 폭 × 고가~저가)" 위에서만 잡았는데, 30봉·375px 화면이면 가로
+   * 허용 오차가 ±3px 남짓이라 손가락으로는 사실상 열 수 없었다 — 세로 판정은 없애고 플롯
+   * 영역 전체로, 가로는 최소 TOUCH_SLOP_PX 까지 넓힌다.
+   */
+  const hitIndexAt = (clientX: number, clientY: number, rect: DOMRect): number | null => {
+    const px = ((clientX - rect.left) / rect.width) * width
+    const py = ((clientY - rect.top) / rect.height) * chartH
+    if (py < PAD.top || py > plotBottom) return null
+    const idx = Math.floor((px - PAD.left) / barW)
+    if (idx < 0 || idx >= n) return null
+    return Math.abs(px - x(idx)) <= Math.max(TOUCH_SLOP_PX, bodyW / 2) ? idx : null
+  }
 
   /**
    * 포인터 x·y 좌표를 각각 봉 인덱스(호버)·확대·팬으로 바꾼다.
@@ -325,25 +423,22 @@ export function CandleChart({
       )
       return
     }
-    const px = ((e.clientX - rect.left) / rect.width) * width
-    const idx = Math.floor((px - PAD.left) / barW)
-    if (idx < 0 || idx >= n) {
-      setHover(null)
-      return
-    }
-    // 툴팁은 그 봉의 슬롯 아무 데나가 아니라 실제 캔들(몸통 폭·고가~저가 세로 범위) 위에서만 뜬다 —
-    // 슬롯 전체로 잡으면 캔들 사이 빈 공간이나 위·아래 여백에 마우스를 올려도 차트를 가리게 된다.
-    const py = ((e.clientY - rect.top) / rect.height) * chartH
-    const bar = bars[idx]
-    const withinX = Math.abs(px - x(idx)) <= bodyW / 2
-    const hitPad = 2 // 얇은 꼬리만 있는 봉도 너무 빡빡하지 않게 약간의 여유를 준다
-    const withinY = py >= y(bar.high) - hitPad && py <= y(bar.low) + hitPad
-    setHover(withinX && withinY ? idx : null)
+    // 두 손가락 핀치 중에는 손가락마다 pointermove 가 따로 와서 툴팁이 제멋대로 튄다 — 건너뛴다.
+    if (e.pointerType !== 'mouse' && pinchDistRef.current !== null) return
+    setHover(hitIndexAt(e.clientX, e.clientY, rect))
   }
 
-  /** 좌클릭(마우스 전용 — 터치는 핀치가 이미 두 손가락을 쓴다) 드래그로 차트를 상하좌우로 민다. */
+  /**
+   * 마우스는 좌클릭 드래그로 차트를 상하좌우로 밀고, 터치는 누른 자리의 봉 툴팁을 연다.
+   * 터치에서 드래그 팬을 붙이지 않는 이유는 세로 스와이프를 페이지 스크롤로 남겨 두기 위해서다.
+   */
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (e.button !== 0 || e.pointerType !== 'mouse') return
+    if (e.pointerType !== 'mouse') {
+      if (pinchDistRef.current !== null) return
+      setHover(hitIndexAt(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()))
+      return
+    }
+    if (e.button !== 0) return
     dragRef.current = {
       startX: e.clientX,
       startOffset: clampedOffset,
@@ -362,7 +457,8 @@ export function CandleChart({
   }
 
   // 툴팁이 오른쪽 가격축을 넘어가지 않게 좌우를 뒤집는다.
-  const tipW = 178
+  // 초보자 모드는 "그날 시작가 대비" 같은 설명 줄이 붙어 조금 더 넓어야 덜 접힌다.
+  const tipW = beginnerLabels ? 196 : 178
   const tipFlip = active !== null && hover !== null && x(hover) + tipW + 12 > PAD.left + plotW
 
   const applyZoom = (factor: number) => {
@@ -409,6 +505,10 @@ export function CandleChart({
           +
         </button>
       </div>
+      {/*
+        touch-pan-y 는 세로 스와이프를 브라우저에 넘겨 페이지 스크롤을 살리고 가로·핀치만
+        우리가 가져간다 — 예전 touch-none 은 차트 위에서 페이지가 아예 안 내려갔다.
+      */}
       <svg
         ref={svgRef}
         viewBox={`0 0 ${width} ${chartH}`}
@@ -416,15 +516,23 @@ export function CandleChart({
         height={chartH}
         role="img"
         aria-label="캔들 차트"
+        aria-describedby={describedById}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onPointerLeave={(e) => {
-          setHover(null)
+        onPointerCancel={(e) => {
+          // 브라우저가 세로 스크롤로 제스처를 가져가면 pointercancel 이 온다 —
+          // 스크롤하려다 열린 툴팁은 여기서 치운다.
+          if (e.pointerType !== 'mouse') setHover(null)
           endDrag(e)
         }}
-        className={`touch-none select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        onPointerLeave={(e) => {
+          // 터치는 손을 떼는 순간 pointerleave 까지 뒤따라 온다 — 여기서 지우면 탭으로 연 툴팁이
+          // 읽기도 전에 사라진다. 터치 툴팁은 다음 탭이나 리렌더까지 그대로 둔다.
+          if (e.pointerType === 'mouse') setHover(null)
+          endDrag(e)
+        }}
+        className={`touch-pan-y select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       >
         <defs>
           {/* 마지막 종가 기준 은은한 배경 — 상승/하락 톤을 배경에서도 느끼게 한다 */}
@@ -462,61 +570,112 @@ export function CandleChart({
           </g>
         ))}
 
-        {/* 손절가·익절가 등 데이터와 무관한 참고선 — 캔들보다 아래, 가격 그리드보다 위에 둔다 */}
-        {referenceLines?.map((r) => (
-          <g key={r.label}>
-            <line
-              x1={PAD.left}
-              x2={PAD.left + plotW}
-              y1={y(r.value)}
-              y2={y(r.value)}
-              stroke="currentColor"
-              strokeWidth={1}
-              strokeDasharray="4 3"
-              className={r.tone === 'gain' ? 'text-gain' : 'text-loss'}
-              opacity={0.6}
-            />
-            <text
-              x={PAD.left + 4}
-              y={y(r.value) - 4}
-              fontSize={9}
-              fontWeight={600}
-              fill="currentColor"
-              className={r.tone === 'gain' ? 'text-gain' : 'text-loss'}
-            >
-              {r.label} {won(r.value)}
-            </text>
-          </g>
-        ))}
-
-        {/* 거래량 */}
-        {bars.map((b, i) => {
-          const up = b.close >= b.open
+        {/*
+          손절가·익절가 등 데이터와 무관한 참고선 — 캔들보다 아래, 가격 그리드보다 위에 둔다.
+          라벨은 캔들 위에 겹쳐 그려지므로 배경 칩을 깔아야 읽힌다(세로 위치는 refLabels 참고).
+        */}
+        {refLabels.map((r) => {
+          const tone = r.tone === 'gain' ? 'text-gain' : 'text-loss'
+          const text = `${r.label} ${won(r.value)}`
+          // 한글·숫자 혼용이라 정확한 폭을 알 수 없다 — 글자당 6.6px 로 넉넉히 잡는다.
+          const chipW = text.length * 6.6 + 10
           return (
-            <rect
-              key={`v-${b.sourceTime}`}
-              x={x(i) - bodyW / 2}
-              y={volY(b.volume)}
-              width={bodyW}
-              height={Math.max(0.5, volTop + volH - volY(b.volume))}
-              fill="currentColor"
-              className={up ? 'text-gain' : 'text-loss'}
-              opacity={0.28}
-            />
+            <g key={r.label}>
+              <line
+                x1={PAD.left}
+                x2={PAD.left + plotW}
+                y1={r.lineY}
+                y2={r.lineY}
+                stroke="currentColor"
+                strokeWidth={1}
+                strokeDasharray="4 3"
+                className={tone}
+                opacity={0.6}
+              />
+              <rect
+                x={PAD.left + 2}
+                y={r.chipY}
+                width={chipW}
+                height={REF_CHIP_H}
+                rx={3}
+                fill="currentColor"
+                className="text-canvas"
+                opacity={0.78}
+              />
+              <text
+                x={PAD.left + 7}
+                y={r.chipY + 10.5}
+                fontSize={11}
+                fontWeight={600}
+                fill="currentColor"
+                className={tone}
+              >
+                {text}
+              </text>
+            </g>
           )
         })}
 
-        {/* 캔들 */}
+        {/* 거래량 */}
+        {showVolume &&
+          bars.map((b, i) => {
+            const up = b.close >= b.open
+            return (
+              <rect
+                key={`v-${b.sourceTime}`}
+                x={x(i) - bodyW / 2}
+                y={volY(b.volume)}
+                width={bodyW}
+                height={Math.max(0.5, volTop + volH - volY(b.volume))}
+                fill="currentColor"
+                className={up ? 'text-gain' : 'text-loss'}
+                opacity={0.28}
+              />
+            )
+          })}
+
+        {/* 캔들 — 진행 중(미마감) 봉은 점선 외곽선 + "진행 중" 라벨로 끝난 봉과 구분한다 */}
         {bars.map((b, i) => {
           const up = b.close >= b.open
           const tone = up ? 'text-gain' : 'text-loss'
           const top = y(Math.max(b.open, b.close))
           const bodyH = Math.max(1, Math.abs(y(b.close) - y(b.open)))
           const dim = hover !== null && hover !== i
+          const running = b.current === true
           return (
             <g key={b.sourceTime} className={tone} opacity={dim ? 0.45 : 1}>
-              <line x1={x(i)} x2={x(i)} y1={y(b.high)} y2={y(b.low)} stroke="currentColor" strokeWidth={1} />
-              <rect x={x(i) - bodyW / 2} y={top} width={bodyW} height={bodyH} fill="currentColor" />
+              <line
+                x1={x(i)}
+                x2={x(i)}
+                y1={y(b.high)}
+                y2={y(b.low)}
+                stroke="currentColor"
+                strokeWidth={1}
+                strokeDasharray={running ? '3 2' : undefined}
+              />
+              <rect
+                x={x(i) - bodyW / 2}
+                y={top}
+                width={bodyW}
+                height={bodyH}
+                fill="currentColor"
+                fillOpacity={running ? 0.3 : 1}
+                stroke={running ? 'currentColor' : undefined}
+                strokeWidth={running ? 1.2 : undefined}
+                strokeDasharray={running ? '3 2' : undefined}
+              />
+              {running && (
+                <text
+                  x={Math.min(x(i) + bodyW / 2 + 3, PAD.left + plotW)}
+                  y={Math.max(y(b.high) - 5, PAD.top + 8)}
+                  textAnchor={x(i) > PAD.left + plotW * 0.75 ? 'end' : 'start'}
+                  fontSize={9}
+                  fontWeight={600}
+                  fill="currentColor"
+                >
+                  진행 중
+                </text>
+              )}
             </g>
           )
         })}
@@ -576,7 +735,7 @@ export function CandleChart({
               x1={x(hover)}
               x2={x(hover)}
               y1={PAD.top}
-              y2={volTop + volH}
+              y2={plotBottom}
               stroke="currentColor"
               strokeWidth={1}
               className="text-brand"
@@ -603,6 +762,7 @@ export function CandleChart({
       */}
       {active !== null && hover !== null && (
         <div
+          role="status"
           className="glass pointer-events-none absolute z-10 px-3 py-2"
           style={{
             left: tipFlip ? undefined : `${((x(hover) + 10) / width) * 100}%`,
@@ -623,25 +783,33 @@ export function CandleChart({
               {activeChange.toFixed(2)}%
             </span>
           </p>
+          {beginnerLabels && (
+            <p className="mt-0.5 text-[10px] leading-tight text-muted">
+              {changeBasisLabel(interval)}
+            </p>
+          )}
           <dl className="mt-1.5 space-y-0.5 text-[10px]">
-            {[
-              ['시가', active.open],
-              ['고가', active.high],
-              ['저가', active.low],
-              ['종가', active.close],
-            ].map(([label, v]) => (
-              <div key={label as string} className="flex justify-between gap-1">
+            {tooltipRows.map(([label, v]) => (
+              <div key={label} className="flex justify-between gap-1">
                 <dt className="text-muted">{label}</dt>
-                <dd className="tabular text-ink">{won(v as number)}</dd>
+                <dd className="tabular text-ink">{won(v)}</dd>
               </div>
             ))}
           </dl>
-          <p className="mt-1 flex justify-between text-[10px]">
-            <span className="text-muted">거래량</span>
-            <span className="tabular text-ink">
-              {active.volume.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}
-            </span>
-          </p>
+          {/* 거래량을 감춘 차트에서 "거래량 0" 을 띄우면 사실이 아닌 정보를 알려 주는 셈이다. */}
+          {showVolume && (
+            <p className="mt-1 flex justify-between text-[10px]">
+              <span className="text-muted">거래량</span>
+              <span className="tabular text-ink">
+                {active.volume.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}
+              </span>
+            </p>
+          )}
+          {beginnerLabels && active.current === true && (
+            <p className="mt-1.5 text-[10px] leading-tight text-muted">
+              이 막대는 아직 진행 중이라 값이 계속 바뀝니다.
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -41,6 +41,28 @@ export type PracticeTutorialKey = 'INVESTMENT_PRACTICE_V1' | 'COIN_PRACTICE_V1'
  */
 export type PracticeOverallStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'AWAITING_SALE' | 'EXPIRED' | 'COMPLETED'
 
+export type PracticeSellVerdict = 'ABOVE_TAKE_PROFIT' | 'BELOW_STOP_LOSS' | 'BETWEEN_LINES'
+
+/**
+ * 필드마다 수수료 기준이 다르다 — 섞어 쓰면 안 된다. buyPrice·sellPrice 는 체결 "단가"라 수수료를
+ * 포함하지 않고, realizedPnl·returnRate 는 매수·매도 수수료가 모두 반영된 순손익 기준이다.
+ * 따라서 (sellPrice − buyPrice) × 수량 은 realizedPnl 과 수수료만큼 어긋난다 — 클라이언트가 단가로
+ * 손익을 다시 계산하면 서버 원장과 다른 숫자를 보여주게 되므로, 손익·수익률은 realizedPnl·returnRate
+ * 를 그대로 쓰고 단가는 "얼마에 샀고 얼마에 팔았는지" 표기에만 쓴다.
+ */
+export interface PracticeTradeResultResponse {
+  /** 현재 실행 FILLED BUY 의 수량 가중평균 체결가(수수료 미포함). 매수 전이면 null */
+  buyPrice: Decimal | null
+  /** 현재 실행 FILLED SELL 의 수량 가중평균 체결가(수수료 미포함). 매도 전이면 null */
+  sellPrice: Decimal | null
+  /** 현재 실행 매도의 실현손익 합(원) — 매수·매도 수수료가 모두 반영된 순손익이다. 매도 전이면 null */
+  realizedPnl: number | null
+  /** realizedPnl ÷ (배분 매수원가 + 배분 매수수수료). 매도 전이면 null */
+  returnRate: Decimal | null
+  /** 매도 전·기준선 부재 시 null */
+  sellVerdict: PracticeSellVerdict | null
+}
+
 /**
  * favorite·intention·buyTrade 는 id·시각이 한 쌍으로 null/non-null.
  * observation 은 id·시각·evidenceType 이 한 삼쌍으로 null/non-null.
@@ -69,6 +91,8 @@ export interface PracticeEvidenceResponse {
   buyQuantity: Decimal | null
   sellQuantity: Decimal | null
   remainingQuantity: Decimal | null
+  /** 서버 배포 전에는 응답에 아예 없다 — 없어도 화면이 깨지지 않게 옵셔널로 둔다. */
+  tradeResult?: PracticeTradeResultResponse | null
 }
 
 export type PracticeAttemptMode = 'ACTIVE' | 'REPLAY'
