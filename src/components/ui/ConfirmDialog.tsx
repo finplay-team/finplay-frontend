@@ -9,6 +9,8 @@ interface Props {
   message: string
   confirmLabel?: string
   cancelLabel?: string
+  /** 기본은 강조(primary). 삭제처럼 두 선택지를 동등하게 두고 싶으면 취소와 같은 ghost로 맞춘다. */
+  confirmVariant?: 'primary' | 'ghost' | 'soft'
   busy?: boolean
   onConfirm: () => void
   onCancel: () => void
@@ -20,6 +22,7 @@ export function ConfirmDialog({
   message,
   confirmLabel = '확인',
   cancelLabel = '취소',
+  confirmVariant = 'primary',
   busy = false,
   onConfirm,
   onCancel,
@@ -53,7 +56,7 @@ export function ConfirmDialog({
           <Button type="button" variant="ghost" size="sm" autoFocus disabled={busy} onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button type="button" variant="primary" size="sm" disabled={busy} onClick={onConfirm}>
+          <Button type="button" variant={confirmVariant} size="sm" disabled={busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </div>

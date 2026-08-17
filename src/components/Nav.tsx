@@ -14,6 +14,9 @@ const publicLinks = [
  * 로그인 시 추가로 노출되는 메뉴.
  * 투자일기는 여기 없다 — 포트폴리오 화면 안(체결 내역 아래 미리보기 + "전체보기")으로 옮겼다.
  * `/journal` 라우트 자체는 그대로 있다.
+ * 커뮤니티도 같은 이유로 여기 없다 — 종목별 게시판이라 모의투자 화면 안(선택 종목 미리보기 +
+ * "더보기")으로 들어가는 진입점만 두고, 종목 맥락 없는 상단 메뉴는 없앴다. `/community` 라우트
+ * 자체는 그대로 있다.
  */
 const authLinks = [
   { to: '/tutorial', label: '튜토리얼' },
@@ -22,7 +25,6 @@ const authLinks = [
   { to: '/portfolio', label: '포트폴리오' },
   { to: '/feedback', label: 'AI 복기' },
   { to: '/rankings', label: '랭킹' },
-  { to: '/community', label: '커뮤니티' },
   { to: '/me', label: '내정보' },
 ]
 

@@ -1,6 +1,6 @@
 // 커뮤니티 게시글 목록·페이지 이동·글쓰기 폼을 담당하는 페이지
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
@@ -8,7 +8,6 @@ import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
 import { createPost, getPosts } from '../services/communityService'
-import { useInstruments } from '../hooks/useInstruments'
 import type { PostPage } from '../services/types'
 
 const PAGE_SIZE = 10
@@ -37,20 +36,20 @@ export function Community() {
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  /** 작성 폼에서 고른 종목. null 이면 미태그로 보낸다. */
-  const [formInstrumentId, setFormInstrumentId] = useState<number | null>(null)
-  /** 목록 필터. null 이면 전체. */
-  const [filterInstrumentId, setFilterInstrumentId] = useState<number | null>(null)
-
-  const { index } = useInstruments()
+  const [searchParams] = useSearchParams()
   /**
-   * 태그 후보는 거래 가능한 종목만 둔다 — 서버가 tradable=false 를 400 으로 막는데
-   * 그 400 이 "없는 종목"과 코드가 같아 사용자에게 이유를 설명할 수 없기 때문이다.
-   * (필터에는 이 제한이 없다. 필터는 조회 조건일 뿐이라 검증하지 않는다.)
+   * 지금 보고 있는 종목 커뮤니티. null 이면 전체(미태그 포함) 피드. 모의투자 페이지의
+   * 더보기가 ?instrumentId= 로 링크하면 이 값이 채워진다. 종목을 직접 바꾸는 UI는 없다 —
+   * 종목별 커뮤니티는 그 종목 화면에서 들어오는 진입점이라 화면에 머무는 동안 고정이다.
+   * 글쓰기 폼도 종목을 따로 고르지 않고 이 값을 그대로 태그로 써서, 지금 보고 있는
+   * 커뮤니티에 글을 남긴다는 맥락을 그대로 유지한다.
    */
-  const taggable = index
-    ? [...index.byId.values()].filter((i) => i.tradable && !i.isTutorialSample)
-    : []
+  const [filterInstrumentId] = useState<number | null>(() => {
+    const raw = searchParams.get('instrumentId')
+    if (raw === null) return null
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : null
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -84,11 +83,10 @@ export function Community() {
       await createPost({
         title: title.trim(),
         content: content.trim(),
-        instrumentId: formInstrumentId,
+        instrumentId: filterInstrumentId,
       })
       setTitle('')
       setContent('')
-      setFormInstrumentId(null)
       setFormOpen(false)
       // 새 글은 최신순 목록의 첫 페이지에 있다.
       if (page !== 0) setPage(0)
@@ -162,27 +160,6 @@ export function Community() {
                 />
               </div>
 
-              <div>
-                <label htmlFor="post-instrument" className="mb-1.5 block text-sm font-medium text-ink">
-                  종목 태그 <span className="font-normal text-muted">(선택, 1개)</span>
-                </label>
-                <select
-                  id="post-instrument"
-                  value={formInstrumentId ?? ''}
-                  onChange={(e) =>
-                    setFormInstrumentId(e.target.value === '' ? null : Number(e.target.value))
-                  }
-                  className={inputClass}
-                >
-                  <option value="">태그 없음</option>
-                  {taggable.map((i) => (
-                    <option key={i.instrumentId} value={i.instrumentId}>
-                      {i.name} ({i.symbol})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               {/* gain(=상승 적색) 은 시세용 토큰이다. 폼 오류는 Signup·Field 와 같은 rose 를 쓴다 */}
               {formError && <p className="text-sm text-rose-300">{formError}</p>}
 
@@ -195,123 +172,91 @@ export function Community() {
           </Card>
         )}
 
-        <section className="mt-8 space-y-4">
-          {loading &&
-            Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i} innerClassName="p-6">
-                <div className="skeleton h-4 w-1/2" />
-                <div className="mt-3 skeleton h-3 w-full" />
-                <div className="mt-2 skeleton h-3 w-4/5" />
-                <div className="mt-5 skeleton h-2.5 w-32" />
-              </Card>
-            ))}
+        {!formOpen && (
+          <>
+            <section className="mt-8 space-y-4">
+              {loading &&
+                Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} innerClassName="p-6">
+                    <div className="skeleton h-4 w-1/2" />
+                    <div className="mt-3 skeleton h-3 w-full" />
+                    <div className="mt-2 skeleton h-3 w-4/5" />
+                    <div className="mt-5 skeleton h-2.5 w-32" />
+                  </Card>
+                ))}
 
-          {!loading && loadError && (
-            <Card innerClassName="p-8 text-center">
-              <p className="text-sm text-ink">{loadError}</p>
-              <div className="mt-5 flex justify-center">
-                <Button variant="ghost" onClick={() => setReloadKey((k) => k + 1)}>
-                  다시 시도
-                </Button>
-              </div>
-            </Card>
-          )}
-
-          {!loading && !loadError && data?.content.length === 0 && (
-            <Card accent="brand" innerClassName="px-6 py-16 text-center">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand">
-                <Layers width={22} height={22} />
-              </span>
-              <p className="mt-5 font-display text-lg font-semibold text-ink">
-                아직 게시글이 없습니다
-              </p>
-              <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-                왜 사고 왜 팔았는지 적어 두면 나중에 같은 판단을 다시 볼 수 있습니다. 첫 글을 남겨
-                보세요.
-              </p>
-              {!formOpen && (
-                <div className="mt-6 flex justify-center">
-                  <Button withIcon onClick={() => setFormOpen(true)}>
-                    첫 글 쓰기
-                  </Button>
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/*
-            종목 필터는 조회 조건일 뿐이라 서버가 검증하지 않는다 —
-            없는 종목을 넣어도 400 이 아니라 빈 목록이 온다. 그래서 거래정지 종목도 후보에 남긴다.
-          */}
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted">종목 필터</span>
-            <select
-              value={filterInstrumentId ?? ''}
-              onChange={(e) => {
-                setFilterInstrumentId(e.target.value === '' ? null : Number(e.target.value))
-                setPage(0)
-              }}
-              className="rounded-full border border-line bg-elevated px-3 py-1.5 text-xs text-ink outline-none focus:border-brand"
-            >
-              <option value="">전체</option>
-              {(index ? [...index.byId.values()].filter((i) => !i.isTutorialSample) : []).map((i) => (
-                <option key={i.instrumentId} value={i.instrumentId}>
-                  {i.name} ({i.symbol})
-                </option>
-              ))}
-            </select>
-            {filterInstrumentId !== null && (
-              <button
-                onClick={() => {
-                  setFilterInstrumentId(null)
-                  setPage(0)
-                }}
-                className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs text-ink transition-colors hover:bg-white/[0.1]"
-              >
-                필터 해제
-              </button>
-            )}
-          </div>
-
-          {!loading &&
-            !loadError &&
-            data?.content.map((post) => (
-              <Link key={post.postId} to={`/community/${post.postId}`} className="block">
-                <Card className="transition-transform duration-500 ease-spring hover:-translate-y-0.5">
-                  <div className="p-6">
-                    {/* symbol·name 이 응답에 함께 와서 종목 캐시 조인 없이 배지를 그릴 수 있다. */}
-                    {post.instrumentId !== null && (
-                      <span className="mb-2 inline-block rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-brand">
-                        {post.instrumentName} · {post.instrumentSymbol}
-                      </span>
-                    )}
-                    <h2 className="font-display text-lg font-semibold text-ink">{post.title}</h2>
-                    <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">
-                      {toExcerpt(post.content)}
-                    </p>
-                    <p className="mt-4 text-xs text-muted">
-                      <span className="text-ink/80">{post.authorNickname}</span>
-                      <span className="px-2 text-muted/50">·</span>
-                      <span className="tabular">{formatDateTime(post.createdAt)}</span>
-                    </p>
+              {!loading && loadError && (
+                <Card innerClassName="p-8 text-center">
+                  <p className="text-sm text-ink">{loadError}</p>
+                  <div className="mt-5 flex justify-center">
+                    <Button variant="ghost" onClick={() => setReloadKey((k) => k + 1)}>
+                      다시 시도
+                    </Button>
                   </div>
                 </Card>
-              </Link>
-            ))}
-        </section>
+              )}
 
-        {!loading && !loadError && data && data.content.length > 0 && (
-          <nav className="mt-10 flex items-center justify-center gap-4">
-            <Button variant="ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-              이전
-            </Button>
-            <span className="text-sm text-muted tabular">
-              {data.page + 1} / {totalPages}
-            </span>
-            <Button variant="ghost" disabled={!data.hasNext} onClick={() => setPage((p) => p + 1)}>
-              다음
-            </Button>
-          </nav>
+              {!loading && !loadError && data?.content.length === 0 && (
+                <Card accent="brand" innerClassName="px-6 py-16 text-center">
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+                    <Layers width={22} height={22} />
+                  </span>
+                  <p className="mt-5 font-display text-lg font-semibold text-ink">
+                    아직 게시글이 없습니다
+                  </p>
+                  <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
+                    왜 사고 왜 팔았는지 적어 두면 나중에 같은 판단을 다시 볼 수 있습니다. 첫 글을 남겨
+                    보세요.
+                  </p>
+                  <div className="mt-6 flex justify-center">
+                    <Button withIcon onClick={() => setFormOpen(true)}>
+                      첫 글 쓰기
+                    </Button>
+                  </div>
+                </Card>
+              )}
+
+              {!loading &&
+                !loadError &&
+                data?.content.map((post) => (
+                  <Link key={post.postId} to={`/community/${post.postId}`} className="block">
+                    <Card className="transition-transform duration-500 ease-spring hover:-translate-y-0.5">
+                      <div className="p-6">
+                        {/* symbol·name 이 응답에 함께 와서 종목 캐시 조인 없이 배지를 그릴 수 있다. */}
+                        {post.instrumentId !== null && (
+                          <span className="mb-2 inline-block rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-brand">
+                            {post.instrumentName} · {post.instrumentSymbol}
+                          </span>
+                        )}
+                        <h2 className="font-display text-lg font-semibold text-ink">{post.title}</h2>
+                        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">
+                          {toExcerpt(post.content)}
+                        </p>
+                        <p className="mt-4 text-xs text-muted">
+                          <span className="text-ink/80">{post.authorNickname}</span>
+                          <span className="px-2 text-muted/50">·</span>
+                          <span className="tabular">{formatDateTime(post.createdAt)}</span>
+                        </p>
+                      </div>
+                    </Card>
+                  </Link>
+                ))}
+            </section>
+
+            {!loading && !loadError && data && data.content.length > 0 && (
+              <nav className="mt-10 flex items-center justify-center gap-4">
+                <Button variant="ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                  이전
+                </Button>
+                <span className="text-sm text-muted tabular">
+                  {data.page + 1} / {totalPages}
+                </span>
+                <Button variant="ghost" disabled={!data.hasNext} onClick={() => setPage((p) => p + 1)}>
+                  다음
+                </Button>
+              </nav>
+            )}
+          </>
         )}
       </div>
     </div>
