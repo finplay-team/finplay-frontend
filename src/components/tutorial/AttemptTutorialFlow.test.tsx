@@ -757,11 +757,91 @@ describe('AttemptTutorialFlow', () => {
     )
     await flushPromises()
 
-    // 축하와 금액이 먼저, 재지급 제한은 작게 아래로.
-    expect(screen.getByText('축하합니다. 연습용 자금 5,000,000원이 계좌에 들어왔습니다.')).toBeInTheDocument()
+    // 금액이 먼저, 재지급 제한은 작게 아래로. 문구는 축하 모달과 같은 곳에서 파생돼 시장 이름이 붙는다.
+    expect(screen.getByText('코인용 자금 5,000,000원이 계좌에 들어왔습니다.')).toBeInTheDocument()
+    // "축하합니다"는 완료한 그 순간의 말이라 모달에만 둔다 — 다시 들어와도 보이는 이 카드에는 없다.
+    expect(screen.queryByText(/축하합니다/)).not.toBeInTheDocument()
     expect(
       screen.getByText('완료 보상은 이 시장에서 최초 1회만 지급됩니다. 재시작해 다시 완료해도 보상은 추가로 지급되지 않습니다.'),
     ).toBeInTheDocument()
+  })
+
+  /** 복기 저장이 끝난 직후 상태 — 전량 매도·관찰 완료라 복기 입력이 열려 있다. */
+  function reflectionReadyEvidence() {
+    return evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      sellTradeId: 61,
+      buyQuantity: 1,
+      sellQuantity: 1,
+      remainingQuantity: 0,
+    })
+  }
+
+  async function saveReflection() {
+    fireEvent.change(screen.getByLabelText('오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.'), {
+      target: { value: '한 줄 기록' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '적은 내용 저장하고 끝내기' }))
+    await waitFor(() => expect(saveHoldingReflection).toHaveBeenCalled())
+    await flushPromises()
+  }
+
+  it('rewardGranted가 true면 복기 저장 직후 축하 모달을 연다', async () => {
+    vi.mocked(saveHoldingReflection).mockResolvedValue({
+      reflectionId: 7,
+      holdingId: 41,
+      prompt: '오늘 왜 그렇게 사고팔았나요?',
+      answer: '한 줄 기록',
+      createdAt: '2026-08-14T12:10:00',
+      rewardGranted: true,
+    })
+    // 저장 뒤 onRefresh로 갱신된 progress를 흉내 낸다 — 금액은 progress.rewardAmount에서만 읽는다.
+    renderFlow(attempt({ riskSnapshot: risk }), progress(reflectionReadyEvidence(), 'COMPLETED', 'COMPLETED'))
+    await flushPromises()
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await saveReflection()
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('코인 시장의 실습을 완료했습니다')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '실전 거래 시작하기' })).toHaveAttribute('href', '/trade')
+
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('재완료(rewardGranted=false)에는 축하 모달을 열지 않는다', async () => {
+    // 040(이슈 #402) 재완료는 새 reflection 행도 보상도 없다 — 받지 않은 돈을 축하하면 거짓말이 된다.
+    vi.mocked(saveHoldingReflection).mockResolvedValue({
+      reflectionId: null,
+      holdingId: 41,
+      prompt: '오늘 왜 그렇게 사고팔았나요?',
+      answer: '한 줄 기록',
+      createdAt: '2026-08-14T12:10:00',
+      rewardGranted: false,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(reflectionReadyEvidence(), 'COMPLETED', 'COMPLETED'))
+    await flushPromises()
+
+    await saveReflection()
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('이미 완료된 화면에 새로 들어오면 축하 모달이 뜨지 않는다', async () => {
+    // 모달은 완료 순간의 응답으로만 열린다 — 어디에도 영속하지 않으므로 새로고침·재진입에는 뜨지 않는다.
+    renderFlow(
+      attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk }),
+      progress(reflectionReadyEvidence(), 'COMPLETED', 'COMPLETED'),
+    )
+    await flushPromises()
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // 카드는 모달과 같은 제목을 쓰되 축하 문장 없이 기록만 보여준다.
+    expect(screen.getByText('코인 시장의 실습을 완료했습니다')).toBeInTheDocument()
+    expect(screen.queryByText(/축하합니다/)).not.toBeInTheDocument()
   })
 
   it('완료 화면은 되돌아가는 문 말고 실전으로 나가는 문을 1차 CTA로 준다', async () => {
@@ -833,7 +913,7 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
     await act(async () => vi.advanceTimersByTime(30_000))
 
-    expect(screen.getByText('이 시장의 실습을 완료했습니다')).toBeInTheDocument()
+    expect(screen.getByText('코인 시장의 실습을 완료했습니다')).toBeInTheDocument()
     // 040(이슈 #402)부터 완료(replay)에서도 재시작 버튼을 계속 노출한다 — 클릭·확인 전까지는 아무 것도
     // 자동으로 실행되지 않는다는 이 테스트의 취지(아래 not.toHaveBeenCalled 목록)는 그대로 유지된다.
     expect(screen.getByRole('button', { name: '처음부터 다시 시작' })).toBeInTheDocument()

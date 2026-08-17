@@ -1,0 +1,168 @@
+// 튜토리얼을 이번에 처음 완료한 순간에만 띄우는 축하 모달 — 지급된 보상 금액을 세어 올려 보여준다
+import { useEffect, useId, useRef, useState } from 'react'
+import { Button, LinkButton } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { Close } from '../ui/icons'
+import { formatKRW } from '../../lib/format'
+import type { Market } from '../../services/types'
+
+/**
+ * 금액이 0에서 목표값까지 올라가는 시간. 이 화면은 5분 제한 타이머가 도는 자리와 같아서
+ * 한 번 크게 보이고 빨리 끝나야 한다 — 늘리지 않는다.
+ */
+const COUNT_UP_MS = 1000
+
+const MARKET_LABEL: Record<Market, string> = { STOCK: '주식', CRYPTO: '코인' }
+
+/**
+ * 완료 문구는 이 모달과 완료(replay) 카드 두 곳에서 쓰인다. 같은 완료를 두 문구로 말하면 사용자가
+ * 다른 일로 읽으므로, 시장별 문자열은 아래 두 함수에서만 만들고 양쪽이 그것을 가져다 쓴다.
+ */
+export function completionTitle(market: Market): string {
+  return `${MARKET_LABEL[market]} 시장의 실습을 완료했습니다`
+}
+
+/**
+ * 보상 문장을 금액 앞/뒤로 나눠 준다 — 모달은 금액을 세어 올리느라 span으로 감싸야 해서 통문자열을
+ * 쓸 수 없다. 문장을 바꿀 때는 여기만 고치면 카드와 모달이 함께 바뀐다.
+ */
+export function rewardSentenceParts(market: Market): { before: string; after: string } {
+  return { before: `${MARKET_LABEL[market]}용 자금 `, after: '이 계좌에 들어왔습니다.' }
+}
+
+/**
+ * 애니메이션을 줄여야 하는지. matchMedia가 없는 환경(jsdom 등)은 줄이는 쪽으로 본다 —
+ * 연출을 못 하는 것보다 최종 금액을 곧바로 보여주는 쪽이 안전하다.
+ */
+function prefersReducedMotion(): boolean {
+  if (typeof window.matchMedia !== 'function') return true
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+export function CompletionCelebration({
+  open,
+  market,
+  rewardAmount,
+  onClose,
+}: {
+  open: boolean
+  market: Market
+  /** 서버가 이번에 지급한 금액. null이면 금액 문장 자체를 쓰지 않는다 — 없는 금액을 지어내지 않는다. */
+  rewardAmount: number | null
+  onClose: () => void
+}) {
+  const titleId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const [reduced] = useState(prefersReducedMotion)
+  const [amount, setAmount] = useState(rewardAmount ?? 0)
+  const [entered, setEntered] = useState(false)
+
+  // 숫자 세어 올리기. 언마운트·닫힘에는 프레임을 취소한다.
+  useEffect(() => {
+    if (!open || rewardAmount === null) return
+    if (reduced) {
+      setAmount(rewardAmount)
+      return
+    }
+    const start = performance.now()
+    let frame = 0
+    const tick = (now: number) => {
+      const ratio = Math.min(1, (now - start) / COUNT_UP_MS)
+      // 끝으로 갈수록 느려지게 — 마지막 숫자가 눈에 남는다. ratio가 1이면 정확히 목표값이 된다.
+      setAmount(rewardAmount * (1 - (1 - ratio) ** 3))
+      if (ratio < 1) frame = requestAnimationFrame(tick)
+    }
+    setAmount(0)
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [open, reduced, rewardAmount])
+
+  // 등장 모션. 애니메이션 축소 선호면 처음부터 최종 상태로 그린다.
+  useEffect(() => {
+    if (!open) {
+      setEntered(false)
+      return
+    }
+    if (reduced) {
+      setEntered(true)
+      return
+    }
+    const frame = requestAnimationFrame(() => setEntered(true))
+    return () => cancelAnimationFrame(frame)
+  }, [open, reduced])
+
+  useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, onClose])
+
+  // 열릴 때 포커스를 모달로 옮기고 닫히면 원래 있던 곳으로 돌려준다.
+  useEffect(() => {
+    if (!open) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialogRef.current?.focus({ preventScroll: true })
+    return () => previous?.focus({ preventScroll: true })
+  }, [open])
+
+  if (!open) return null
+
+  const reward = rewardSentenceParts(market)
+  const accentText = market === 'CRYPTO' ? 'text-coin' : 'text-brand'
+  const motion = reduced ? '' : 'transition-all duration-400 ease-spring'
+
+  return (
+    <div
+      // ConfirmDialog(z-[60])·SpotlightTour(z-50)보다 위다. 근거는 보고 참고.
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={`w-full max-w-md outline-none ${motion} ${entered ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}
+      >
+        <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[11px] font-medium tracking-eyebrow text-muted">실습 완료</p>
+            <button
+              type="button"
+              aria-label="닫기"
+              onClick={onClose}
+              className="-mr-1 -mt-1 rounded-full p-2 text-muted transition hover:bg-white/[0.06] hover:text-ink"
+            >
+              <Close width={16} height={16} />
+            </button>
+          </div>
+          <h2 id={titleId} className="mt-3 text-xl font-semibold leading-snug text-ink">
+            {completionTitle(market)}
+          </h2>
+          {rewardAmount !== null && (
+            <p className="mt-4 text-sm leading-relaxed text-ink">
+              {/* "축하합니다"는 지금 이 순간에만 어울린다 — 다시 볼 수 있는 완료 카드에는 넣지 않는다. */}
+              축하합니다. {reward.before}
+              <span className={`tabular text-xl font-semibold ${accentText}`}>{formatKRW(amount)}</span>
+              {reward.after}
+            </p>
+          )}
+          <div className="mt-6 flex flex-wrap gap-2">
+            <LinkButton to="/trade" withIcon>
+              실전 거래 시작하기
+            </LinkButton>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              완료 기록 보기
+            </Button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
