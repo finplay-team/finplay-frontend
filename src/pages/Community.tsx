@@ -1,6 +1,6 @@
 // 커뮤니티 게시글 목록·페이지 이동·글쓰기 폼을 담당하는 페이지
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
@@ -39,8 +39,14 @@ export function Community() {
   const [formError, setFormError] = useState<string | null>(null)
   /** 작성 폼에서 고른 종목. null 이면 미태그로 보낸다. */
   const [formInstrumentId, setFormInstrumentId] = useState<number | null>(null)
-  /** 목록 필터. null 이면 전체. */
-  const [filterInstrumentId, setFilterInstrumentId] = useState<number | null>(null)
+  const [searchParams] = useSearchParams()
+  /** 목록 필터. null 이면 전체. 모의투자 페이지의 더보기가 ?instrumentId= 로 링크하면 이 값을 초기값으로 쓴다. */
+  const [filterInstrumentId, setFilterInstrumentId] = useState<number | null>(() => {
+    const raw = searchParams.get('instrumentId')
+    if (raw === null) return null
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : null
+  })
 
   const { index } = useInstruments()
   /**

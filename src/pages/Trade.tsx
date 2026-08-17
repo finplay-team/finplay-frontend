@@ -21,6 +21,7 @@ import { getHoldings } from '../services/holdingService'
 import { placeLimitOrder, placeOrder } from '../services/orderService'
 import { bumpAccount } from '../lib/accountPulse'
 import { PendingOrders } from '../components/trade/PendingOrders'
+import { CommunityPreview } from '../components/trade/CommunityPreview'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { Star } from '../components/ui/icons'
 import { PriceMoveCards } from '../components/feedback/PriceMoveCards'
@@ -1163,6 +1164,11 @@ export function Trade() {
                   bumpAccount()
                 }}
               />
+            )}
+
+            {/* 7. 커뮤니티 미리보기 — 선택한 종목 이야기를 모아 보여주고 더보기로 필터링된 커뮤니티로 이동한다 */}
+            {selected && (
+              <CommunityPreview instrumentId={selected.instrumentId} instrumentName={selected.name} />
             )}
           </div>
         </div>
