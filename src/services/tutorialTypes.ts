@@ -18,12 +18,17 @@ export interface PracticeHoldingObservationResponse {
   evidenceType: PracticeEvidenceType | null
 }
 
+/**
+ * reflectionId는 최초 완료만 non-null이다 — 재완료(040, 완료 후 재시작해 다시 완료한 경우)는 새 reflection
+ * 행을 만들지 않아 null로 온다. rewardGranted도 재완료면 false다(보상은 사용자·market 조합당 최초 1회만).
+ */
 export interface PracticeHoldingReflectionResponse {
-  reflectionId: number
+  reflectionId: number | null
   holdingId: number
   prompt: string
   answer: string
   createdAt: LocalDateTimeString
+  rewardGranted: boolean
 }
 
 /* ---------- 진행 조회 (holding 기준, market 필수) ---------- */

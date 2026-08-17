@@ -409,30 +409,54 @@ describe('AttemptTutorialFlow', () => {
     vi.useRealTimers()
   })
 
-  it('재시작 확인창이 열려 있는 동안 attempt가 완료로 바뀌면 확인을 눌러도 재시작 API를 부르지 않는다', async () => {
-    const currentAttempt = attempt({ riskSnapshot: risk })
-    const { rerender } = renderFlow(
-      currentAttempt,
-      progress(evidence({ holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })),
+  it('완료(replay)된 attempt에서도 재시작 버튼을 눌러 확인하면 재시작 API를 정상 호출한다 (040, 이슈 #402)', async () => {
+    renderFlow(
+      attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk }),
+      progress(evidence({ holdingId: 41, buyQuantity: 2, remainingQuantity: 0 }), 'COMPLETED', 'COMPLETED'),
     )
     fireEvent.click(screen.getByRole('button', { name: '처음부터 다시 시작' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
 
-    // 다이얼로그가 열려 있는 동안 백그라운드 폴링으로 attempt가 replay(완료)로 전환된 상황을 재현한다.
+    fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
+    await waitFor(() => expect(restartPracticeAttempt).toHaveBeenCalledWith('CRYPTO'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('재완료(rewardGranted=false) 응답이면 replay 화면에 보상 미지급 안내가 뜬다 (040, 이슈 #402)', async () => {
+    vi.mocked(saveHoldingReflection).mockResolvedValue({
+      reflectionId: null,
+      holdingId: 41,
+      prompt: '복기',
+      answer: '재완료 복기',
+      createdAt: '2026-08-17T12:00:00',
+      rewardGranted: false,
+    })
+    const currentEvidence = evidence({
+      holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
+    })
+    const { rerender } = renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+
+    fireEvent.change(screen.getByPlaceholderText('손절·익절 기준과 실제 판단을 돌아보세요.'), {
+      target: { value: '재완료 복기' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '복기 저장하고 완료' }))
+    await waitFor(() => expect(saveHoldingReflection).toHaveBeenCalledWith(41, '재완료 복기'))
+
+    // onRefresh는 mock이라 progress를 실제로 갱신하지 않으므로, 서버가 완료 처리한 뒤의 상태(부모가
+    // onRefresh로 다시 받아왔을 attempt)를 rerender로 흉내낸다.
     rerender(
       <AttemptTutorialFlow
         market="CRYPTO"
         attempt={attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk })}
-        progress={progress(evidence({ holdingId: 41, buyQuantity: 2, remainingQuantity: 2 }), 'COMPLETED', 'COMPLETED')}
+        progress={progress(currentEvidence, 'COMPLETED', 'COMPLETED')}
         onAttemptChange={vi.fn()}
         onRefresh={vi.fn().mockResolvedValue(undefined)}
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '다시 시작' }))
-    await flushPromises()
-    expect(restartPracticeAttempt).not.toHaveBeenCalled()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('이미 이 시장에서 완료 보상을 받았습니다 — 재완료는 기록만 남고 보상은 다시 지급되지 않습니다.'),
+    ).toBeInTheDocument()
   })
 
   it.each([
@@ -488,7 +512,9 @@ describe('AttemptTutorialFlow', () => {
     await act(async () => vi.advanceTimersByTime(30_000))
 
     expect(screen.getByText('이 시장의 실습을 완료했습니다')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '처음부터 다시 시작' })).not.toBeInTheDocument()
+    // 040(이슈 #402)부터 완료(replay)에서도 재시작 버튼을 계속 노출한다 — 클릭·확인 전까지는 아무 것도
+    // 자동으로 실행되지 않는다는 이 테스트의 취지(아래 not.toHaveBeenCalled 목록)는 그대로 유지된다.
+    expect(screen.getByRole('button', { name: '처음부터 다시 시작' })).toBeInTheDocument()
     expect(tickPracticeAttempt).not.toHaveBeenCalled()
     expect(placeOrder).not.toHaveBeenCalled()
     expect(placeLimitOrder).not.toHaveBeenCalled()
@@ -497,9 +523,9 @@ describe('AttemptTutorialFlow', () => {
     expect(restartPracticeAttempt).not.toHaveBeenCalled()
   })
 
-  it('completed 이후 재시작 없이도 replay 화면에서 교육용 가상 시나리오 문구가 뜬다', async () => {
-    // 재시작으로 SELECTING_INSTRUMENT로 못 돌아가는 completed attempt(레거시 유저)를 위한 경로 —
-    // TUTORIAL-FLOW-005(완료 REPLAY 불변성)를 건드리지 않고 replay 화면에만 문구를 얹는다.
+  it('completed 이후 재시작하지 않고 replay 화면만 보는 사용자에게도 교육용 가상 시나리오 문구가 뜬다', async () => {
+    // 040(이슈 #402)부터 완료 attempt도 재시작할 수 있지만, 재시작하지 않고 완료 기록만 다시 보는
+    // 사용자를 위해 replay 화면에서도 시나리오 문구를 계속 노출한다.
     vi.mocked(getCachedInstrument).mockReturnValue({
       instrumentId: 701,
       market: 'CRYPTO',
@@ -521,6 +547,6 @@ describe('AttemptTutorialFlow', () => {
     expect(
       await screen.findByText('알파코인이 주요 거래소에 추가 상장된다는 소식으로 주목받고 있습니다.'),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '처음부터 다시 시작' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '처음부터 다시 시작' })).toBeInTheDocument()
   })
 })
