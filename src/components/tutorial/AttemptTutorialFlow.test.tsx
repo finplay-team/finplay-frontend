@@ -1179,4 +1179,45 @@ describe('AttemptTutorialFlow', () => {
       'instrument', 'order-type', 'quantity', 'buy', 'chart', 'pending', 'sell', 'reflection',
     ])
   })
+
+  it('판매를 예약하면 확인 카드가 4단계 판매 카드 안에 뜨고 잠긴 이유도 그 자리에서 알린다', async () => {
+    // 위치가 요점이다. 예전에는 차트보다도 위(판매 카드 바깥)에 떠서, 4단계에서 예약을 걸면
+    // 방금 누른 자리에서는 버튼이 조용히 잠기기만 하고 아무 변화도 보이지 않았다.
+    const currentEvidence = evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      buyQuantity: 2,
+      remainingQuantity: 2,
+    })
+    vi.mocked(placeLimitOrder).mockResolvedValue({
+      orderId: 91,
+      market: 'CRYPTO',
+      instrumentId: 701,
+      side: 'SELL',
+      orderType: 'LIMIT',
+      status: 'PENDING',
+      quantity: 2,
+      limitPrice: 130,
+      requestedAt: '2026-08-14T12:00:00',
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '지정가' }))
+    fireEvent.click(screen.getByRole('button', { name: '현재가' }))
+    fireEvent.click(screen.getByRole('button', { name: '가진 2개 정한 값에 판매하기' }))
+
+    const pendingCard = await screen.findByText(/정한 값이 되기를 기다리는 중입니다/)
+    const sellCard = screen.getByRole('heading', { name: /4\. 판매/ }).closest('.bezel-core')
+    expect(sellCard).not.toBeNull()
+    expect(sellCard).toContainElement(pendingCard)
+    // 두 곳에 동시에 나오면 사용자는 예약을 두 개 건 줄 안다.
+    expect(screen.getAllByText(/정한 값이 되기를 기다리는 중입니다/)).toHaveLength(1)
+
+    expect(screen.getByRole('button', { name: '가진 2개 정한 값에 판매하기' })).toBeDisabled()
+    expect(sellCard).toContainElement(
+      screen.getByText(/바로 아래 예약해 둔 주문이 기다리는 중이라 지금은 새로 주문할 수 없어요/),
+    )
+  })
 })

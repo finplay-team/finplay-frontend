@@ -1,5 +1,6 @@
 // 영속 attempt를 정본으로 종목 선택부터 완료 replay까지 단일 차트 실습 흐름을 제공하는 컴포넌트
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import { CandleChart } from '../CandleChart'
 import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
@@ -739,6 +740,143 @@ function pendingFillText(order: LimitOrderResponse, latestPrice: number | null):
     : '예약한 값이 지금 값보다 낮습니다. 곧 체결될 수 있습니다.'
 }
 
+/**
+ * 예약(미체결) 확인 카드. **주문을 건 그 자리에 그린다** — 예전에는 차트보다도 위에 있어서, 4단계에서
+ * 판매를 예약하면 확인 카드가 화면 한참 위에 생기고 방금 누른 자리에서는 버튼이 조용히 잠기기만 했다.
+ * 사용자는 예약이 걸리지 않았다고 판단했다(프로덕션 실측).
+ *
+ * data-tour="pending"은 스포트라이트 안내가 찾는 값이라 위치가 바뀌어도 그대로 유지한다.
+ */
+function PendingOrderCard({
+  cardRef,
+  order,
+  latestPrice,
+  error,
+  busy,
+  amendOpen,
+  amendPrice,
+  amendQuantity,
+  amending,
+  onFillNow,
+  onAmendOpen,
+  onAmendClose,
+  onAmendSubmit,
+  onAmendPriceChange,
+  onAmendQuantityChange,
+  onCancel,
+}: {
+  cardRef: RefObject<HTMLDivElement>
+  order: LimitOrderResponse
+  latestPrice: number | null
+  error: FlowError | null
+  busy: boolean
+  amendOpen: boolean
+  amendPrice: string
+  amendQuantity: string
+  amending: boolean
+  onFillNow: () => void
+  onAmendOpen: () => void
+  onAmendClose: () => void
+  onAmendSubmit: () => void
+  onAmendPriceChange: (next: string) => void
+  onAmendQuantityChange: (next: string) => void
+  onCancel: () => void
+}) {
+  return (
+    <div data-tour="pending" ref={cardRef}>
+      <Card innerClassName="p-5">
+        <p className="text-sm font-medium text-ink">
+          정한 값이 되기를 기다리는 중입니다 ({order.side === 'BUY' ? '구매' : '판매'} 예약).
+        </p>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-muted">걸어둔 값</dt>
+            <dd className="mt-1 tabular text-base text-ink">{formatKRW(order.limitPrice)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">지금 값</dt>
+            <dd className="mt-1 tabular text-base text-ink">
+              {latestPrice === null ? '불러오는 중…' : formatKRW(latestPrice)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">차이</dt>
+            <dd className="mt-1 tabular text-base text-ink">
+              {latestPrice === null
+                ? '-'
+                : `${formatSignedKRW(order.limitPrice - latestPrice)} (${formatPercent(
+                    ((order.limitPrice - latestPrice) / latestPrice) * 100,
+                  )})`}
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-3 text-xs leading-relaxed text-muted">
+          {order.quantity}개를 예약해 뒀습니다. {pendingFillText(order, latestPrice)} 값이
+          여기까지 오지 않으면 끝까지 체결되지 않습니다.
+        </p>
+
+        {!amendOpen ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button type="button" size="sm" disabled={busy} onClick={onFillNow}>
+              {busy
+                ? '처리하는 중…'
+                : `기다리지 않고 지금 값에 ${order.side === 'BUY' ? '구매하기' : '판매하기'}`}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onAmendOpen}>
+              예약 값 고치기
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
+              {busy ? '취소하는 중…' : '지정가 주문 취소'}
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <LimitPriceField
+              id="tutorial-amend-limit-price"
+              label="바꿀 지정가"
+              value={amendPrice}
+              onChange={onAmendPriceChange}
+              latestPrice={latestPrice}
+            />
+            <label className="block text-xs text-muted">
+              바꿀 개수
+              <input
+                value={amendQuantity}
+                onChange={(event) => onAmendQuantityChange(event.target.value.replace(/[^0-9.]/g, ''))}
+                inputMode="decimal"
+                className="mt-2 w-full rounded-2xl border border-line bg-elevated px-4 py-3 tabular text-ink outline-none focus:border-coin"
+              />
+            </label>
+            {/* 정정은 취소 후 재주문이 아니라 같은 주문을 고치는 것이라 주문 순서가 유지된다. */}
+            <p className="text-[11px] leading-relaxed text-muted">
+              같은 예약의 값과 개수를 고칩니다. 이전 값은 다시 조회할 수 없습니다.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" disabled={amending} onClick={onAmendSubmit}>
+                {amending ? '고치는 중…' : '이 값으로 고치기'}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" disabled={amending} onClick={onAmendClose}>
+                되돌리기
+              </Button>
+            </div>
+          </div>
+        )}
+        <ErrorNote error={error} scope="pending" />
+      </Card>
+    </div>
+  )
+}
+
+/** 예약이 걸려 있어 주문 버튼이 잠겼을 때, 왜 눌리지 않는지 그 자리에서 알려 준다. */
+function PendingBlocksOrderNote() {
+  return (
+    <p className="text-xs leading-relaxed text-muted">
+      바로 아래 예약해 둔 주문이 기다리는 중이라 지금은 새로 주문할 수 없어요. 예약을 취소하거나 지금 값에
+      바로 처리하면 다시 누를 수 있습니다.
+    </p>
+  )
+}
+
 export function AttemptTutorialFlow({
   market,
   attempt,
@@ -789,6 +927,9 @@ export function AttemptTutorialFlow({
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
+  /** 예약을 새로 건 순간을 세어 두고, 그 뒤 렌더에서 예약 카드를 화면 안으로 스크롤한다. */
+  const [pendingCreatedNonce, setPendingCreatedNonce] = useState(0)
+  const pendingCardRef = useRef<HTMLDivElement>(null)
   const buyNonceRef = useRef(0)
   const sellNonceRef = useRef(0)
   const autoObserveHoldingIdRef = useRef<number | null>(null)
@@ -862,6 +1003,16 @@ export function AttemptTutorialFlow({
     setFlowError({ scope, message })
   }, [])
   const clearError = useCallback(() => setFlowError(null), [])
+
+  // 예약을 새로 건 직후에만 카드를 화면 안으로 옮긴다. setState 직후에는 아직 DOM이 없어
+  // 동기 호출로는 잡히지 않으므로, 카드가 마운트된 뒤의 효과에서 부른다.
+  useEffect(() => {
+    if (pendingCreatedNonce === 0) return
+    const card = pendingCardRef.current
+    // jsdom에는 scrollIntoView가 없다.
+    if (!card || typeof card.scrollIntoView !== 'function') return
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [pendingCreatedNonce])
 
   useEffect(() => {
     if (attempt.status !== 'SELECTING_INSTRUMENT') return
@@ -1117,6 +1268,7 @@ export function AttemptTutorialFlow({
         )
         setPendingOrder(created)
         setPendingOutcome(null)
+        setPendingCreatedNonce((n) => n + 1)
         bumpTutorial()
         return
       }
@@ -1212,6 +1364,7 @@ export function AttemptTutorialFlow({
         )
         setPendingOrder(created)
         setPendingOutcome(null)
+        setPendingCreatedNonce((n) => n + 1)
         bumpTutorial()
         return
       }
@@ -1367,6 +1520,46 @@ export function AttemptTutorialFlow({
   const buyQuantityNumber = Number(quantity)
   const tourSteps = useMemo(() => buildTourSteps(market, pendingOrder !== null), [market, pendingOrder])
 
+  /**
+   * 예약 카드를 어디에 그릴지. 주문을 건 쪽 단계 카드 안에 그리되, 그 카드가 화면에 없을 때만
+   * 예전 자리(단계 카드 바깥)에 그린다 — 어느 쪽이든 **정확히 한 번만** 나온다.
+   * 단계 카드가 없는데 예약만 남는 순간(예: 지정가 매수가 체결되어 2단계 카드가 접히는 찰나)에도
+   * 카드가 통째로 사라지지 않게 하는 안전망이다.
+   */
+  const stepCardsVisible = !replay && attempt.status !== 'SELECTING_INSTRUMENT' && !expired
+  const buyCardVisible = stepCardsVisible && !attempt.riskSnapshot
+  const sellCardVisible = stepCardsVisible && attempt.riskSnapshot !== null && !fullySold
+  const pendingSlot: 'buy' | 'sell' | 'standalone' | null =
+    pendingOrder === null || replay
+      ? null
+      : pendingOrder.side === 'BUY' && buyCardVisible
+        ? 'buy'
+        : pendingOrder.side === 'SELL' && sellCardVisible
+          ? 'sell'
+          : 'standalone'
+
+  const pendingCard =
+    pendingOrder === null ? null : (
+      <PendingOrderCard
+        cardRef={pendingCardRef}
+        order={pendingOrder}
+        latestPrice={latestPrice}
+        error={flowError}
+        busy={cancellingPending}
+        amendOpen={amendOpen}
+        amendPrice={amendPrice}
+        amendQuantity={amendQuantity}
+        amending={amending}
+        onFillNow={() => void handleFillPendingNow()}
+        onAmendOpen={handleAmendOpen}
+        onAmendClose={() => setAmendOpen(false)}
+        onAmendSubmit={() => void handleAmendPending()}
+        onAmendPriceChange={setAmendPrice}
+        onAmendQuantityChange={setAmendQuantity}
+        onCancel={() => void handleCancelPending()}
+      />
+    )
+
   return (
     <div className="space-y-5">
       <SpotlightTour active={!replay} storageKey={`finplay.tour.tutorial.${market}`} steps={tourSteps} />
@@ -1454,112 +1647,8 @@ export function AttemptTutorialFlow({
 
       <RiskEducationCard attempt={attempt} holdingQuantity={remainingQuantity} />
 
-      {pendingOrder && !replay && (
-        <div data-tour="pending">
-          <Card innerClassName="p-5">
-            <p className="text-sm font-medium text-ink">
-              정한 값이 되기를 기다리는 중입니다 ({pendingOrder.side === 'BUY' ? '구매' : '판매'} 예약).
-            </p>
-            <dl className="mt-3 grid gap-3 sm:grid-cols-3">
-              <div>
-                <dt className="text-xs text-muted">걸어둔 값</dt>
-                <dd className="mt-1 tabular text-base text-ink">{formatKRW(pendingOrder.limitPrice)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted">지금 값</dt>
-                <dd className="mt-1 tabular text-base text-ink">
-                  {latestPrice === null ? '불러오는 중…' : formatKRW(latestPrice)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted">차이</dt>
-                <dd className="mt-1 tabular text-base text-ink">
-                  {latestPrice === null
-                    ? '-'
-                    : `${formatSignedKRW(pendingOrder.limitPrice - latestPrice)} (${formatPercent(
-                        ((pendingOrder.limitPrice - latestPrice) / latestPrice) * 100,
-                      )})`}
-                </dd>
-              </div>
-            </dl>
-            <p className="mt-3 text-xs leading-relaxed text-muted">
-              {pendingOrder.quantity}개를 예약해 뒀습니다. {pendingFillText(pendingOrder, latestPrice)} 값이
-              여기까지 오지 않으면 끝까지 체결되지 않습니다.
-            </p>
-
-            {!amendOpen ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={cancellingPending}
-                  onClick={() => void handleFillPendingNow()}
-                >
-                  {cancellingPending
-                    ? '처리하는 중…'
-                    : `기다리지 않고 지금 값에 ${pendingOrder.side === 'BUY' ? '구매하기' : '판매하기'}`}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={cancellingPending}
-                  onClick={handleAmendOpen}
-                >
-                  예약 값 고치기
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={cancellingPending}
-                  onClick={() => void handleCancelPending()}
-                >
-                  {cancellingPending ? '취소하는 중…' : '지정가 주문 취소'}
-                </Button>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <LimitPriceField
-                  id="tutorial-amend-limit-price"
-                  label="바꿀 지정가"
-                  value={amendPrice}
-                  onChange={setAmendPrice}
-                  latestPrice={latestPrice}
-                />
-                <label className="block text-xs text-muted">
-                  바꿀 개수
-                  <input
-                    value={amendQuantity}
-                    onChange={(event) => setAmendQuantity(event.target.value.replace(/[^0-9.]/g, ''))}
-                    inputMode="decimal"
-                    className="mt-2 w-full rounded-2xl border border-line bg-elevated px-4 py-3 tabular text-ink outline-none focus:border-coin"
-                  />
-                </label>
-                {/* 정정은 취소 후 재주문이 아니라 같은 주문을 고치는 것이라 주문 순서가 유지된다. */}
-                <p className="text-[11px] leading-relaxed text-muted">
-                  같은 예약의 값과 개수를 고칩니다. 이전 값은 다시 조회할 수 없습니다.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" disabled={amending} onClick={() => void handleAmendPending()}>
-                    {amending ? '고치는 중…' : '이 값으로 고치기'}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={amending}
-                    onClick={() => setAmendOpen(false)}
-                  >
-                    되돌리기
-                  </Button>
-                </div>
-              </div>
-            )}
-            <ErrorNote error={flowError} scope="pending" />
-          </Card>
-        </div>
-      )}
+      {/* 주문을 건 단계 카드가 화면에 없을 때만 여기에 그린다 — 위 pendingSlot 주석 참고. */}
+      {pendingSlot === 'standalone' && pendingCard}
 
       {/*
         예약이 대기 목록에서 사라졌을 때 그 사실을 남긴다. 카드가 조용히 없어지면 사용자는 체결됐는지
@@ -1740,6 +1829,12 @@ export function AttemptTutorialFlow({
                   {buying ? '주문하는 중…' : buyOrderType === 'LIMIT' ? '정한 값에 주문 넣기' : '지금 값에 구매하기'}
                 </Button>
               </div>
+              {pendingSlot === 'buy' && (
+                <div className="mt-3 space-y-3">
+                  <PendingBlocksOrderNote />
+                  {pendingCard}
+                </div>
+              )}
               {buyUnitPrice !== null && buyQuantityNumber > 0 && (
                 <p className="mt-3 text-sm text-muted">
                   {quantity}개 × {formatKRW(buyUnitPrice)} = 약 {formatKRW(buyUnitPrice * buyQuantityNumber)} ·
@@ -1843,10 +1938,13 @@ export function AttemptTutorialFlow({
                             : `가진 ${remainingQuantity}개 전부 판매하기`}
                     </Button>
                     {/*
-                      잠긴 이유가 둘이면 하나만 말한다. 수량을 모르는 상태에서 "잠시 뒤 팔 수 있어요"는
+                      잠긴 이유가 여럿이면 하나만 말한다. 예약이 걸려 있는 건 방금 자기가 한 행동의
+                      결과라 가장 먼저 알려 준다. 수량을 모르는 상태에서 "잠시 뒤 팔 수 있어요"는
                       영원히 오지 않을 일을 약속하는 거짓말이라, 그때는 관찰 안내를 밀어내고 실제 이유를 쓴다.
                     */}
-                    {remainingQuantity === null ? (
+                    {pendingOrder !== null ? (
+                      <PendingBlocksOrderNote />
+                    ) : remainingQuantity === null ? (
                       <p className="text-xs text-muted">
                         지금 가진 수량을 불러오지 못했습니다. 잠시 뒤에도 그대로면 위의 "처음부터 다시 시작"으로
                         다시 해 주세요.
@@ -1859,6 +1957,7 @@ export function AttemptTutorialFlow({
                       )
                     )}
                   </div>
+                  {pendingSlot === 'sell' && pendingCard}
                   <ErrorNote error={flowError} scope="sell" />
                 </div>
               ) : (
