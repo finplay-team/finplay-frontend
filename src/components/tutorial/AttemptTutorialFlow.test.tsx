@@ -137,6 +137,9 @@ function progress(
   currentEvidence = evidence(),
   status: InvestmentPracticeResponse['status'] = 'IN_PROGRESS',
   stepFourStatus: PracticeOverallStatus = 'IN_PROGRESS',
+  // 백엔드 #429부터 4단계 잠금은 관찰 여부와 무관하게 서버가 결정한다 — 기본값 false는
+  // "매수 직후 곧바로 매도가 열린 상태"를 뜻한다.
+  stepFourLocked = false,
 ): InvestmentPracticeResponse {
   return {
     tutorialKey: 'COIN_PRACTICE_V1',
@@ -149,7 +152,7 @@ function progress(
       { step: 1, status: 'COMPLETED', locked: false, evidence: currentEvidence },
       { step: 2, status: 'COMPLETED', locked: false, evidence: currentEvidence },
       { step: 3, status: 'IN_PROGRESS', locked: false, evidence: currentEvidence },
-      { step: 4, status: stepFourStatus, locked: false, evidence: currentEvidence },
+      { step: 4, status: stepFourStatus, locked: stepFourLocked, evidence: currentEvidence },
     ],
   }
 }
@@ -418,15 +421,80 @@ describe('AttemptTutorialFlow', () => {
     ))
   })
 
-  it('관찰이 인정되기 전에는 매도 버튼을 잠그고 이유를 인라인으로 알린다', async () => {
-    // 서버는 매도 체결 뒤의 관찰을 evidence로 받지 않는다 — evidence 없이 팔면 복기가 영원히
-    // 저장되지 않으므로, 관찰이 붙기 전에는 매도 자체를 막는다.
-    const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
-    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+  it('서버가 steps[3].locked=true를 내려주면 관찰 여부와 무관하게 매도 버튼을 잠그고 이유를 인라인으로 알린다', async () => {
+    // 4단계 잠금은 더 이상 프론트가 관찰 여부로 계산하지 않는다 — 서버(백엔드 #429)가 내려주는
+    // steps[3].locked를 그대로 따른다. observationId가 있어도(관찰을 이미 했어도) locked=true면 잠긴다.
+    const currentEvidence = evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      buyQuantity: 2,
+      remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence, 'IN_PROGRESS', 'IN_PROGRESS', true))
     await flushPromises()
 
     expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeDisabled()
     expect(screen.getByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).toBeInTheDocument()
+  })
+
+  it('서버가 매도를 열어 두면(steps[3].locked=false) 관찰 기록이 없어도 매도 버튼이 눌리지만, 누르면 확인창을 먼저 띄운다', async () => {
+    // 백엔드 #429부터 서버는 관찰과 무관하게 매수 직후 5분 창 안에서 곧바로 매도를 열어 둔다.
+    // 대신 한 번도 지켜보지 않은 채 파는 것은 확인이 필요하다.
+    const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    const sellButton = screen.getByRole('button', { name: '가진 2개 전부 판매하기' })
+    expect(sellButton).toBeEnabled()
+    expect(screen.queryByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).not.toBeInTheDocument()
+
+    fireEvent.click(sellButton)
+    expect(placeOrder).not.toHaveBeenCalled()
+    expect(screen.getByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+    await flushPromises()
+    expect(placeOrder).not.toHaveBeenCalled()
+    expect(screen.queryByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).not.toBeInTheDocument()
+  })
+
+  it('무관찰 확인창에서 확인을 누르면 그제서야 매도가 진행된다', async () => {
+    const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '가진 2개 전부 판매하기' }))
+    fireEvent.click(screen.getByRole('button', { name: '그래도 판매' }))
+
+    await waitFor(() => expect(placeOrder).toHaveBeenCalledWith(
+      {
+        market: 'CRYPTO',
+        instrumentId: 701,
+        side: 'SELL',
+        orderType: 'MARKET',
+        quantity: '2',
+      },
+      'tutorial-key',
+    ))
+    expect(screen.queryByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).not.toBeInTheDocument()
+  })
+
+  it('관찰 기록이 이미 있으면 확인창 없이 바로 매도를 진행한다', async () => {
+    const currentEvidence = evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      buyQuantity: 2,
+      remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '가진 2개 전부 판매하기' }))
+
+    expect(screen.queryByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).not.toBeInTheDocument()
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled())
   })
 
   it('매수 전에는 지금 값 기준으로 손절선·익절선에서 얼마를 잃고 버는지 어림해 보여준다', async () => {
