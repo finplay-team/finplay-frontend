@@ -2,7 +2,7 @@
 import { api } from '../lib/apiClient'
 import type { AccountSummary, Market, PortfolioTotal } from './types'
 
-/** market 은 필수 파라미터다. returnRate 는 퍼센트가 아니라 scale-4 비율이므로 표시 시 ratioToPercent 를 쓴다. */
+/** market 은 필수 파라미터다. */
 export function getAccountSummary(market: Market): Promise<AccountSummary> {
   return api.get<AccountSummary>('/accounts/summary', { query: { market } })
 }

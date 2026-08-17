@@ -407,10 +407,7 @@ export interface Holding {
   priceStatus: PriceStatus
 }
 
-/**
- * GET /api/accounts/summary?market= (market 필수). 7필드 고정.
- * returnRate 는 퍼센트가 아니라 scale-4 비율이다 (0.0020 == 0.20%). 화면 표시 시 ×100 필수.
- */
+/** GET /api/accounts/summary?market= (market 필수). 6필드 고정. */
 export interface AccountSummary {
   /** 현금잔고 — 예약분이 차감되어 있지 않다. */
   cashBalance: Decimal
@@ -424,13 +421,11 @@ export interface AccountSummary {
   totalValue: Decimal
   realizedPnl: Decimal
   unrealizedPnl: Decimal
-  returnRate: Decimal
 }
 
-/** GET /api/portfolio — 파라미터 없음. 두 시장 합산이므로 분모는 20,000,000 이다. returnRate 도 비율. */
+/** GET /api/portfolio — 파라미터 없음. 두 시장 합산이므로 분모는 20,000,000 이다. */
 export interface PortfolioTotal {
   totalValue: Decimal
-  returnRate: Decimal
   unrealizedPnl: Decimal
   realizedPnl: Decimal
 }
