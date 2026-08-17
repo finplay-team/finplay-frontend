@@ -261,11 +261,6 @@ export function Portfolio() {
                 value={account ? signedKRW(account.unrealizedPnl) : '—'}
                 tone={account ? pnlTone(account.unrealizedPnl) : 'text-ink'}
               />
-              <Stat
-                label="수익률"
-                value={account ? formatPercent(ratioToPercent(account.returnRate)) : '—'}
-                tone={account ? pnlTone(account.returnRate) : 'text-ink'}
-              />
             </dl>
           )}
         </Card>
