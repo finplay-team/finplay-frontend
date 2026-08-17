@@ -71,6 +71,8 @@ export function CommunityPost() {
   const [commentDeleteError, setCommentDeleteError] = useState<string | null>(null)
   /** 답글 대상 부모 댓글 id. null 이면 일반 댓글이다. */
   const [replyTo, setReplyTo] = useState<number | null>(null)
+  /** 댓글·답글 작성 폼이 펼쳐져 있는지. "댓글 등록"이나 개별 답글 버튼으로 연다. */
+  const [commentFormOpen, setCommentFormOpen] = useState(false)
 
   /** 대댓글 404 처럼 목록이 낡았을 때 서버 상태로 다시 맞춘다. */
   const reloadComments = useCallback(async () => {
@@ -132,7 +134,15 @@ export function CommunityPost() {
             {/* 대댓글에 답글을 달면 400 이므로 부모에만 버튼을 둔다. */}
             {!isReply && (
               <button
-                onClick={() => setReplyTo(replyTo === c.commentId ? null : c.commentId)}
+                onClick={() => {
+                  if (replyTo === c.commentId) {
+                    setReplyTo(null)
+                    setCommentFormOpen(false)
+                  } else {
+                    setReplyTo(c.commentId)
+                    setCommentFormOpen(true)
+                  }
+                }}
                 className="text-muted transition-colors duration-300 hover:text-brand"
               >
                 {replyTo === c.commentId ? '답글 취소' : '답글'}
@@ -245,6 +255,7 @@ export function CommunityPost() {
       )
       setCommentInput('')
       setReplyTo(null)
+      setCommentFormOpen(false)
     } catch (err: unknown) {
       // 여기서의 404 는 "부모 댓글이 없거나 다른 게시물 소속"이라는 뜻이다.
       // 게시물이 사라진 것이 아니므로 절대 setGone(true) 하면 안 된다 — 글 전체가 날아간다.
@@ -410,7 +421,7 @@ export function CommunityPost() {
               </p>
 
               {isMine && (
-                <div className="mt-8 flex flex-wrap items-center gap-2 border-t border-line pt-6">
+                <div className="mt-8 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-6">
                   <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                     수정
                   </Button>
@@ -436,11 +447,58 @@ export function CommunityPost() {
 
         {/* 댓글 — 페이지네이션이 없어 전부 렌더한다. */}
         <section className="mt-10">
-          <h2 className="font-display text-lg font-semibold text-ink">
-            댓글 <span className="text-brand tabular">{countComments(comments)}</span>
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-lg font-semibold text-ink">
+              댓글 <span className="text-brand tabular">{countComments(comments)}</span>
+            </h2>
+            {/* 답글 취소는 그 댓글 자신의 "답글 취소" 버튼이 담당하니, 여기는 일반 댓글 작성일 때만 보여준다. */}
+            {(!commentFormOpen || replyTo === null) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (commentFormOpen) {
+                    setCommentFormOpen(false)
+                    setReplyTo(null)
+                    setCommentInput('')
+                    setCommentError(null)
+                  } else {
+                    setReplyTo(null)
+                    setCommentFormOpen(true)
+                  }
+                }}
+              >
+                {commentFormOpen ? '취소' : '댓글 등록'}
+              </Button>
+            )}
+          </div>
 
-          <Card className="mt-4" innerClassName="p-6">
+          {commentDeleteError && <p className="mt-4 text-sm text-rose-300">{commentDeleteError}</p>}
+
+          {comments.length > 0 && (
+            <ul className="mt-4 divide-y divide-line rounded-2xl border border-line bg-surface">
+              {comments.map((c) => (
+                <li key={c.commentId} className="px-5 py-4">
+                  {renderComment(c, false)}
+
+                  {/*
+                    대댓글은 부모 안에 중첩한다. 중첩은 1단계뿐이라 자식의 replies 는 항상 비어 있어
+                    재귀를 돌 필요가 없다. 답글 버튼도 자식에는 달지 않는다(달면 400 이다).
+                  */}
+                  {c.replies.length > 0 && (
+                    <ul className="mt-3 space-y-3 border-l border-line pl-4">
+                      {c.replies.map((r) => (
+                        <li key={r.commentId}>{renderComment(r, true)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {commentFormOpen && (
+          <Card className="mt-6" innerClassName="p-6">
             <form onSubmit={handleCommentSubmit} className="space-y-3">
               <div className="mb-1 flex items-baseline justify-between">
                 <span className="text-sm font-medium text-ink">
@@ -472,37 +530,12 @@ export function CommunityPost() {
               )}
               {commentError && <p className="text-sm text-rose-300">{commentError}</p>}
               <div className="flex justify-end">
-                <Button type="submit" disabled={commentSubmitting || !commentInput.trim()}>
+                <Button type="submit" size="sm" disabled={commentSubmitting || !commentInput.trim()}>
                   {commentSubmitting ? '등록 중…' : replyTo === null ? '댓글 등록' : '답글 등록'}
                 </Button>
               </div>
             </form>
           </Card>
-
-          {commentDeleteError && <p className="mt-4 text-sm text-rose-300">{commentDeleteError}</p>}
-
-          {comments.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted">아직 댓글이 없습니다.</p>
-          ) : (
-            <ul className="mt-4 divide-y divide-line rounded-2xl border border-line bg-surface">
-              {comments.map((c) => (
-                <li key={c.commentId} className="px-5 py-4">
-                  {renderComment(c, false)}
-
-                  {/*
-                    대댓글은 부모 안에 중첩한다. 중첩은 1단계뿐이라 자식의 replies 는 항상 비어 있어
-                    재귀를 돌 필요가 없다. 답글 버튼도 자식에는 달지 않는다(달면 400 이다).
-                  */}
-                  {c.replies.length > 0 && (
-                    <ul className="mt-3 space-y-3 border-l border-line pl-4">
-                      {c.replies.map((r) => (
-                        <li key={r.commentId}>{renderComment(r, true)}</li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ul>
           )}
         </section>
       </div>

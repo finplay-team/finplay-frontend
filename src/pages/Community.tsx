@@ -135,7 +135,7 @@ export function Community() {
           {/* 글이 없으면 본문 빈 상태의 "첫 글 쓰기"만 보여준다 — 위아래 버튼이 겹쳐 보이지 않게.
               단, 글쓰기 폼이 열려 있는 동안엔(그 사이 글이 지워지는 등) 닫을 방법이 있어야 하니 항상 보여준다. */}
           {(formOpen || (data !== null && data.content.length > 0)) && (
-            <Button variant={formOpen ? 'ghost' : 'primary'} onClick={() => setFormOpen((v) => !v)}>
+            <Button variant={formOpen ? 'ghost' : 'primary'} size="sm" onClick={() => setFormOpen((v) => !v)}>
               {formOpen ? '닫기' : '글쓰기'}
             </Button>
           )}
@@ -172,7 +172,7 @@ export function Community() {
                   onChange={(e) => setContent(e.target.value)}
                   maxLength={CONTENT_MAX}
                   rows={7}
-                  placeholder="매매 기록이나 궁금한 점을 남겨 보세요"
+                  placeholder="이 종목에 대한 생각을 자유롭게 남겨보세요"
                   className={`${inputClass} resize-y leading-relaxed`}
                 />
               </div>
@@ -181,7 +181,7 @@ export function Community() {
               {formError && <p className="text-sm text-rose-300">{formError}</p>}
 
               <div className="flex justify-end">
-                <Button type="submit" disabled={!canSubmit}>
+                <Button type="submit" size="sm" disabled={!canSubmit}>
                   {submitting ? '등록 중…' : '등록'}
                 </Button>
               </div>
