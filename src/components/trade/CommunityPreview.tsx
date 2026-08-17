@@ -1,4 +1,4 @@
-// 선택한 종목의 최근 커뮤니티 게시글 미리보기 — 더보기는 해당 종목으로 필터링된 커뮤니티로 이동한다
+// 선택한 종목의 최근 커뮤니티 게시글 미리보기 — 전체보기는 해당 종목으로 필터링된 커뮤니티로 이동한다
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../ui/Card'
@@ -48,6 +48,9 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
       <div className="p-6">
         <div className="flex items-baseline justify-between gap-3">
           <h3 className="font-display text-base font-semibold">{instrumentName} 커뮤니티</h3>
+          <LinkButton to={`/community?instrumentId=${instrumentId}`} size="sm" variant="ghost">
+            전체보기
+          </LinkButton>
         </div>
 
         {loadError && <p className="mt-3 text-sm text-rose-300">{loadError}</p>}
@@ -82,15 +85,6 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
             ))}
           </ul>
         )}
-
-        <LinkButton
-          to={`/community?instrumentId=${instrumentId}`}
-          size="sm"
-          variant="ghost"
-          className="mt-3"
-        >
-          더보기
-        </LinkButton>
       </div>
     </Card>
   )
