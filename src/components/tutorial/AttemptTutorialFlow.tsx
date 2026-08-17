@@ -47,6 +47,13 @@ const REFLECTION_MAX = 2000
 const OBSERVE_EVERY_N_TICKS = 2
 /** 이 시간 이하로 남으면 카운트다운을 경고색으로 바꾼다. */
 const SALE_URGENT_MS = 60_000
+/**
+ * 서버가 매수 체결가에서 손절·익절선을 만들 때 쓰는 비율. 서버 TUTORIAL-FLOW-008과 같은 값이며
+ * **서버가 바뀌면 여기도 바뀌어야 한다** — 매수 전 어림 계산이 매수 후 서버 확정값과 어긋나면
+ * 사용자는 화면이 거짓말을 했다고 느낀다.
+ */
+const STOP_LOSS_RATE = -0.03
+const TAKE_PROFIT_RATE = 0.05
 type TutorialOrderType = 'MARKET' | 'LIMIT'
 /** 오류를 "그 오류를 낸 액션 바로 아래"에 그리기 위한 위치 표시. 페이지 맨 아래 한 곳에만 두면 아무도 못 본다. */
 type ErrorScope = 'select' | 'buy' | 'sell' | 'pending' | 'observe' | 'reflection' | 'restart'
@@ -131,6 +138,15 @@ function toChartCandles(chart: PracticeTutorialChartResponse | null): Candle[] {
     current: candle.current,
   }))
 }
+
+/** 비율 상수를 그대로 문구용 "-3%" / "+5%" 로 만든다. 숫자를 문구에 따로 적으면 비율이 바뀔 때 어긋난다. */
+function rateLabel(rate: number): string {
+  const percent = Number((rate * 100).toFixed(2))
+  return `${percent > 0 ? '+' : ''}${percent}%`
+}
+
+const STOP_LOSS_LABEL = rateLabel(STOP_LOSS_RATE)
+const TAKE_PROFIT_LABEL = rateLabel(TAKE_PROFIT_RATE)
 
 /** "+216원" / "-1,200원". 원화는 소수가 없으므로 formatKRW의 반올림을 그대로 쓴다. */
 function formatSignedKRW(value: number): string {
@@ -336,7 +352,56 @@ function TradeResultBlock({ result }: { result: PracticeTradeResultResponse }) {
   )
 }
 
-function RiskEducationCard({ attempt }: { attempt: PracticeAttemptResponse }) {
+/**
+ * 매수 전 미리보기. 아직 체결가가 없어 riskSnapshot이 없으므로 차트 최신가에서 뽑은 **어림값**이다 —
+ * "지금 값이면"·"약"으로 확정값이 아님을 문구에 드러낸다. 실제 기준선은 체결 시점에 서버가 확정한다.
+ * 수량이 비었거나 0 이하거나 현재가를 모르면 줄 자체를 렌더하지 않는다.
+ */
+function BuyRiskPreviewLine({ latestPrice, quantity }: { latestPrice: number | null; quantity: number }) {
+  if (latestPrice === null || !(quantity > 0)) return null
+  const stopLossPrice = latestPrice * (1 + STOP_LOSS_RATE)
+  const takeProfitPrice = latestPrice * (1 + TAKE_PROFIT_RATE)
+  const loss = (latestPrice - stopLossPrice) * quantity
+  const gain = (takeProfitPrice - latestPrice) * quantity
+  return (
+    <p className="mt-1 text-sm text-muted">
+      지금 값이면 손절선은 약 {formatKRW(stopLossPrice)}이고, 여기까지 떨어지면 약 {formatKRW(loss)}을 잃습니다.
+      익절선은 약 {formatKRW(takeProfitPrice)}이고, 여기까지 오르면 약 {formatKRW(gain)}을 법니다. 수수료는 빼고
+      계산한 값입니다.
+    </p>
+  )
+}
+
+/**
+ * 지금 들고 있는 수량 기준으로 두 기준선에 닿았을 때의 금액. -3%가 자기 돈으로 얼마인지 감이 없는
+ * 초보자를 위한 것이라, 여기서는 riskSnapshot의 서버 확정가를 그대로 써서 어림이 아니다.
+ * 수량을 모르면(재시작 계정에서 실제로 null이 온다) 문장을 통째로 생략한다.
+ */
+function RiskAmountLine({
+  risk,
+  holdingQuantity,
+}: {
+  risk: NonNullable<PracticeAttemptResponse['riskSnapshot']>
+  holdingQuantity: number | null
+}) {
+  if (holdingQuantity === null || holdingQuantity <= 0) return null
+  const loss = (risk.entryPrice - risk.stopLossPrice) * holdingQuantity
+  const gain = (risk.takeProfitPrice - risk.entryPrice) * holdingQuantity
+  return (
+    <p className="mt-4 text-sm leading-relaxed text-ink">
+      지금 {holdingQuantity}개를 갖고 있으니, 손절선에 닿으면 약 {formatKRW(loss)}을 잃고 익절선에 닿으면 약{' '}
+      {formatKRW(gain)}을 법니다. <span className="text-muted">수수료는 빼고 계산한 값입니다.</span>
+    </p>
+  )
+}
+
+function RiskEducationCard({
+  attempt,
+  holdingQuantity,
+}: {
+  attempt: PracticeAttemptResponse
+  holdingQuantity: number | null
+}) {
   const risk = attempt.riskSnapshot
   if (!risk) return null
   return (
@@ -348,11 +413,11 @@ function RiskEducationCard({ attempt }: { attempt: PracticeAttemptResponse }) {
           <dd className="mt-1 tabular text-base text-ink">{formatKRW(risk.entryPrice)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">더 떨어지면 파는 선 (손절, -3%)</dt>
+          <dt className="text-xs text-muted">더 떨어지면 파는 선 (손절, {STOP_LOSS_LABEL})</dt>
           <dd className="mt-1 tabular text-base text-loss">{formatKRW(risk.stopLossPrice)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">더 오르면 파는 선 (익절, +5%)</dt>
+          <dt className="text-xs text-muted">더 오르면 파는 선 (익절, {TAKE_PROFIT_LABEL})</dt>
           <dd className="mt-1 tabular text-base text-gain">{formatKRW(risk.takeProfitPrice)}</dd>
         </div>
       </dl>
@@ -371,6 +436,7 @@ function RiskEducationCard({ attempt }: { attempt: PracticeAttemptResponse }) {
         </p>
         <p>처음 산 값으로 한 번 정해진 뒤에는 가격이 움직여도 바뀌지 않습니다.</p>
       </div>
+      <RiskAmountLine risk={risk} holdingQuantity={holdingQuantity} />
     </Card>
   )
 }
@@ -969,8 +1035,8 @@ export function AttemptTutorialFlow({
                 referenceLines={
                   attempt.riskSnapshot
                     ? [
-                        { value: attempt.riskSnapshot.stopLossPrice, tone: 'loss', label: '손절 -3%' },
-                        { value: attempt.riskSnapshot.takeProfitPrice, tone: 'gain', label: '익절 +5%' },
+                        { value: attempt.riskSnapshot.stopLossPrice, tone: 'loss', label: `손절 ${STOP_LOSS_LABEL}` },
+                        { value: attempt.riskSnapshot.takeProfitPrice, tone: 'gain', label: `익절 ${TAKE_PROFIT_LABEL}` },
                       ]
                     : undefined
                 }
@@ -1003,7 +1069,7 @@ export function AttemptTutorialFlow({
         </div>
       )}
 
-      <RiskEducationCard attempt={attempt} />
+      <RiskEducationCard attempt={attempt} holdingQuantity={remainingQuantity} />
 
       {pendingOrder && !replay && (
         <Card innerClassName="p-5">
@@ -1135,7 +1201,8 @@ export function AttemptTutorialFlow({
             <Card innerClassName="p-5">
               <h2 className="text-base font-semibold text-ink">2. 몇 개 살지 정하고 사 봅니다</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                사는 순간의 값을 기준으로 팔 기준선 두 개(손절 -3% · 익절 +5%)가 자동으로 만들어집니다.
+                사는 순간의 값을 기준으로 팔 기준선 두 개(손절 {STOP_LOSS_LABEL} · 익절 {TAKE_PROFIT_LABEL})가
+                자동으로 만들어집니다.
                 비율을 직접 입력할 필요는 없습니다.
               </p>
               {market === 'CRYPTO' && (
@@ -1196,6 +1263,7 @@ export function AttemptTutorialFlow({
                   연습용 가짜 돈입니다
                 </p>
               )}
+              <BuyRiskPreviewLine latestPrice={latestPrice} quantity={buyQuantityNumber} />
               <ErrorNote error={flowError} scope="buy" />
             </Card>
           ) : (

@@ -406,6 +406,48 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).toBeInTheDocument()
   })
 
+  it('매수 전에는 지금 값 기준으로 손절선·익절선에서 얼마를 잃고 버는지 어림해 보여준다', async () => {
+    // 매수 전에는 체결가가 없어 riskSnapshot도 없다 — 차트 최신가 × 0.97 / × 1.05 로 어림한 값이라
+    // "지금 값이면"·"약"으로 확정값이 아님을 드러내야 한다.
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      candles: [{ date: '2026-08-14', open: 12000, high: 12500, low: 11800, close: 12340, current: true }],
+    })
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(
+      screen.getByText(/지금 값이면 손절선은 약 11,970원이고, 여기까지 떨어지면 약 370원을 잃습니다/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/익절선은 약 12,957원이고, 여기까지 오르면 약 617원을 법니다/)).toBeInTheDocument()
+    // 서버 실현손익은 수수료가 반영된 순손익이라 나중에 숫자가 어긋나 보이면 안 된다.
+    expect(screen.getByText(/수수료는 빼고 계산한 값입니다/)).toBeInTheDocument()
+  })
+
+  it('수량이 비면 손익 어림 줄을 렌더하지 않는다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.getByText(/지금 값이면 손절선은/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/몇 개 살까요/), { target: { value: '' } })
+    expect(screen.queryByText(/지금 값이면 손절선은/)).not.toBeInTheDocument()
+  })
+
+  it('매수 후에는 서버 확정 기준선으로 실제 보유 수량만큼의 손익 금액을 보여준다', async () => {
+    const currentEvidence = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    // entry 10,000 / stop 9,700 / take 10,500 · 2개 → 600원 손실, 1,000원 이익.
+    expect(
+      screen.getByText(/지금 2개를 갖고 있으니, 손절선에 닿으면 약 600원을 잃고 익절선에 닿으면 약 1,000원을 법니다/),
+    ).toBeInTheDocument()
+  })
+
   it('수량이 null이면 0개라고 지어내지 않고 개수를 생략하며 매도를 잠근다', async () => {
     // 완료한 시장을 재시작하면 서버가 예전 완료 응답을 돌려줘 수량 3종이 전부 null로 온다(실측).
     // 체결가와 손절·익절선은 정상이라 수량만 비어 있다 — `?? 0`이면 "0개를 샀습니다"라는 거짓말이 된다.
@@ -428,6 +470,8 @@ describe('AttemptTutorialFlow', () => {
     // 수량을 모르는 게 진짜 이유다 — "잠시 뒤 팔 수 있어요"는 오지 않을 일을 약속하는 문구라 띄우지 않는다.
     expect(screen.queryByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).not.toBeInTheDocument()
     expect(screen.getByText(/지금 가진 수량을 불러오지 못했습니다/)).toBeInTheDocument()
+    // 위험 기준 카드의 금액 문장도 수량을 모르면 통째로 생략한다.
+    expect(screen.queryByText(/갖고 있으니/)).not.toBeInTheDocument()
   })
 
   it('관찰이 인정되면 매도 버튼이 풀리고 잠금 안내가 사라진다', async () => {
