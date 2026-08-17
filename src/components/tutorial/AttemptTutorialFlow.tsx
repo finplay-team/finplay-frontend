@@ -494,6 +494,12 @@ export function AttemptTutorialFlow({
     remainingQuantity <= 0
   const observed = progress.steps.some((step) => step.evidence.observationId !== null)
   const expired = progress.steps.find((step) => step.step === 4)?.status === 'EXPIRED'
+  /**
+   * evidence 없이 전량 매도돼 4단계가 잠긴 상태. tick 루프가 관찰을 계속 쌓아 스스로 풀려나므로
+   * 화면이 멈춘 게 아니라는 걸 알려야 한다. holdingId가 없으면 관찰을 부를 대상 자체가 없어
+   * 자동 복구가 불가능하니, 그때는 "기다리면 된다"고 말하지 않는다(오지 않을 일을 약속하지 않는다).
+   */
+  const recoveringObservation = fullySold && !observed && holdingId !== null
   const candles = useMemo(() => toChartCandles(chart), [chart])
   const latestPrice = chart && chart.candles.length > 0 ? chart.candles[chart.candles.length - 1].close : null
   const chartHigh = chart && chart.candles.length > 0 ? Math.max(...chart.candles.map((c) => c.high)) : null
@@ -535,10 +541,10 @@ export function AttemptTutorialFlow({
   }, [pendingOrder])
 
   // tick 루프가 매번 다시 구독되지 않도록, 반복 관찰 판단에 쓰는 값만 ref로 흘려보낸다.
-  const observeStateRef = useRef({ holdingId, observed, fullySold })
+  const observeStateRef = useRef({ holdingId, observed })
   useEffect(() => {
-    observeStateRef.current = { holdingId, observed, fullySold }
-  }, [holdingId, observed, fullySold])
+    observeStateRef.current = { holdingId, observed }
+  }, [holdingId, observed])
   const ticksSinceObserveRef = useRef(0)
 
   const showError = useCallback((scope: ErrorScope, message: string) => {
@@ -668,12 +674,15 @@ export function AttemptTutorialFlow({
         await onRefresh()
         // evidence가 붙을 때까지 관찰을 주기적으로 반복한다. 실패해도 화면을 오류로 덮지 않고
         // 다음 주기에 조용히 다시 시도한다.
+        // **전량 매도한 뒤에도 멈추면 안 된다.** 백엔드 #423 수정으로 매도 후의 관찰도 정상 접수되고
+        // evidence로 인정된다. evidence 없이 팔려 버린 사용자에게는 이 반복 기록이 **유일한 복구 경로**다 —
+        // 관찰은 201로 성공하지만 evidenceType이 null이라, 조건 B(3회·2분 범위)를 채울 때까지 쌓아야
+        // 4단계 잠금이 풀린다. fullySold로 막으면 사용자는 빠져나올 길 없이 갇힌다(프로덕션 재현).
         const state = observeStateRef.current
         ticksSinceObserveRef.current += 1
         if (
           !stopped &&
           !state.observed &&
-          !state.fullySold &&
           state.holdingId !== null &&
           ticksSinceObserveRef.current >= OBSERVE_EVERY_N_TICKS
         ) {
@@ -1287,7 +1296,18 @@ export function AttemptTutorialFlow({
               )}
             </Card>
           )}
-          {attempt.riskSnapshot && fullySold && <DoneLine text="3. 지켜보기 완료 · 값이 어떻게 움직이는지 확인했습니다" />}
+          {/*
+            관찰이 인정되기 전에 "지켜보기 완료"라고 쓰면 거짓이다 — 실제로 4단계는 아직 잠겨 있다.
+            evidence가 붙기 전까지는 완료가 아니라 진행 중으로 보여준다.
+          */}
+          {attempt.riskSnapshot && fullySold && observed && (
+            <DoneLine text="3. 지켜보기 완료 · 값이 어떻게 움직이는지 확인했습니다" />
+          )}
+          {attempt.riskSnapshot && recoveringObservation && (
+            <p className="rounded-2xl border border-line bg-elevated/60 px-4 py-3 text-sm text-muted">
+              3. 가격 확인 기록을 남기는 중입니다. 잠시만 기다려 주세요.
+            </p>
+          )}
 
           {attempt.riskSnapshot && (
             <Card innerClassName="p-5">
@@ -1407,13 +1427,26 @@ export function AttemptTutorialFlow({
                   <p className="text-xs leading-relaxed text-muted">
                     정답도 점수도 없고 누구에게도 공개되지 않습니다. 한 줄이면 충분합니다.
                   </p>
-                  <Button
-                    type="button"
-                    disabled={reflecting || answer.trim().length === 0}
-                    onClick={() => void handleReflection()}
-                  >
-                    {reflecting ? '완료하는 중…' : '적은 내용 저장하고 끝내기'}
-                  </Button>
+                  {/*
+                    복구가 도는 동안은 저장을 눌러도 PRACTICE_EVIDENCE_MISSING으로 반드시 실패한다 —
+                    실패 문구를 보여주느니 잠그고 이유를 말한다. 다만 holdingId가 없어 자동 복구가
+                    불가능한 경우(recoveringObservation === false)에는 잠그지 않는다. 영원히 눌리지 않는
+                    버튼보다는 오류 문구 안의 재시도 경로가 낫다.
+                  */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      disabled={reflecting || answer.trim().length === 0 || recoveringObservation}
+                      onClick={() => void handleReflection()}
+                    >
+                      {reflecting ? '완료하는 중…' : '적은 내용 저장하고 끝내기'}
+                    </Button>
+                    {recoveringObservation && (
+                      <p className="text-xs text-muted">
+                        가격 확인 기록을 남기는 중입니다. 잠시만 기다려 주세요.
+                      </p>
+                    )}
+                  </div>
                   {flowError?.scope === 'reflection' && (
                     <div className="rounded-2xl border border-loss/30 bg-loss/10 p-3">
                       <p className="text-sm text-loss">{flowError.message}</p>
