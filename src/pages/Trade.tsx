@@ -19,7 +19,6 @@ import { sideLabels } from '../lib/labels'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { placeLimitOrder, placeOrder } from '../services/orderService'
-import { bumpAccount } from '../lib/accountPulse'
 import { PendingOrders } from '../components/trade/PendingOrders'
 import { CommunityPreview } from '../components/trade/CommunityPreview'
 import { useWatchlist } from '../hooks/useWatchlist'
@@ -531,7 +530,6 @@ export function Trade() {
         }
         setSuccessNonce((n) => n + 1)
         setAccountNonce((n) => n + 1) // 잔고·보유는 스트림이 아니라 직접 다시 읽어야 갱신된다
-        bumpAccount() // 상단 내비의 지갑처럼 이 화면 밖에 있는 소비자에게도 알린다
       } catch (e) {
         // 같은 본문 재시도는 키를 유지해야 서버가 원래 응답을 재생한다.
         // 충돌은 우리 키 관리가 어긋난 경우이므로 자동 재시도 없이 키만 회전시킨다.
@@ -1161,7 +1159,6 @@ export function Trade() {
                 onChanged={() => {
                   // 예약분 변화가 응답에 실려 오지 않아 계좌·보유를 반드시 다시 읽어야 한다.
                   setAccountNonce((n) => n + 1)
-                  bumpAccount()
                 }}
               />
             )}
