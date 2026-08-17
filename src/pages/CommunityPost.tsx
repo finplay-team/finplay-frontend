@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { formatDateTime } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import {
@@ -409,27 +410,25 @@ export function CommunityPost() {
 
               {isMine && (
                 <div className="mt-8 flex flex-wrap items-center gap-2 border-t border-line pt-6">
-                  <Button variant="ghost" onClick={() => setEditing(true)}>
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                     수정
                   </Button>
-                  {deleteArmed ? (
-                    <>
-                      <span className="text-sm text-muted">정말 삭제할까요?</span>
-                      <Button onClick={handleDelete} disabled={deleting}>
-                        {deleting ? '삭제 중…' : '삭제'}
-                      </Button>
-                      <Button variant="ghost" onClick={() => setDeleteArmed(false)}>
-                        취소
-                      </Button>
-                    </>
-                  ) : (
-                    <Button variant="ghost" onClick={() => setDeleteArmed(true)}>
-                      삭제
-                    </Button>
-                  )}
+                  <Button variant="primary" size="sm" onClick={() => setDeleteArmed(true)}>
+                    삭제
+                  </Button>
                 </div>
               )}
               {deleteError && <p className="mt-3 text-sm text-rose-300">{deleteError}</p>}
+
+              <ConfirmDialog
+                open={deleteArmed}
+                title="정말 삭제할까요?"
+                message="삭제하면 되돌릴 수 없습니다."
+                confirmLabel={deleting ? '삭제 중…' : '삭제'}
+                busy={deleting}
+                onConfirm={handleDelete}
+                onCancel={() => setDeleteArmed(false)}
+              />
             </article>
           )}
         </Card>
