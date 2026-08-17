@@ -1,32 +1,44 @@
-// 마스코트가 시작 3단계를 안내하는 랜딩 섹션 — 단계 내용은 전부 실제 백엔드 동작이다
+// 마스코트가 튜토리얼 4단계를 안내하고 실제 튜토리얼로 보내는 랜딩 섹션 — 단계 내용은 전부 실제 동작이다
+import { Link } from 'react-router-dom'
 import { Mascot } from './Mascot'
 import { Reveal } from '../ui/Reveal'
+import { LinkButton } from '../ui/Button'
+import { useAuth } from '../../auth/AuthContext'
 
 /**
- * 근거: 가입 시 STOCK·CRYPTO 계좌 동시 생성 + 계좌별 시드머니 1,000만원(AUTH-001),
- * 주식 09:00~15:30 재생·코인 24시간(MKT-002·MKT-008), 매도 회고 작성(JOUR-003)과
- * 매도 직후 피드백이 그 체결의 서비스 날짜 15:30 이후 개방(FEED-007 §C-5).
+ * 근거: /tutorial 의 실제 흐름(AttemptTutorialFlow) 그대로다 —
+ * 샘플 종목 선택(attempt.status=SELECTING_INSTRUMENT) → 매수 시 서버가 체결가 기준
+ * -3% 손절선·+5% 익절선 고정(riskSnapshot) → 차트 관찰(관찰 기록은 서버가 남긴다) →
+ * 매도 후 복기 작성으로 완료. 완료 보상은 시장(주식·코인)별 최초 1회만 지급된다.
  * 순서 자체가 정보라서 번호를 붙인다.
  */
 const steps = [
   {
     n: '01',
-    title: '계좌 두 개가 함께 생깁니다',
-    body: '가입하면 주식 계좌와 코인 계좌가 동시에 만들어지고, 각각 1,000만원이 들어옵니다. 두 계좌 사이 이체는 없습니다.',
+    title: '연습할 종목을 고릅니다',
+    body: '교육용으로 만든 샘플 종목 중 하나를 고르면, 그 종목만의 차트가 시작됩니다. 실제 돈도, 실제 종목도 아닙니다.',
   },
   {
     n: '02',
-    title: '장이 열리면 주문합니다',
-    body: '주식은 09:00부터 15:30까지 그날의 분봉이 재생되는 동안, 코인은 24시간 언제든 주문할 수 있습니다.',
+    title: '수량을 정해 사 봅니다',
+    body: '매수가 체결되면 그 값을 기준으로 손절선(-3%)과 익절선(+5%)을 서버가 자동으로 그려 줍니다. 직접 계산할 필요가 없습니다.',
   },
   {
     n: '03',
-    title: '팔고 나면 복기가 붙습니다',
-    body: '매도 회고를 직접 적고, 마감 후에는 다른 시점에 팔았다면 어땠는지가 수치로 따라옵니다.',
+    title: '가격이 어디로 가는지 봅니다',
+    body: '차트에서 가격이 두 선 중 어느 쪽으로 가는지 확인하면 됩니다. 확인했다는 기록은 서버가 알아서 남깁니다.',
+  },
+  {
+    n: '04',
+    title: '팔고 나서 한 줄 적습니다',
+    body: '팔고 왜 그렇게 판단했는지 적으면 그 시장의 연습이 끝납니다. 주식과 코인은 따로 진행합니다.',
   },
 ]
 
 export function MascotTutorial() {
+  const { status } = useAuth()
+  const isAuthenticated = status !== 'anonymous'
+
   return (
     <section className="relative overflow-hidden px-4 py-20 md:py-28">
       <div aria-hidden className="orb -right-24 top-1/3 h-80 w-80" />
@@ -37,7 +49,7 @@ export function MascotTutorial() {
           {/* 말풍선은 일반 흐름에 두어 헬멧을 덮지 않게 한다. 꼬리만 아래를 향한다. */}
           <div className="glass glass-sheen relative ml-auto w-fit max-w-[15rem] px-4 py-2.5">
             <p className="text-xs font-semibold leading-snug text-ink">
-              처음이라도 <span className="text-brand">3단계면</span> 첫 주문까지 갑니다.
+              처음이라면 <span className="text-brand">짧은 연습</span>부터 해 보세요.
             </p>
             {/* 꼬리 — 유리와 같은 테두리·배경을 45도 회전시켜 만든다 */}
             <span
@@ -72,6 +84,28 @@ export function MascotTutorial() {
               </Reveal>
             ))}
           </ol>
+
+          {/*
+            비로그인 사용자를 /tutorial 로 보내면 ProtectedRoute 가 /login 으로 튕긴다 —
+            계정이 아직 없는 첫 방문자에게는 어색해서 /signup 으로 보낸다. 가입 직후에는
+            resolvePostAuthPath 가 두 시장 모두 NOT_STARTED 인 사용자를 /tutorial 로 보내므로
+            "가입하면 바로 연습부터" 는 실제 동작이다.
+          */}
+          <Reveal delay={steps.length * 90}>
+            <div className="mt-8 flex flex-wrap items-center gap-4">
+              <LinkButton to={isAuthenticated ? '/tutorial' : '/signup'} size="lg" withIcon>
+                먼저 연습해 보기
+              </LinkButton>
+              {!isAuthenticated && (
+                <p className="text-sm leading-relaxed text-muted">
+                  가입하면 바로 연습부터 시작합니다.{' '}
+                  <Link to="/login" className="text-ink underline-offset-4 hover:underline">
+                    이미 계정이 있다면 로그인
+                  </Link>
+                </p>
+              )}
+            </div>
+          </Reveal>
         </div>
       </div>
     </section>

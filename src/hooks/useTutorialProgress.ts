@@ -1,5 +1,5 @@
-// 시장별 튜토리얼 진행 상태를 조회하는 훅 — /tutorial 페이지가 쓴다. 튜토리얼은 건너뛸 수 있어
-// 강제 라우팅 가드는 없다(언제든 다시 방문해 진행할 수 있다).
+// 시장별 튜토리얼 진행 상태를 조회하는 훅 — 내비게이션의 "아직 안 끝냈어요" 표시가 쓴다.
+// 튜토리얼은 건너뛸 수 있어 강제 라우팅 가드는 없다(언제든 다시 방문해 진행할 수 있다).
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { getTutorialRevision, subscribeTutorial } from '../lib/tutorialPulse'
@@ -12,6 +12,11 @@ export interface TutorialProgressState {
   /** 조회 자체가 실패했는지 — 조회 실패도 앱을 막지 않는다(가드 자체가 없다). */
   error: boolean
   loading: boolean
+  /**
+   * 주식·코인 두 시장을 모두 완료했는지. 보상도 완료도 시장별로 따로라서 한쪽만 끝난 사용자는
+   * 아직 "완료"가 아니다. 조회하지 못한 시장(null)은 미완료로 본다.
+   */
+  allCompleted: boolean
   refresh: () => void
 }
 
@@ -60,5 +65,7 @@ export function useTutorialProgress(): TutorialProgressState {
 
   const refresh = useCallback(() => setNonce((n) => n + 1), [])
 
-  return { stock, crypto, error, loading, refresh }
+  const allCompleted = stock?.status === 'COMPLETED' && crypto?.status === 'COMPLETED'
+
+  return { stock, crypto, error, loading, allCompleted, refresh }
 }

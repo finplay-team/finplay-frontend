@@ -40,9 +40,11 @@ export function ConfirmDialog({
   }, [open, onCancel])
 
   if (!open) return null
+  // 확인 다이얼로그는 앱에서 가장 위다. 튜토리얼 스포트라이트 안내(z-50)와 겹칠 수 있는데, DOM 순서에
+  // 기대면 마운트 위치가 바뀌는 순간 조용히 뒤집히므로 z를 명시적으로 올려 둔다.
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}

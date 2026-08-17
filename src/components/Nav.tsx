@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useTutorialProgress } from '../hooks/useTutorialProgress'
 import { LinkButton } from './ui/Button'
 import { Logout } from './ui/icons'
 
@@ -35,6 +36,14 @@ export function Nav() {
   const navigate = useNavigate()
 
   const isAuthenticated = status !== 'anonymous'
+
+  /**
+   * 튜토리얼을 아직 다 끝내지 않은 로그인 사용자에게만 점을 붙인다 — 초보자에게 어디부터
+   * 눌러야 하는지 알려주는 유일한 신호다. 아직 읽는 중이거나 조회가 실패했으면 붙이지 않는다
+   * (없는 상태를 근거로 재촉하지 않는다).
+   */
+  const { loading: tutorialLoading, error: tutorialError, allCompleted } = useTutorialProgress()
+  const showTutorialNudge = isAuthenticated && !tutorialLoading && !tutorialError && !allCompleted
 
   // 라우트 변경 시 모바일 메뉴 닫기
   useEffect(() => {
@@ -90,16 +99,26 @@ export function Nav() {
             {navLinks.map((l) => {
               const active =
                 l.to === '/' ? location.pathname === '/' : location.pathname.startsWith(l.to)
+              const nudge = showTutorialNudge && l.to === '/tutorial'
               return (
                 <Link
                   key={l.to}
                   to={l.to}
                   aria-current={active ? 'page' : undefined}
                   className={`whitespace-nowrap rounded-full px-3 py-2 text-sm transition-colors duration-300 ${
-                    active ? 'bg-white/[0.06] text-ink' : 'text-muted hover:text-ink'
+                    active ? 'bg-white/[0.06] text-ink' : nudge ? 'font-medium text-ink' : 'text-muted hover:text-ink'
                   }`}
                 >
                   {l.label}
+                  {nudge && (
+                    <>
+                      <span
+                        aria-hidden
+                        className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand align-middle"
+                      />
+                      <span className="sr-only"> (아직 완료하지 않았습니다)</span>
+                    </>
+                  )}
                 </Link>
               )
             })}
@@ -135,13 +154,23 @@ export function Nav() {
           </div>
         </div>
 
-        {/* 모바일 햄버거 → X 모프 */}
+        {/*
+          모바일 햄버거 → X 모프.
+          lg 미만에서는 메뉴가 접혀 있어 링크 옆 점이 보이지 않는다 — 버튼 자체에 점을 얹어야
+          접힌 상태에서도 신호가 남는다. 메뉴를 연 동안에는 안쪽 링크가 점을 대신하므로 숨긴다.
+        */}
         <button
-          aria-label="메뉴"
+          aria-label={showTutorialNudge && !open ? '메뉴 (튜토리얼을 아직 완료하지 않았습니다)' : '메뉴'}
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] ring-1 ring-white/[0.08] lg:hidden"
         >
+          {showTutorialNudge && !open && (
+            <span
+              aria-hidden
+              className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-brand ring-2 ring-canvas"
+            />
+          )}
           <span
             className={`absolute h-[1.5px] w-4 bg-ink transition-all duration-500 ease-spring ${
               open ? 'rotate-45' : '-translate-y-1'
@@ -173,6 +202,15 @@ export function Nav() {
               style={{ transitionDelay: open ? `${100 + i * 60}ms` : '0ms' }}
             >
               {l.label}
+              {showTutorialNudge && l.to === '/tutorial' && (
+                <>
+                  <span
+                    aria-hidden
+                    className="ml-2 inline-block h-2.5 w-2.5 rounded-full bg-brand align-middle"
+                  />
+                  <span className="sr-only"> (아직 완료하지 않았습니다)</span>
+                </>
+              )}
             </Link>
           ))}
         </div>
