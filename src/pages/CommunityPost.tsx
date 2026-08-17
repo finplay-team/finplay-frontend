@@ -321,7 +321,7 @@ export function CommunityPost() {
 
       <div className="relative mx-auto max-w-3xl">
         <Link
-          to="/community"
+          to={post.instrumentId !== null ? `/community?instrumentId=${post.instrumentId}` : '/community'}
           className="text-sm text-muted transition-colors duration-300 hover:text-brand"
         >
           ← 커뮤니티

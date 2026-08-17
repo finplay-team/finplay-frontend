@@ -24,7 +24,6 @@ export function Footer() {
               title="서비스"
               items={[
                 { label: '홈', to: '/' },
-                { label: '커뮤니티', to: '/community' },
                 { label: '고객센터', to: '/support' },
               ]}
             />
