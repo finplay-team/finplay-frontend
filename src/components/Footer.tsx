@@ -46,7 +46,7 @@ export function Footer() {
           </p>
         </div>
 
-        <p className="mt-8 text-xs text-muted/70">© 2026 FinPlay. 교육용 프로토타입.</p>
+        <p className="mt-8 text-xs text-muted/70">© 2026 FinPlay.</p>
       </div>
     </footer>
   )
