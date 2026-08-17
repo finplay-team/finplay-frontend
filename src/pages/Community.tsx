@@ -8,6 +8,7 @@ import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
 import { createPost, getPosts } from '../services/communityService'
+import { useInstruments } from '../hooks/useInstruments'
 import type { PostPage } from '../services/types'
 
 const PAGE_SIZE = 10
@@ -50,6 +51,11 @@ export function Community() {
     const parsed = Number(raw)
     return Number.isFinite(parsed) ? parsed : null
   })
+
+  /** 종목 배지 표시용 — 글이 하나도 없어도(목록에서 이름을 뽑을 수 없어도) 어느 종목인지 알 수 있게 한다. */
+  const { index } = useInstruments()
+  const filterInstrument =
+    filterInstrumentId !== null ? (index?.byId.get(filterInstrumentId) ?? null) : null
 
   useEffect(() => {
     let cancelled = false
@@ -111,7 +117,14 @@ export function Community() {
       <div className="relative mx-auto max-w-3xl">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Eyebrow>커뮤니티</Eyebrow>
+            <div className="flex items-center gap-2">
+              <Eyebrow>커뮤니티</Eyebrow>
+              {filterInstrument && (
+                <span className="inline-block rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-brand">
+                  {filterInstrument.name} · {filterInstrument.symbol}
+                </span>
+              )}
+            </div>
             <h1 className="mt-4 font-display text-3xl font-semibold leading-tight text-ink md:text-4xl">
               매매 경험을 나누는 곳
             </h1>
@@ -119,9 +132,13 @@ export function Community() {
               {data ? `게시글 ${data.totalElements.toLocaleString('ko-KR')}개` : '게시글을 불러오는 중입니다.'}
             </p>
           </div>
-          <Button variant={formOpen ? 'ghost' : 'primary'} onClick={() => setFormOpen((v) => !v)}>
-            {formOpen ? '닫기' : '글쓰기'}
-          </Button>
+          {/* 글이 없으면 본문 빈 상태의 "첫 글 쓰기"만 보여준다 — 위아래 버튼이 겹쳐 보이지 않게.
+              단, 글쓰기 폼이 열려 있는 동안엔(그 사이 글이 지워지는 등) 닫을 방법이 있어야 하니 항상 보여준다. */}
+          {(formOpen || (data !== null && data.content.length > 0)) && (
+            <Button variant={formOpen ? 'ghost' : 'primary'} size="sm" onClick={() => setFormOpen((v) => !v)}>
+              {formOpen ? '닫기' : '글쓰기'}
+            </Button>
+          )}
         </header>
 
         {formOpen && (
@@ -155,7 +172,7 @@ export function Community() {
                   onChange={(e) => setContent(e.target.value)}
                   maxLength={CONTENT_MAX}
                   rows={7}
-                  placeholder="매매 기록이나 궁금한 점을 남겨 보세요"
+                  placeholder="이 종목에 대한 생각을 자유롭게 남겨보세요"
                   className={`${inputClass} resize-y leading-relaxed`}
                 />
               </div>
@@ -164,7 +181,7 @@ export function Community() {
               {formError && <p className="text-sm text-rose-300">{formError}</p>}
 
               <div className="flex justify-end">
-                <Button type="submit" disabled={!canSubmit}>
+                <Button type="submit" size="sm" disabled={!canSubmit}>
                   {submitting ? '등록 중…' : '등록'}
                 </Button>
               </div>
