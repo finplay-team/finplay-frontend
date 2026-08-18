@@ -1,6 +1,6 @@
 // 커뮤니티 게시글 목록·페이지 이동·글쓰기 폼을 담당하는 페이지
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { AttachedImage } from '../components/community/AttachedImage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -8,7 +8,7 @@ import { Eyebrow } from '../components/ui/Eyebrow'
 import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
-import { createPost, getPosts, uploadPostImage } from '../services/communityService'
+import { createPost, getPostImageBlobUrl, getPosts, uploadPostImage } from '../services/communityService'
 import { useInstruments } from '../hooks/useInstruments'
 import type { PostPage } from '../services/types'
 
@@ -47,6 +47,7 @@ export function Community() {
   const [imageUploading, setImageUploading] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   /**
    * 지금 보고 있는 종목 커뮤니티. null 이면 전체(미태그 포함) 피드. 모의투자 페이지의
    * 더보기가 ?instrumentId= 로 링크하면 이 값이 채워진다. 종목을 직접 바꾸는 UI는 없다 —
@@ -93,6 +94,34 @@ export function Community() {
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     }
   }, [imagePreviewUrl])
+
+  /**
+   * 수익 인증 카드에서 "커뮤니티에 바로 올리기"로 넘어온 진입점. 이미지는 이미 업로드가 끝나
+   * imageId 만 navigate state 로 들고 왔으므로, 로컬 파일 대신 업로드된 이미지를 blob 으로 불러와
+   * 미리보기로 쓴다. 마운트 시 1회만 확인한다 — 폼을 쓰다가 state 가 남아 있어도 다시 덮어쓰지 않는다.
+   */
+  useEffect(() => {
+    const attachedImageId = (location.state as { attachedImageId?: number } | null)?.attachedImageId
+    if (attachedImageId === undefined) return
+    let cancelled = false
+    setFormOpen(true)
+    setImageId(attachedImageId)
+    getPostImageBlobUrl(attachedImageId)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        setImagePreviewUrl(url)
+      })
+      .catch(() => {
+        // 미리보기만 실패한 것이므로 imageId 는 유지한다 — 등록 시에는 여전히 이 이미지가 첨부된다.
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const canSubmit =
     title.trim().length > 0 && content.trim().length > 0 && !submitting && !imageUploading
