@@ -6,10 +6,8 @@ import { useTutorialProgress } from '../hooks/useTutorialProgress'
 import { LinkButton } from './ui/Button'
 import { Logout } from './ui/icons'
 
-const publicLinks = [
-  { to: '/', label: '홈' },
-  { to: '/support', label: '고객센터' },
-]
+const homeLink = { to: '/', label: '홈' }
+const supportLink = { to: '/support', label: '고객센터' }
 
 /**
  * 로그인 시 추가로 노출되는 메뉴.
@@ -20,8 +18,8 @@ const publicLinks = [
  * 자체는 그대로 있다.
  */
 const authLinks = [
-  { to: '/tutorial', label: '튜토리얼' },
   { to: '/news', label: '뉴스' },
+  { to: '/tutorial', label: '튜토리얼' },
   { to: '/trade', label: '모의투자' },
   { to: '/portfolio', label: '포트폴리오' },
   { to: '/feedback', label: 'AI 복기' },
@@ -71,7 +69,7 @@ export function Nav() {
     navigate('/')
   }
 
-  const navLinks = [...publicLinks, ...(isAuthenticated ? authLinks : [])]
+  const navLinks = [homeLink, ...(isAuthenticated ? authLinks : []), supportLink]
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex justify-center px-4">
