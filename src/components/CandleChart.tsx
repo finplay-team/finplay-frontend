@@ -387,17 +387,29 @@ export function CandleChart({
   /**
    * 포인터 좌표를 봉 인덱스로 바꾼다. 닿는 곳이 없으면 null.
    *
-   * 예전에는 "실제 캔들(몸통 폭 × 고가~저가)" 위에서만 잡았는데, 30봉·375px 화면이면 가로
-   * 허용 오차가 ±3px 남짓이라 손가락으로는 사실상 열 수 없었다 — 세로 판정은 없애고 플롯
-   * 영역 전체로, 가로는 최소 TOUCH_SLOP_PX 까지 넓힌다.
+   * 터치는 30봉·375px 화면이면 가로 허용 오차가 ±3px 남짓이라 손가락으로는 사실상 열 수
+   * 없었다 — 세로 판정을 없애고 플롯 영역 전체로, 가로는 최소 TOUCH_SLOP_PX 까지 넓힌다.
+   * 마우스는 포인터가 정확해 넓힐 이유가 없고, 넓히면 캔들 몸통이 아닌 빈 여백에 올려도
+   * 툴팁이 뜬다 — 마우스는 실제 캔들(몸통 폭 × 고가~저가) 위에서만 잡는 예전 판정을 쓴다.
    */
-  const hitIndexAt = (clientX: number, clientY: number, rect: DOMRect): number | null => {
+  const hitIndexAt = (
+    clientX: number,
+    clientY: number,
+    rect: DOMRect,
+    pointerType: string,
+  ): number | null => {
     const px = ((clientX - rect.left) / rect.width) * width
     const py = ((clientY - rect.top) / rect.height) * chartH
     if (py < PAD.top || py > plotBottom) return null
     const idx = Math.floor((px - PAD.left) / barW)
     if (idx < 0 || idx >= n) return null
-    return Math.abs(px - x(idx)) <= Math.max(TOUCH_SLOP_PX, bodyW / 2) ? idx : null
+    if (pointerType !== 'mouse') {
+      return Math.abs(px - x(idx)) <= Math.max(TOUCH_SLOP_PX, bodyW / 2) ? idx : null
+    }
+    if (Math.abs(px - x(idx)) > bodyW / 2) return null
+    const bar = bars[idx]
+    const hitPad = 2 // 얇은 꼬리만 있는 봉도 너무 빡빡하지 않게 약간의 여유를 준다
+    return py >= y(bar.high) - hitPad && py <= y(bar.low) + hitPad ? idx : null
   }
 
   /**
@@ -425,7 +437,7 @@ export function CandleChart({
     }
     // 두 손가락 핀치 중에는 손가락마다 pointermove 가 따로 와서 툴팁이 제멋대로 튄다 — 건너뛴다.
     if (e.pointerType !== 'mouse' && pinchDistRef.current !== null) return
-    setHover(hitIndexAt(e.clientX, e.clientY, rect))
+    setHover(hitIndexAt(e.clientX, e.clientY, rect, e.pointerType))
   }
 
   /**
@@ -435,7 +447,7 @@ export function CandleChart({
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.pointerType !== 'mouse') {
       if (pinchDistRef.current !== null) return
-      setHover(hitIndexAt(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()))
+      setHover(hitIndexAt(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), e.pointerType))
       return
     }
     if (e.button !== 0) return
