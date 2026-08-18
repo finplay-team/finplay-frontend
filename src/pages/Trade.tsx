@@ -135,12 +135,12 @@ function Pill({
   children: ReactNode
 }) {
   // 코인·주식 배지 둘 다 "빗썸 실시세"에 원래 있던 회색 배경(bg-white/[0.04])을 그대로 채우고,
-  // 테두리·글자만 시장 액센트를 쓴다 — 코인은 앰버, 주식은 상태 점과 같은 파란색(#2FA4E7,
-  // "일본 하늘" 톤으로 골랐다). 2026-08-18 피드백.
+  // 테두리·글자만 시장 액센트를 쓴다 — 코인은 앰버, 주식은 상태 점과 같은 딥 틸(#0D9488,
+  // 브랜드 민트와 같은 hue 를 더 진하게). 2026-08-18 피드백.
   const activeTone =
     tone === 'coin'
       ? 'border border-coin-soft bg-white/[0.04] text-coin'
-      : 'border border-[#2FA4E7] bg-white/[0.04] text-[#2FA4E7]'
+      : 'border border-[#0D9488] bg-white/[0.04] text-[#2DD4BF]'
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${
@@ -166,8 +166,8 @@ export function Trade() {
   // 코인이 우선 시장이라 기본 탭도 코인으로 연다(탭 순서도 MarketTabs.tsx에서 코인이 먼저다).
   const [market, setMarket] = useState<Market>('CRYPTO')
   const isCrypto = market === 'CRYPTO'
-  // 주식은 민트 대신 이 화면 전용 파란 액센트를 쓴다(2026-08-18 피드백) — Card 의 blue accent 참고.
-  const accent = isCrypto ? 'coin' : 'blue'
+  // 주식은 브랜드 민트 대신 이 화면 전용 딥 틸 액센트를 쓴다(2026-08-18 피드백) — Card 의 deepTeal accent 참고.
+  const accent = isCrypto ? 'coin' : 'deepTeal'
 
   // 코인 탭에서는 주식 SSE 를 붙잡아 둘 이유가 없다.
   const {
@@ -395,10 +395,10 @@ export function Trade() {
      * 잘려 보이는 렌더링 버그를 냈다(2026-08-18 피드백). border 는 box-shadow 가 아니라 박스
      * 모델 자체라 이런 클리핑에 영향받지 않는다.
      */
-    // 주식은 민트 대신 이 화면 전용 파란 액센트(#2FA4E7)를 쓴다(2026-08-18 피드백).
+    // 주식은 브랜드 민트 대신 이 화면 전용 딥 틸 액센트(#0D9488)를 쓴다(2026-08-18 피드백).
     const activeTone = isCrypto
       ? 'bg-coin-soft border border-coin/40'
-      : 'bg-[#2FA4E7]/10 border border-[#2FA4E7]/40'
+      : 'bg-[#0D9488]/10 border border-[#0D9488]/40'
     const starred = watchlist.has(instrument.instrumentId)
     const starBusy = watchlist.busy.has(instrument.instrumentId)
     return (
@@ -415,7 +415,7 @@ export function Trade() {
           <span className="min-w-0">
             <span
               className={`block truncate text-sm font-medium ${
-                active ? (isCrypto ? 'text-coin' : 'text-[#2FA4E7]') : 'text-ink'
+                active ? (isCrypto ? 'text-coin' : 'text-[#2DD4BF]') : 'text-ink'
               }`}
             >
               {instrument.name}
@@ -735,7 +735,7 @@ export function Trade() {
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
                       streamState === 'open' && !stale
-                        ? 'animate-pulse-soft bg-[#2FA4E7]'
+                        ? 'animate-pulse-soft bg-[#2DD4BF]'
                         : 'bg-muted'
                     }`}
                     aria-hidden
@@ -1044,7 +1044,7 @@ export function Trade() {
                       aria-pressed={active}
                       className={`px-4 py-3.5 text-sm font-medium transition-colors duration-300 ${
                         active
-                          ? `border-b-2 text-ink ${isCrypto ? 'border-coin' : 'border-[#2FA4E7]'}`
+                          ? `border-b-2 text-ink ${isCrypto ? 'border-coin' : 'border-[#0D9488]'}`
                           : 'border-b-2 border-transparent text-muted hover:text-ink'
                       }`}
                     >
