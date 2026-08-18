@@ -717,12 +717,13 @@ export function Trade() {
 
         {/*
           2-1. 현재가 고정 바 — 아래로 스크롤해 주문 폼을 채우는 동안에도 "무엇을 얼마에" 사고파는지
-          계속 보여야 한다. 상단 내비(z-40, top 20px + 높이 약 44px) 바로 아래에 붙이고 z-20 을 준다 —
-          내비보다 아래, 스포트라이트(z-50)·확인 다이얼로그(z-[60])보다도 아래다.
+          계속 보여야 한다. 상단 내비(z-40)는 top 20px + 높이 54px 라 아래끝이 74px 다 — 고정 위치는
+          그보다 8px 아래인 82px 로 잡는다(브라우저 실측: 68px 이면 내비가 이 바의 위 6px 을 덮는다).
+          z-20 은 내비보다 아래, 스포트라이트(z-50)·확인 다이얼로그(z-[60])보다도 아래다.
           아래 차트 카드에는 같은 현재가를 다시 두지 않는다(중복 표시 방지).
         */}
         {selected && (
-          <div className="sticky top-[68px] z-20 mt-6">
+          <div className="sticky top-[82px] z-20 mt-6">
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-ink">{selected.name}</p>
