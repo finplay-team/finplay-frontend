@@ -121,11 +121,30 @@ function toQtyInput(value: number): string {
     .replace(/\.$/, '')
 }
 
-function Pill({ active = false, children }: { active?: boolean; children: ReactNode }) {
+/**
+ * tone 은 배지 테두리·글자색을 그 시장 자체의 액센트에 맞춘다 — 코인은 앰버, 주식은 파란색
+ * (2026-08-18 피드백: 배지가 시장과 상관없이 항상 민트 배경으로 고정돼 있던 것을 고쳤다).
+ */
+function Pill({
+  active = false,
+  tone = 'brand',
+  children,
+}: {
+  active?: boolean
+  tone?: 'brand' | 'coin'
+  children: ReactNode
+}) {
+  // 코인·주식 배지 둘 다 "빗썸 실시세"에 원래 있던 회색 배경(bg-white/[0.04])을 그대로 채우고,
+  // 테두리·글자만 시장 액센트를 쓴다 — 코인은 앰버, 주식은 상태 점과 같은 파란색(#2FA4E7,
+  // "일본 하늘" 톤으로 골랐다). 2026-08-18 피드백.
+  const activeTone =
+    tone === 'coin'
+      ? 'border border-coin-soft bg-white/[0.04] text-coin'
+      : 'border border-[#2FA4E7] bg-white/[0.04] text-[#2FA4E7]'
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${
-        active ? 'bg-brand-soft text-brand' : 'bg-white/[0.04] text-muted ring-1 ring-white/[0.08]'
+        active ? activeTone : 'bg-white/[0.04] text-muted ring-1 ring-white/[0.08]'
       }`}
     >
       {children}
@@ -147,7 +166,8 @@ export function Trade() {
   // 코인이 우선 시장이라 기본 탭도 코인으로 연다(탭 순서도 MarketTabs.tsx에서 코인이 먼저다).
   const [market, setMarket] = useState<Market>('CRYPTO')
   const isCrypto = market === 'CRYPTO'
-  const accent = isCrypto ? 'coin' : 'brand'
+  // 주식은 민트 대신 이 화면 전용 파란 액센트를 쓴다(2026-08-18 피드백) — Card 의 blue accent 참고.
+  const accent = isCrypto ? 'coin' : 'blue'
 
   // 코인 탭에서는 주식 SSE 를 붙잡아 둘 이유가 없다.
   const {
@@ -375,9 +395,10 @@ export function Trade() {
      * 잘려 보이는 렌더링 버그를 냈다(2026-08-18 피드백). border 는 box-shadow 가 아니라 박스
      * 모델 자체라 이런 클리핑에 영향받지 않는다.
      */
+    // 주식은 민트 대신 이 화면 전용 파란 액센트(#2FA4E7)를 쓴다(2026-08-18 피드백).
     const activeTone = isCrypto
       ? 'bg-coin-soft border border-coin/40'
-      : 'bg-brand-soft border border-brand/40'
+      : 'bg-[#2FA4E7]/10 border border-[#2FA4E7]/40'
     const starred = watchlist.has(instrument.instrumentId)
     const starBusy = watchlist.busy.has(instrument.instrumentId)
     return (
@@ -394,7 +415,7 @@ export function Trade() {
           <span className="min-w-0">
             <span
               className={`block truncate text-sm font-medium ${
-                active ? (isCrypto ? 'text-coin' : 'text-brand') : 'text-ink'
+                active ? (isCrypto ? 'text-coin' : 'text-[#2FA4E7]') : 'text-ink'
               }`}
             >
               {instrument.name}
@@ -690,7 +711,7 @@ export function Trade() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {isCrypto ? (
               <>
-                <Pill active={!stale}>
+                <Pill active={!stale} tone="coin">
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
                       stale ? 'bg-muted' : 'animate-pulse-soft bg-coin'
@@ -707,12 +728,15 @@ export function Trade() {
                   이전엔 "실시간 수신"(SSE 연결 상태) 배지와 "장 운영 중/장 마감"(marketStatus) 배지가
                   따로 있었다. 하나로 합쳐 marketStatus 텍스트로 통일했다(2026-08-18 피드백) — 점(dot)
                   애니메이션은 여전히 스트림이 실제로 살아있는지(streamState === 'open' && !stale)를
-                  보여준다.
+                  보여준다. 장 마감/운영 중 둘 다 항상 색이 채워진 상태로 보여준다 — 상태를 한눈에
+                  알아보기 쉽게(2026-08-18 피드백).
                 */}
-                <Pill active={marketStatus === 'OPEN'}>
+                <Pill active>
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
-                      streamState === 'open' && !stale ? 'animate-pulse-soft bg-brand' : 'bg-muted'
+                      streamState === 'open' && !stale
+                        ? 'animate-pulse-soft bg-[#2FA4E7]'
+                        : 'bg-muted'
                     }`}
                     aria-hidden
                   />
@@ -1020,7 +1044,7 @@ export function Trade() {
                       aria-pressed={active}
                       className={`px-4 py-3.5 text-sm font-medium transition-colors duration-300 ${
                         active
-                          ? `border-b-2 text-ink ${isCrypto ? 'border-coin' : 'border-brand'}`
+                          ? `border-b-2 text-ink ${isCrypto ? 'border-coin' : 'border-[#2FA4E7]'}`
                           : 'border-b-2 border-transparent text-muted hover:text-ink'
                       }`}
                     >

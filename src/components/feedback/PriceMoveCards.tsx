@@ -113,11 +113,12 @@ export function PriceMoveCards({ instrumentId }: Props) {
   const view = data === null ? null : resolveView(data, market)
 
   return (
-    <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'}>
+    // 주식은 민트 대신 모의투자 화면 전용 파란 액센트를 쓴다(2026-08-18 피드백).
+    <Card accent={market === 'CRYPTO' ? 'coin' : 'blue'}>
       <div className="p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
           <div>
-            <Eyebrow>변동 원인</Eyebrow>
+            <Eyebrow dotClassName={market === 'CRYPTO' ? 'bg-coin' : 'bg-[#2FA4E7]'}>변동 원인</Eyebrow>
             <h3 className="mt-2 font-display text-base font-semibold text-ink">
               가격이 움직인 구간
             </h3>
