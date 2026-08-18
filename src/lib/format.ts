@@ -44,3 +44,12 @@ export function pnlTone(value: number): string {
   if (value < 0) return 'text-loss'
   return 'text-muted'
 }
+
+/**
+ * 코인은 1원 미만 단위까지 움직인다 — 정확한 금액 표시용 formatKRW(반올림)에 맡기면 소수점이
+ * 사라져 화면이 안 움직이는 것처럼 보인다. 가격은 formatKRW 를 거치지 않고 항상 이 함수에서
+ * 직접 소수점을 살려 표시한다(1000원 이상도 마찬가지 — 정수면 toLocaleString 이 그냥 정수로 찍는다).
+ */
+export function formatPrice(value: number): string {
+  return `${value.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}원`
+}

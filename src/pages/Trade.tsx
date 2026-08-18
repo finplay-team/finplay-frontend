@@ -14,13 +14,16 @@ import { useInstruments } from '../hooks/useInstruments'
 import { useStockStream, type StreamConnectionState } from '../hooks/useStockStream'
 import { formatDateTime, formatHhMm } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
-import { formatKRW, formatPercent, pnlTone } from '../lib/format'
+import { formatKRW, formatPercent, formatPrice, pnlTone } from '../lib/format'
 import { sideLabels } from '../lib/labels'
+import { CRYPTO_QTY_DECIMALS } from '../lib/quantity'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { placeLimitOrder, placeOrder } from '../services/orderService'
 import { PendingOrders } from '../components/trade/PendingOrders'
 import { CommunityPreview } from '../components/trade/CommunityPreview'
+import { DayRangeBar } from '../components/trade/DayRangeBar'
+import { QuantityPresets } from '../components/trade/QuantityPresets'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { Star } from '../components/ui/icons'
 import { PriceMoveCards } from '../components/feedback/PriceMoveCards'
@@ -48,8 +51,6 @@ const STALE_MS = 40_000
 const CRYPTO_POLL_MS = 5_000
 /** 코인 계좌·보유는 시세와 달리 자주 바뀌지 않는다 — 더 느리게 다시 읽는다. */
 const CRYPTO_ACCOUNT_REFRESH_MS = 15_000
-/** 코인 수량 소수 자릿수 상한. 백엔드 scale 이 8 이다. */
-const CRYPTO_QTY_DECIMALS = 8
 
 const streamStateLabels: Record<StreamConnectionState, string> = {
   idle: '시세 대기',
@@ -100,15 +101,6 @@ function toQtyInput(value: number): string {
     .toFixed(CRYPTO_QTY_DECIMALS)
     .replace(/(\.\d*?)0+$/, '$1')
     .replace(/\.$/, '')
-}
-
-/**
- * 코인은 1원 미만 단위까지 움직인다 — 정확한 금액 표시용 formatKRW(반올림)에 맡기면 소수점이
- * 사라져 화면이 안 움직이는 것처럼 보인다. 가격은 formatKRW 를 거치지 않고 항상 이 함수에서
- * 직접 소수점을 살려 표시한다(1000원 이상도 마찬가지 — 정수면 toLocaleString 이 그냥 정수로 찍는다).
- */
-function formatPrice(value: number): string {
-  return `${value.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}원`
 }
 
 function Pill({ active = false, children }: { active?: boolean; children: ReactNode }) {
@@ -463,6 +455,22 @@ export function Trade() {
     setQuantity(digits)
   }
 
+  /**
+   * 비율 버튼을 지금 누를 수 없는 이유. 주문 자체를 막는 disableReason 과 달리 "채울 수량을
+   * 계산할 수 없는" 경우만 본다 — 매도는 가격이 필요 없어 보유 수량만 따진다.
+   */
+  const presetDisabledReason = useMemo<string | null>(() => {
+    if (side === 'SELL') return held > 0 ? null : '가진 수량이 없어서 팔 수 없어요.'
+    if (availableCash === null) return '가진 돈을 불러오는 중이에요.'
+    if (availableCash <= 0) return '주문에 쓸 수 있는 돈이 없어요.'
+    // 지정가는 입력한 가격으로 계산하므로 현재가가 없어도 괜찮다.
+    if (isLimit) return limitPriceNumber > 0 ? null : '먼저 사고 싶은 가격을 적어 주세요.'
+    if (currentPrice === null) return '지금 가격을 받지 못해서 얼마나 살 수 있는지 계산할 수 없어요.'
+    // 시세가 STALE 이어도 막지 않는다 — 이 화면은 STALE 가격으로도 주문을 허용하므로(disableReason
+    // 참고), 비율 버튼만 잠그면 "주문은 되는데 버튼은 안 눌리는" 상태가 된다.
+    return null
+  }, [availableCash, currentPrice, held, isLimit, limitPriceNumber, side])
+
   const disableReason = useMemo<string | null>(() => {
     if (!selected) return '주문할 종목을 선택해 주세요.'
     if (!selected.tradable) return '거래정지 종목입니다.'
@@ -591,6 +599,9 @@ export function Trade() {
     openPrice !== null && openPrice !== 0 && currentPrice !== null
       ? ((currentPrice - openPrice) / openPrice) * 100
       : null
+  // "-2.3%" 보다 "-2,300원"이 먼저 와닿는다 — 같은 자리에 금액도 함께 보여준다.
+  const changeAmount =
+    openPrice !== null && currentPrice !== null ? currentPrice - openPrice : null
 
   const emptyChartMessage = candlesLoading
     ? '분봉을 불러오는 중입니다.'
@@ -704,6 +715,37 @@ export function Trade() {
           )}
         </Card>
 
+        {/*
+          2-1. 현재가 고정 바 — 아래로 스크롤해 주문 폼을 채우는 동안에도 "무엇을 얼마에" 사고파는지
+          계속 보여야 한다. 상단 내비(z-40, top 20px + 높이 약 44px) 바로 아래에 붙이고 z-20 을 준다 —
+          내비보다 아래, 스포트라이트(z-50)·확인 다이얼로그(z-[60])보다도 아래다.
+          아래 차트 카드에는 같은 현재가를 다시 두지 않는다(중복 표시 방지).
+        */}
+        {selected && (
+          <div className="sticky top-[68px] z-20 mt-6">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-ink">{selected.name}</p>
+                <p className="truncate text-[11px] text-muted tabular">
+                  {selected.symbol}
+                  {isStalePrice ? ' · 지연' : ''}
+                </p>
+              </div>
+              <div className="min-w-0 flex-none text-right">
+                <p className="text-lg font-semibold text-ink tabular md:text-xl">
+                  {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
+                </p>
+                {changePercent !== null && changeAmount !== null && (
+                  <p className={`mt-0.5 text-[11px] tabular ${pnlTone(changePercent)}`}>
+                    {isCrypto ? '차트 시작 대비' : '당일 시가 대비'} {signedKRW(changeAmount)} (
+                    {formatPercent(changePercent)})
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           {/* 3. 종목 목록 */}
           <Card innerClassName="p-4">
@@ -766,16 +808,7 @@ export function Trade() {
                     {isStalePrice ? ' · 지연' : ''}
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-2xl font-semibold text-ink tabular">
-                    {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
-                  </p>
-                  {changePercent !== null && (
-                    <p className={`mt-1 text-xs tabular ${pnlTone(changePercent)}`}>
-                      {isCrypto ? '차트 시작 대비' : '당일 시가 대비'} {formatPercent(changePercent)}
-                    </p>
-                  )}
-                </div>
+                {/* 현재가·등락은 위 고정 바가 계속 보여준다 — 여기서 다시 찍지 않는다. */}
               </div>
 
               {/* 봉 주기 전환 — 백엔드가 대소문자를 구분하므로 '1m'(분)과 '1M'(월)을 섞지 않는다 */}
@@ -817,6 +850,8 @@ export function Trade() {
               {candlesError && (
                 <p className="mt-3 text-xs text-loss">{toUserMessage(candlesError)}</p>
               )}
+              {/* 이미 받아 둔 캔들로만 계산한다 — 하루 저가·고가를 위한 API 호출은 따로 없다. */}
+              <DayRangeBar candles={candles} interval={interval} currentPrice={currentPrice} />
               <p className="mt-3 text-xs leading-relaxed text-muted">
                 {interval === '1m'
                   ? isCrypto
@@ -930,18 +965,10 @@ export function Trade() {
                       {isCrypto ? '수량 (소수점 가능)' : '수량 (주)'}
                     </label>
                     {side === 'SELL' ? (
+                      // "전량"은 아래 비율 버튼 묶음이 대신한다 — 같은 버튼을 두 곳에 두지 않는다.
                       <span className="text-xs text-muted tabular">
                         보유 {formatQty(held)}
                         {isCrypto ? '' : '주'}
-                        {held > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setQuantity(toQtyInput(held))}
-                            className="ml-2 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-brand transition-colors hover:bg-white/[0.1]"
-                          >
-                            전량
-                          </button>
-                        )}
                       </span>
                     ) : (
                       <span className="text-xs text-muted tabular">
@@ -959,6 +986,20 @@ export function Trade() {
                     value={quantity}
                     onChange={(e) => handleQuantityChange(e.target.value)}
                     className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15"
+                  />
+                  {/*
+                    비율 프리셋. 기준 가격은 주문금액 계산과 같은 unitPrice 를 쓴다 — 지정가일 때는
+                    현재가가 아니라 입력한 지정가다(서버가 예약하는 현금도 지정가 기준이다).
+                    수량은 handleQuantityChange 로 흘려 보내 기존 정수/소수 규칙을 그대로 태운다.
+                  */}
+                  <QuantityPresets
+                    side={side}
+                    isCrypto={isCrypto}
+                    availableCash={availableCash}
+                    held={held}
+                    unitPrice={unitPrice}
+                    disabledReason={presetDisabledReason}
+                    onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
                   />
                   {isCrypto && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
