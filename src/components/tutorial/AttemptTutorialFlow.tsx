@@ -926,6 +926,8 @@ export function AttemptTutorialFlow({
   const [celebrating, setCelebrating] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
+  /** 관찰 기록이 하나도 없는 상태에서 매도를 누르면 실제 매도 API를 부르기 전에 이 확인을 먼저 띄운다. */
+  const [showSellNoObserveConfirm, setShowSellNoObserveConfirm] = useState(false)
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
   /** 안내를 처음부터 다시 보여 주기 위해 SpotlightTour를 리마운트시키는 값. */
@@ -949,6 +951,13 @@ export function AttemptTutorialFlow({
     remainingQuantity <= 0
   const observed = progress.steps.some((step) => step.evidence.observationId !== null)
   const expired = progress.steps.find((step) => step.step === 4)?.status === 'EXPIRED'
+  /**
+   * 4단계(매도) 잠금은 더 이상 관찰 여부로 프론트가 계산하지 않는다 — 서버(백엔드 #429)가
+   * 관찰과 무관하게 매수 직후 5분 창 안에서 곧바로 매도를 열어 두도록 바뀌었으므로, 서버가 내려주는
+   * steps[3].locked를 그대로 따른다. 이 화면은 항상 샘플 종목(4단계) chain만 다루므로 평소에는
+   * 반드시 존재하지만, 혹시 없을 때는 안전하게 잠근 것으로 본다.
+   */
+  const sellLocked = progress.steps.find((step) => step.step === 4)?.locked ?? true
   /**
    * evidence 없이 전량 매도돼 4단계가 잠긴 상태. tick 루프가 관찰을 계속 쌓아 스스로 풀려나므로
    * 화면이 멈춘 게 아니라는 걸 알려야 한다. holdingId가 없으면 관찰을 부를 대상 자체가 없어
@@ -1415,6 +1424,28 @@ export function AttemptTutorialFlow({
       setSelling(false)
     }
   }, [attempt.instrumentId, clearError, market, onRefresh, remainingQuantity, sellKey, sellLimitPrice, sellOrderType, showError])
+
+  /**
+   * 매도 버튼을 눌렀을 때의 진입점. 서버는 이제 관찰 여부와 무관하게 매수 직후 곧바로 매도를 열어
+   * 두지만, 한 번도 지켜보지 않은 채 파는 것은 사용자가 의도한 게 맞는지 확인이 필요하다 — 관찰
+   * 기록이 하나도 없으면(observed === false) 실제 매도 API를 부르기 전에 확인창을 먼저 띄운다.
+   */
+  const handleSellClick = useCallback(() => {
+    if (!observed) {
+      setShowSellNoObserveConfirm(true)
+      return
+    }
+    void handleSell()
+  }, [handleSell, observed])
+
+  const handleSellNoObserveConfirm = useCallback(() => {
+    setShowSellNoObserveConfirm(false)
+    void handleSell()
+  }, [handleSell])
+
+  const handleSellNoObserveCancel = useCallback(() => {
+    setShowSellNoObserveConfirm(false)
+  }, [])
 
   const handleCancelPending = useCallback(async () => {
     if (!pendingOrder || cancellingPending) return
@@ -1981,12 +2012,12 @@ export function AttemptTutorialFlow({
                       data-tour="sell"
                       disabled={
                         selling ||
-                        !observed ||
+                        sellLocked ||
                         pendingOrder !== null ||
                         remainingQuantity === null ||
                         remainingQuantity <= 0
                       }
-                      onClick={() => void handleSell()}
+                      onClick={handleSellClick}
                     >
                       {selling
                         ? '주문하는 중…'
@@ -2012,7 +2043,7 @@ export function AttemptTutorialFlow({
                         다시 해 주세요.
                       </p>
                     ) : (
-                      !observed && (
+                      sellLocked && (
                         <p className="text-xs text-muted">
                           가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.
                         </p>
@@ -2120,6 +2151,16 @@ export function AttemptTutorialFlow({
         busy={restarting}
         onConfirm={() => void handleRestartConfirm()}
         onCancel={handleRestartCancel}
+      />
+
+      <ConfirmDialog
+        open={showSellNoObserveConfirm}
+        title="아직 한 번도 지켜보지 않았는데, 그래도 팔까요?"
+        message="가격이 어떻게 움직였는지 아직 한 번도 확인하지 않았습니다. 그래도 지금 판매를 진행할 수 있습니다."
+        confirmLabel="그래도 판매"
+        busy={selling}
+        onConfirm={handleSellNoObserveConfirm}
+        onCancel={handleSellNoObserveCancel}
       />
 
       {/*
