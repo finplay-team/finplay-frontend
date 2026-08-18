@@ -8,6 +8,7 @@ import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { formatDateTime } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
+import { sharePostImage, sharePostLink } from '../lib/postShare'
 import {
   countComments,
   createComment,
@@ -35,10 +36,20 @@ function isEdited(post: Post): boolean {
  * 부모·자식 어느 쪽이든 제거한다. 부모를 지우면 서버가 자식까지 CASCADE 로 지우므로
  * 화면에서도 가지째 걷어내야 서버 상태와 어긋나지 않는다.
  */
-function removeComment(list: Comment[], commentId: number): Comment[] {
-  return list
-    .filter((c) => c.commentId !== commentId)
-    .map((c) => ({ ...c, replies: c.replies.filter((r) => r.commentId !== commentId) }))
+// 백엔드 PostCommentResponse 가 tombstone 시 채우는 값과 정확히 같아야 새로고침 후에도 화면이 안 바뀐다.
+const TOMBSTONED_CONTENT = '삭제된 댓글입니다'
+const TOMBSTONED_AUTHOR_DISPLAY = '(삭제됨)'
+
+/**
+ * 부모 댓글은 서버가 실제로 지우지 않고 내용·작성자만 치환한다(tombstone) — 대댓글은 그대로 남는다.
+ * 대댓글(자식)은 서버가 실제로 하드 삭제하므로 목록에서 걷어낸다.
+ */
+function tombstoneOrRemoveComment(list: Comment[], commentId: number): Comment[] {
+  return list.map((c) =>
+    c.commentId === commentId
+      ? { ...c, content: TOMBSTONED_CONTENT, authorNickname: TOMBSTONED_AUTHOR_DISPLAY }
+      : { ...c, replies: c.replies.filter((r) => r.commentId !== commentId) },
+  )
 }
 
 export function CommunityPost() {
@@ -64,6 +75,11 @@ export function CommunityPost() {
   const [deleteArmed, setDeleteArmed] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  /** '링크 공유' · '이미지로 공유' 버튼 중 지금 처리 중인 것. 중복 클릭 방지용. */
+  const [shareBusy, setShareBusy] = useState<'link' | 'image' | null>(null)
+  /** 공유 결과 안내 문구. 몇 초 뒤 자동으로 사라진다. */
+  const [shareMessage, setShareMessage] = useState<string | null>(null)
 
   const [commentInput, setCommentInput] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
@@ -116,6 +132,13 @@ export function CommunityPost() {
     }
   }, [postId])
 
+  // 공유 안내 문구는 3초 뒤 스스로 사라진다.
+  useEffect(() => {
+    if (!shareMessage) return
+    const timer = window.setTimeout(() => setShareMessage(null), 3000)
+    return () => window.clearTimeout(timer)
+  }, [shareMessage])
+
   // authorId 가 없어 닉네임 비교가 유일한 신호다. 최종 권위는 서버의 403 FORBIDDEN 이다.
   const isMine = post !== null && member !== null && post.authorNickname === member.nickname
 
@@ -152,9 +175,10 @@ export function CommunityPost() {
             {mine &&
               (armed ? (
                 <span className="flex items-center gap-2">
-                  {/* 부모를 지우면 남의 대댓글까지 함께 사라지므로 그 사실을 미리 알린다. */}
+                  {/* 부모를 지워도 서버는 실제로 지우지 않고 내용만 치환한다(tombstone). 답글은 그대로 남으므로
+                      "답글까지 삭제된다"는 인상을 주지 않도록 안내한다. */}
                   <span className="text-muted">
-                    {!isReply && c.replies.length > 0 ? '답글까지 함께 삭제됩니다.' : '정말 삭제할까요?'}
+                    {!isReply && c.replies.length > 0 ? '삭제해도 답글은 그대로 남아요.' : '정말 삭제할까요?'}
                   </span>
                   <button
                     onClick={() => handleCommentDelete(c.commentId)}
@@ -235,6 +259,31 @@ export function CommunityPost() {
     }
   }
 
+  const handleShareLink = async () => {
+    if (shareBusy || !post) return
+    setShareBusy('link')
+    try {
+      const result = await sharePostLink(post)
+      if (result === 'copied') setShareMessage('링크를 복사했어요.')
+      else if (result === 'failed') setShareMessage('링크 공유에 실패했어요. 다시 시도해 주세요.')
+      // 'shared'는 시스템 공유 시트가 이미 결과를 보여주므로 별도 안내가 필요 없다.
+    } finally {
+      setShareBusy(null)
+    }
+  }
+
+  const handleShareImage = async () => {
+    if (shareBusy || !post) return
+    setShareBusy('image')
+    try {
+      const result = await sharePostImage(post)
+      if (result === 'downloaded') setShareMessage('카드 이미지를 다운로드했어요.')
+      else if (result === 'failed') setShareMessage('이미지 만들기에 실패했어요. 다시 시도해 주세요.')
+    } finally {
+      setShareBusy(null)
+    }
+  }
+
   const handleCommentSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (commentSubmitting || !commentInput.trim()) return
@@ -282,12 +331,11 @@ export function CommunityPost() {
     setCommentDeleteError(null)
     try {
       await deleteComment(commentId)
-      // 부모를 지우면 서버가 자식 대댓글까지 CASCADE 로 지운다 → 화면에서도 가지째 걷어낸다.
-      setComments((prev) => removeComment(prev, commentId))
+      setComments((prev) => tombstoneOrRemoveComment(prev, commentId))
     } catch (err: unknown) {
       if (isApiErrorCode(err, 'NOT_FOUND')) {
-        // 이미 지워진 댓글이므로 목록에서만 치운다.
-        setComments((prev) => removeComment(prev, commentId))
+        // 대댓글이 이미 하드 삭제된 경우다(부모는 tombstone 이라 404 가 나지 않는다). 목록에서 치운다.
+        setComments((prev) => tombstoneOrRemoveComment(prev, commentId))
         return
       }
       setCommentDeleteError(
@@ -429,8 +477,22 @@ export function CommunityPost() {
                 />
               )}
 
+              <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-6">
+                <Button variant="ghost" size="sm" onClick={handleShareLink} disabled={shareBusy !== null}>
+                  {shareBusy === 'link' ? '공유 준비 중…' : '공유하기'}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleShareImage} disabled={shareBusy !== null}>
+                  {shareBusy === 'image' ? '이미지 만드는 중…' : '이미지로 공유'}
+                </Button>
+                {shareMessage && (
+                  <p role="status" aria-live="polite" className="text-xs text-brand">
+                    {shareMessage}
+                  </p>
+                )}
+              </div>
+
               {isMine && (
-                <div className="mt-8 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-6">
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                   <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                     수정
                   </Button>

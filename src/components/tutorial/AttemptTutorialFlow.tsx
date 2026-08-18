@@ -19,13 +19,12 @@ import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../
 import {
   amendLimitOrder,
   cancelLimitOrder,
-  getOrders,
-  getPendingOrders,
   placeLimitOrder,
   placeOrder,
 } from '../../services/orderService'
 import {
   getPracticeAttemptChart,
+  getPracticeAttemptOrders,
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
@@ -687,8 +686,10 @@ function RiskEducationCard({
 }
 
 /**
- * 대기 목록에서 사라진 예약의 결말. 사라진 이유는 체결·취소 두 가지인데 폴링만으로는 구분이 안 되므로
- * 주문 목록에서 그 orderId의 최종 status를 직접 읽는다. 읽지 못하면 UNKNOWN으로 두고 **추측하지 않는다**.
+ * 대기 카드가 사라진 뒤 남기는 결말. 튜토리얼 전용 주문 조회(435)는 상태 무관(PENDING·FILLED·CANCELLED)
+ * 전부 오므로, tick마다 이 목록에서 그 orderId를 직접 찾아 PENDING 이면 카드를 유지하고 FILLED·CANCELLED면
+ * 확정 상태를 남긴다. 목록에서 아예 찾지 못하면 UNKNOWN으로 두고 **추측하지 않는다** — 이 목록은 현재
+ * attempt·run 귀속 주문만 오므로 정상적으로는 일어나지 않아야 하는 경우지만, 방어적으로 남겨 둔다.
  */
 interface PendingOutcome {
   status: 'FILLED' | 'CANCELLED' | 'UNKNOWN'
@@ -698,19 +699,6 @@ interface PendingOutcome {
 }
 
 const sideVerb: Record<OrderSide, string> = { BUY: '구매', SELL: '판매' }
-
-async function resolveVanishedPending(order: LimitOrderResponse): Promise<PendingOutcome> {
-  const base = { side: order.side, quantity: order.quantity, limitPrice: order.limitPrice }
-  try {
-    const page = await getOrders({ market: 'CRYPTO', limit: 100 })
-    const found = page.content.find((candidate) => candidate.orderId === order.orderId)
-    if (found?.status === 'FILLED') return { ...base, status: 'FILLED' }
-    if (found?.status === 'CANCELLED') return { ...base, status: 'CANCELLED' }
-    return { ...base, status: 'UNKNOWN' }
-  } catch {
-    return { ...base, status: 'UNKNOWN' }
-  }
-}
 
 /**
  * 지정가는 체결가가 지정가로 고정되므로(services/types.ts의 OrderSummary.limitPrice 주석) 체결됐다면
@@ -926,6 +914,8 @@ export function AttemptTutorialFlow({
   const [celebrating, setCelebrating] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
+  /** 관찰 기록이 하나도 없는 상태에서 매도를 누르면 실제 매도 API를 부르기 전에 이 확인을 먼저 띄운다. */
+  const [showSellNoObserveConfirm, setShowSellNoObserveConfirm] = useState(false)
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
   /** 안내를 처음부터 다시 보여 주기 위해 SpotlightTour를 리마운트시키는 값. */
@@ -949,6 +939,13 @@ export function AttemptTutorialFlow({
     remainingQuantity <= 0
   const observed = progress.steps.some((step) => step.evidence.observationId !== null)
   const expired = progress.steps.find((step) => step.step === 4)?.status === 'EXPIRED'
+  /**
+   * 4단계(매도) 잠금은 더 이상 관찰 여부로 프론트가 계산하지 않는다 — 서버(백엔드 #429)가
+   * 관찰과 무관하게 매수 직후 5분 창 안에서 곧바로 매도를 열어 두도록 바뀌었으므로, 서버가 내려주는
+   * steps[3].locked를 그대로 따른다. 이 화면은 항상 샘플 종목(4단계) chain만 다루므로 평소에는
+   * 반드시 존재하지만, 혹시 없을 때는 안전하게 잠근 것으로 본다.
+   */
+  const sellLocked = progress.steps.find((step) => step.step === 4)?.locked ?? true
   /**
    * evidence 없이 전량 매도돼 4단계가 잠긴 상태. tick 루프가 관찰을 계속 쌓아 스스로 풀려나므로
    * 화면이 멈춘 게 아니라는 걸 알려야 한다. holdingId가 없으면 관찰을 부를 대상 자체가 없어
@@ -1092,15 +1089,16 @@ export function AttemptTutorialFlow({
   useEffect(() => {
     if (market !== 'CRYPTO' || replay || attempt.instrumentId === null) return
     let cancelled = false
-    getPendingOrders({ market: 'CRYPTO', limit: 100 })
-      .then((page) => {
+    // 튜토리얼 전용 주문 조회(435)는 인증 사용자의 현재 attempt·run 귀속 주문만 오므로
+    // attemptId·runNumber로 다시 걸러낼 필요가 없다 — /api/orders/pending 시절과 다른 점이다.
+    getPracticeAttemptOrders(market)
+      .then((orders) => {
         if (cancelled) return
-        const found = page.content.find(
+        const found = orders.find(
           (order) =>
             order.instrumentId === attempt.instrumentId &&
             order.orderType === 'LIMIT' &&
-            order.practiceAttemptId === attempt.attemptId &&
-            order.practiceAttemptRunNumber === attempt.runNumber,
+            order.status === 'PENDING',
         )
         if (!found || found.limitPrice === null) return
         setPendingOrder({
@@ -1115,9 +1113,9 @@ export function AttemptTutorialFlow({
     return () => {
       cancelled = true
     }
-    // 필터가 attemptId·runNumber를 읽으므로 의존성에도 넣는다. 지금은 부모(pages/Tutorial.tsx)가
-    // key={attemptId:runNumber}로 이 컴포넌트를 통째로 remount 시켜서 실제로는 값이 바뀌기 전에
-    // 효과가 새로 도는데, 그 key가 사라지면 이전 실행의 예약을 그대로 들고 있게 된다.
+    // 부모(pages/Tutorial.tsx)가 key={attemptId:runNumber}로 이 컴포넌트를 통째로 remount 시켜서
+    // 실제로는 값이 바뀌기 전에 효과가 새로 도는데, 그 key가 사라지면 이전 실행의 예약을 그대로
+    // 들고 있게 되므로 의존성은 그대로 남겨 둔다.
   }, [attempt.attemptId, attempt.instrumentId, attempt.runNumber, market, replay])
 
   // 매도 제한 시각이 있을 때만 초 단위로 다시 그린다 — 제한이 없으면 타이머 자체를 걸지 않는다.
@@ -1150,14 +1148,23 @@ export function AttemptTutorialFlow({
         setChartError(null)
         const pending = pendingOrderRef.current
         if (pending) {
-          const page = await getPendingOrders({ market: 'CRYPTO', limit: 100 })
-          if (!page.content.some((order) => order.orderId === pending.orderId)) {
-            // 카드를 그냥 지우면 팔렸는지 취소됐는지 알 수 없다 — 최종 status를 읽어 남긴다.
+          // 튜토리얼 전용 주문 조회(435)는 상태 무관 전부 오므로 한 번의 호출로 여전히 대기
+          // 중인지, 체결·취소로 끝났는지를 함께 판단한다 — /api/orders/pending 시절처럼 "사라졌는지"와
+          // "왜 사라졌는지"를 따로 조회할 필요가 없다.
+          const orders = await getPracticeAttemptOrders(market)
+          if (stopped) return
+          const foundStatus = orders.find((order) => order.orderId === pending.orderId)?.status
+          if (foundStatus !== 'PENDING') {
+            // 카드를 그냥 지우면 팔렸는지 취소됐는지 알 수 없다 — 확인한 status만 말하고,
+            // 목록에서 아예 찾지 못했으면 지어내지 않고 UNKNOWN으로 남긴다.
             setPendingOrder(null)
             setAmendOpen(false)
-            const outcome = await resolveVanishedPending(pending)
-            if (stopped) return
-            setPendingOutcome(outcome)
+            setPendingOutcome({
+              status: foundStatus ?? 'UNKNOWN',
+              side: pending.side,
+              quantity: pending.quantity,
+              limitPrice: pending.limitPrice,
+            })
           }
         }
         await onRefresh()
@@ -1415,6 +1422,28 @@ export function AttemptTutorialFlow({
       setSelling(false)
     }
   }, [attempt.instrumentId, clearError, market, onRefresh, remainingQuantity, sellKey, sellLimitPrice, sellOrderType, showError])
+
+  /**
+   * 매도 버튼을 눌렀을 때의 진입점. 서버는 이제 관찰 여부와 무관하게 매수 직후 곧바로 매도를 열어
+   * 두지만, 한 번도 지켜보지 않은 채 파는 것은 사용자가 의도한 게 맞는지 확인이 필요하다 — 관찰
+   * 기록이 하나도 없으면(observed === false) 실제 매도 API를 부르기 전에 확인창을 먼저 띄운다.
+   */
+  const handleSellClick = useCallback(() => {
+    if (!observed) {
+      setShowSellNoObserveConfirm(true)
+      return
+    }
+    void handleSell()
+  }, [handleSell, observed])
+
+  const handleSellNoObserveConfirm = useCallback(() => {
+    setShowSellNoObserveConfirm(false)
+    void handleSell()
+  }, [handleSell])
+
+  const handleSellNoObserveCancel = useCallback(() => {
+    setShowSellNoObserveConfirm(false)
+  }, [])
 
   const handleCancelPending = useCallback(async () => {
     if (!pendingOrder || cancellingPending) return
@@ -1773,6 +1802,7 @@ export function AttemptTutorialFlow({
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
           <h2 className="text-lg font-semibold text-ink">1. 연습할 종목을 고릅니다</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted">
+            여러 종목 중 하나를 골라야 그 종목 하나의 값 움직임에만 집중해서 사고팔기 연습을 할 수 있습니다.
             고르면 바로 가격이 움직이기 시작합니다. 실제 회사가 아니라 연습용으로 만든 가상 종목이에요.
           </p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1820,8 +1850,9 @@ export function AttemptTutorialFlow({
               </div>
               <p className="mt-3 text-sm leading-relaxed text-muted">
                 사는 순간의 값을 기준으로 팔 기준선 두 개(손절 {STOP_LOSS_LABEL} · 익절 {TAKE_PROFIT_LABEL})가
-                자동으로 만들어집니다.
-                비율을 직접 입력할 필요는 없습니다.
+                자동으로 만들어집니다. 손절선은 값이 이만큼 떨어지면 더 잃지 않도록 팔라고 알려주는 선이고,
+                익절선은 이만큼 오르면 이익을 챙기고 팔라고 알려주는 선이에요. 비율을 직접 입력할 필요는
+                없습니다.
               </p>
               {market === 'CRYPTO' && (
                 <>
@@ -1903,7 +1934,8 @@ export function AttemptTutorialFlow({
             <Card innerClassName="p-5">
               <h2 className="text-base font-semibold text-ink">3. 값이 어디로 가는지 지켜봅니다</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                값이 두 기준선에 얼마나 가까워졌는지 차트로 확인하세요. 지켜본 기록은 자동으로 남습니다.
+                값이 두 기준선에 얼마나 가까워졌는지 차트로 확인하세요. 값이 오르내리는 걸 직접 눈으로 보면서
+                실제 투자에서 느끼는 감을 미리 익힐 수 있습니다. 지켜본 기록은 자동으로 남습니다.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {observing && <span className="text-xs text-muted">기록하는 중…</span>}
@@ -1936,6 +1968,11 @@ export function AttemptTutorialFlow({
           {attempt.riskSnapshot && (
             <Card innerClassName="p-5">
               <h2 className="text-base font-semibold text-ink">4. 판매(매도)하고, 왜 그랬는지 적어 봅니다</h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                매도는 산 종목을 다시 팔아서 값을 돈으로 바꾸는 것을 뜻합니다. 판 뒤에는 왜 그때 팔았는지 한
+                줄로 적어 보세요. 잘한 점과 아쉬운 점을 스스로 짚어보면 다음 연습에서 더 나은 판단을 할 수
+                있습니다.
+              </p>
               {!fullySold ? (
                 <div className="mt-4 space-y-4">
                   {/* 판매 카드도 차트에서 멀리 떨어져 있어 "그래서 지금 얼마인지"를 여기서 다시 말해야 한다. */}
@@ -1973,12 +2010,12 @@ export function AttemptTutorialFlow({
                       data-tour="sell"
                       disabled={
                         selling ||
-                        !observed ||
+                        sellLocked ||
                         pendingOrder !== null ||
                         remainingQuantity === null ||
                         remainingQuantity <= 0
                       }
-                      onClick={() => void handleSell()}
+                      onClick={handleSellClick}
                     >
                       {selling
                         ? '주문하는 중…'
@@ -2004,7 +2041,7 @@ export function AttemptTutorialFlow({
                         다시 해 주세요.
                       </p>
                     ) : (
-                      !observed && (
+                      sellLocked && (
                         <p className="text-xs text-muted">
                           가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.
                         </p>
@@ -2112,6 +2149,16 @@ export function AttemptTutorialFlow({
         busy={restarting}
         onConfirm={() => void handleRestartConfirm()}
         onCancel={handleRestartCancel}
+      />
+
+      <ConfirmDialog
+        open={showSellNoObserveConfirm}
+        title="아직 한 번도 지켜보지 않았는데, 그래도 팔까요?"
+        message="가격이 어떻게 움직였는지 아직 한 번도 확인하지 않았습니다. 그래도 지금 판매를 진행할 수 있습니다."
+        confirmLabel="그래도 판매"
+        busy={selling}
+        onConfirm={handleSellNoObserveConfirm}
+        onCancel={handleSellNoObserveCancel}
       />
 
       {/*

@@ -1,5 +1,5 @@
 // 영속 attempt 기반 투자 실습의 실행·차트·evidence 응답 타입
-import type { Decimal, LocalDateTimeString, Market } from './types'
+import type { Decimal, LocalDateTimeString, Market, OrderSide, OrderStatus, OrderType } from './types'
 
 /* ---------- 3단계: 가격 관찰·복기 (holding 기준, 026) ---------- */
 
@@ -117,6 +117,31 @@ export interface PracticeAttemptResponse {
   tutorialDate: string | null
   riskSnapshot: PracticeRiskSnapshotResponse | null
   completedAt: LocalDateTimeString | null
+}
+
+/**
+ * GET /api/education/practice/attempts/{market}/orders 항목 — 11필드 고정, bare array, id 오름차순,
+ * 페이지네이션 없음(435, 백엔드 PR #437).
+ *
+ * /api/orders·/api/orders/pending 은 실거래 화면 보호를 위해 튜토리얼 샌드박스 종목 주문을 의도적으로
+ * 제외한다(spec 033, 그대로 유지되는 정책) — 그래서 튜토리얼 화면은 자기 주문 상태를 읽을 때 반드시
+ * 이 전용 엔드포인트를 써야 한다. 인증 사용자의 현재 attempt·run에 귀속된 주문만 상태 무관
+ * (PENDING·FILLED·CANCELLED) 전부 오며, attempt 가 없으면 빈 배열(오류 아님). 재시작하면 이전 run
+ * 주문은 자동으로 빠진다.
+ */
+export interface PracticeOrderResponse {
+  orderId: number
+  market: Market
+  instrumentId: number
+  side: OrderSide
+  orderType: OrderType
+  status: OrderStatus
+  quantity: Decimal
+  /** 시장가 주문은 항상 null. 지정가는 값이 있고 체결가 == limitPrice 다. */
+  limitPrice: Decimal | null
+  requestedAt: LocalDateTimeString
+  practiceAttemptId: number
+  practiceAttemptRunNumber: number
 }
 
 export interface PracticeTutorialCandleResponse {

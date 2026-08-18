@@ -8,11 +8,13 @@ import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
   PracticeEvidenceResponse,
+  PracticeOrderResponse,
   PracticeOverallStatus,
   PracticeTutorialChartResponse,
 } from '../../services/tutorialTypes'
 import {
   getPracticeAttemptChart,
+  getPracticeAttemptOrders,
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
@@ -20,15 +22,7 @@ import {
   tickPracticeAttempt,
 } from '../../services/tutorialService'
 import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
-import {
-  amendLimitOrder,
-  cancelLimitOrder,
-  getOrders,
-  getPendingOrders,
-  placeLimitOrder,
-  placeOrder,
-} from '../../services/orderService'
-import type { OrderSummary } from '../../services/types'
+import { amendLimitOrder, cancelLimitOrder, placeLimitOrder, placeOrder } from '../../services/orderService'
 import { AttemptTutorialFlow } from './AttemptTutorialFlow'
 
 vi.mock('../CandleChart', () => ({
@@ -58,13 +52,12 @@ vi.mock('../../services/instrumentService', () => ({
 vi.mock('../../services/orderService', () => ({
   amendLimitOrder: vi.fn(),
   cancelLimitOrder: vi.fn(),
-  getOrders: vi.fn(),
-  getPendingOrders: vi.fn(),
   placeLimitOrder: vi.fn(),
   placeOrder: vi.fn(),
 }))
 vi.mock('../../services/tutorialService', () => ({
   getPracticeAttemptChart: vi.fn(),
+  getPracticeAttemptOrders: vi.fn(),
   recordHoldingObservation: vi.fn(),
   restartPracticeAttempt: vi.fn(),
   saveHoldingReflection: vi.fn(),
@@ -137,6 +130,9 @@ function progress(
   currentEvidence = evidence(),
   status: InvestmentPracticeResponse['status'] = 'IN_PROGRESS',
   stepFourStatus: PracticeOverallStatus = 'IN_PROGRESS',
+  // 백엔드 #429부터 4단계 잠금은 관찰 여부와 무관하게 서버가 결정한다 — 기본값 false는
+  // "매수 직후 곧바로 매도가 열린 상태"를 뜻한다.
+  stepFourLocked = false,
 ): InvestmentPracticeResponse {
   return {
     tutorialKey: 'COIN_PRACTICE_V1',
@@ -149,7 +145,7 @@ function progress(
       { step: 1, status: 'COMPLETED', locked: false, evidence: currentEvidence },
       { step: 2, status: 'COMPLETED', locked: false, evidence: currentEvidence },
       { step: 3, status: 'IN_PROGRESS', locked: false, evidence: currentEvidence },
-      { step: 4, status: stepFourStatus, locked: false, evidence: currentEvidence },
+      { step: 4, status: stepFourStatus, locked: stepFourLocked, evidence: currentEvidence },
     ],
   }
 }
@@ -180,7 +176,7 @@ async function flushPromises() {
   })
 }
 
-function pendingSummary(overrides: Partial<OrderSummary> = {}): OrderSummary {
+function practiceOrder(overrides: Partial<PracticeOrderResponse> = {}): PracticeOrderResponse {
   return {
     orderId: 88,
     market: 'CRYPTO',
@@ -215,8 +211,7 @@ describe('AttemptTutorialFlow', () => {
         isTutorialSample: true,
       },
     ])
-    vi.mocked(getPendingOrders).mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
-    vi.mocked(getOrders).mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([])
     vi.mocked(amendLimitOrder).mockResolvedValue({} as never)
     vi.mocked(placeOrder).mockResolvedValue({} as never)
     vi.mocked(placeLimitOrder).mockResolvedValue({} as never)
@@ -320,38 +315,27 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(88))
   })
 
-  it('hydrates and cancels only a pending limit order attributed to the exact attempt and run', async () => {
-    vi.mocked(getPendingOrders).mockResolvedValue({
-      content: [
-        pendingSummary({ orderId: 81, practiceAttemptId: null, practiceAttemptRunNumber: null }),
-        pendingSummary({ orderId: 82, practiceAttemptRunNumber: 0 }),
-        pendingSummary({ orderId: 83 }),
-      ],
-      nextCursor: null,
-      hasNext: false,
-    })
+  it('hydrates a pending limit order from the tutorial order endpoint and can cancel it', async () => {
+    // 435: 이 엔드포인트는 인증 사용자의 현재 attempt·run 귀속 주문만 오므로, 예전처럼
+    // attemptId·runNumber로 다시 걸러낼 필요가 없다 — 서버가 이미 그 범위로 좁혀서 준다.
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83 })])
 
     renderFlow()
+    await waitFor(() => expect(getPracticeAttemptOrders).toHaveBeenCalledWith('CRYPTO'))
 
     expect(await screen.findByText(/정한 값이 되기를 기다리는 중입니다/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '지정가 주문 취소' }))
     await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(83))
-    expect(cancelLimitOrder).not.toHaveBeenCalledWith(81)
-    expect(cancelLimitOrder).not.toHaveBeenCalledWith(82)
   })
 
-  it('ignores ordinary and stale-run pending orders for the same instrument and never cancels them', async () => {
-    vi.mocked(getPendingOrders).mockResolvedValue({
-      content: [
-        pendingSummary({ orderId: 91, practiceAttemptId: null, practiceAttemptRunNumber: null }),
-        pendingSummary({ orderId: 92, practiceAttemptRunNumber: 2 }),
-      ],
-      nextCursor: null,
-      hasNext: false,
-    })
+  it('다른 종목이거나 이미 끝난 주문은 예약 카드로 복원하지 않는다', async () => {
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([
+      practiceOrder({ orderId: 91, status: 'FILLED' }),
+      practiceOrder({ orderId: 92, instrumentId: 999 }),
+    ])
 
     renderFlow()
-    await waitFor(() => expect(getPendingOrders).toHaveBeenCalledWith({ market: 'CRYPTO', limit: 100 }))
+    await waitFor(() => expect(getPracticeAttemptOrders).toHaveBeenCalledWith('CRYPTO'))
 
     expect(screen.queryByText(/정한 값이 되기를 기다리는 중입니다/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '지정가 주문 취소' })).not.toBeInTheDocument()
@@ -359,11 +343,7 @@ describe('AttemptTutorialFlow', () => {
   })
 
   it('지정가 대기 중에는 기다리지 않고 지금 값에 체결하는 탈출로를 제공한다', async () => {
-    vi.mocked(getPendingOrders).mockResolvedValue({
-      content: [pendingSummary({ orderId: 83 })],
-      nextCursor: null,
-      hasNext: false,
-    })
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83 })])
     renderFlow()
 
     fireEvent.click(await screen.findByRole('button', { name: '기다리지 않고 지금 값에 구매하기' }))
@@ -418,15 +398,80 @@ describe('AttemptTutorialFlow', () => {
     ))
   })
 
-  it('관찰이 인정되기 전에는 매도 버튼을 잠그고 이유를 인라인으로 알린다', async () => {
-    // 서버는 매도 체결 뒤의 관찰을 evidence로 받지 않는다 — evidence 없이 팔면 복기가 영원히
-    // 저장되지 않으므로, 관찰이 붙기 전에는 매도 자체를 막는다.
-    const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
-    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+  it('서버가 steps[3].locked=true를 내려주면 관찰 여부와 무관하게 매도 버튼을 잠그고 이유를 인라인으로 알린다', async () => {
+    // 4단계 잠금은 더 이상 프론트가 관찰 여부로 계산하지 않는다 — 서버(백엔드 #429)가 내려주는
+    // steps[3].locked를 그대로 따른다. observationId가 있어도(관찰을 이미 했어도) locked=true면 잠긴다.
+    const currentEvidence = evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      buyQuantity: 2,
+      remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence, 'IN_PROGRESS', 'IN_PROGRESS', true))
     await flushPromises()
 
     expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeDisabled()
     expect(screen.getByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).toBeInTheDocument()
+  })
+
+  it('서버가 매도를 열어 두면(steps[3].locked=false) 관찰 기록이 없어도 매도 버튼이 눌리지만, 누르면 확인창을 먼저 띄운다', async () => {
+    // 백엔드 #429부터 서버는 관찰과 무관하게 매수 직후 5분 창 안에서 곧바로 매도를 열어 둔다.
+    // 대신 한 번도 지켜보지 않은 채 파는 것은 확인이 필요하다.
+    const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    const sellButton = screen.getByRole('button', { name: '가진 2개 전부 판매하기' })
+    expect(sellButton).toBeEnabled()
+    expect(screen.queryByText('가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.')).not.toBeInTheDocument()
+
+    fireEvent.click(sellButton)
+    expect(placeOrder).not.toHaveBeenCalled()
+    expect(screen.getByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+    await flushPromises()
+    expect(placeOrder).not.toHaveBeenCalled()
+    expect(screen.queryByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).not.toBeInTheDocument()
+  })
+
+  it('무관찰 확인창에서 확인을 누르면 그제서야 매도가 진행된다', async () => {
+    const currentEvidence = evidence({ buyTradeId: 31, holdingId: 41, buyQuantity: 2, remainingQuantity: 2 })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '가진 2개 전부 판매하기' }))
+    fireEvent.click(screen.getByRole('button', { name: '그래도 판매' }))
+
+    await waitFor(() => expect(placeOrder).toHaveBeenCalledWith(
+      {
+        market: 'CRYPTO',
+        instrumentId: 701,
+        side: 'SELL',
+        orderType: 'MARKET',
+        quantity: '2',
+      },
+      'tutorial-key',
+    ))
+    expect(screen.queryByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).not.toBeInTheDocument()
+  })
+
+  it('관찰 기록이 이미 있으면 확인창 없이 바로 매도를 진행한다', async () => {
+    const currentEvidence = evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      buyQuantity: 2,
+      remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: '가진 2개 전부 판매하기' }))
+
+    expect(screen.queryByText('아직 한 번도 지켜보지 않았는데, 그래도 팔까요?')).not.toBeInTheDocument()
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled())
   })
 
   it('매수 전에는 지금 값 기준으로 손절선·익절선에서 얼마를 잃고 버는지 어림해 보여준다', async () => {
@@ -1081,11 +1126,7 @@ describe('AttemptTutorialFlow', () => {
   })
 
   it('미체결 카드의 정정은 취소 후 재주문이 아니라 amendLimitOrder를 부른다', async () => {
-    vi.mocked(getPendingOrders).mockResolvedValue({
-      content: [pendingSummary({ orderId: 83 })],
-      nextCursor: null,
-      hasNext: false,
-    })
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83 })])
     vi.mocked(amendLimitOrder).mockResolvedValue({
       orderId: 83,
       market: 'CRYPTO',
@@ -1114,11 +1155,7 @@ describe('AttemptTutorialFlow', () => {
   })
 
   it('미체결 카드의 취소는 그대로 동작하고 취소됐다는 사실을 남긴다', async () => {
-    vi.mocked(getPendingOrders).mockResolvedValue({
-      content: [pendingSummary({ orderId: 83 })],
-      nextCursor: null,
-      hasNext: false,
-    })
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83 })])
     renderFlow()
 
     fireEvent.click(await screen.findByRole('button', { name: '지정가 주문 취소' }))
@@ -1129,17 +1166,14 @@ describe('AttemptTutorialFlow', () => {
     expect(amendLimitOrder).not.toHaveBeenCalled()
   })
 
-  it('예약이 대기 목록에서 사라지면 주문 상태를 읽어 체결 사실을 알린다', async () => {
+  it('tick마다 튜토리얼 주문 조회로 예약 상태를 확인해 체결되면 카드를 결말로 바꾼다', async () => {
     // 체결 알림이 없어 폴링이 유일한 감지 수단이다 — 카드를 조용히 지우면 팔렸는지 알 수 없다.
+    // 435: 이 엔드포인트는 상태 무관 전부 오므로, 첫 호출(마운트 복원)은 PENDING을, 이후 tick
+    // 호출은 FILLED를 돌려주는 것만으로 한 번의 조회로 결말을 확정할 수 있다.
     vi.useFakeTimers()
-    vi.mocked(getPendingOrders)
-      .mockResolvedValueOnce({ content: [pendingSummary({ orderId: 83 })], nextCursor: null, hasNext: false })
-      .mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
-    vi.mocked(getOrders).mockResolvedValue({
-      content: [pendingSummary({ orderId: 83, status: 'FILLED' })],
-      nextCursor: null,
-      hasNext: false,
-    })
+    vi.mocked(getPracticeAttemptOrders)
+      .mockResolvedValueOnce([practiceOrder({ orderId: 83 })])
+      .mockResolvedValue([practiceOrder({ orderId: 83, status: 'FILLED' })])
     renderFlow()
     await flushPromises()
     await flushPromises()
@@ -1155,12 +1189,12 @@ describe('AttemptTutorialFlow', () => {
     vi.useRealTimers()
   })
 
-  it('사라진 예약의 최종 상태를 읽지 못하면 체결됐다고 지어내지 않는다', async () => {
+  it('사라진 예약을 목록에서 찾지 못하면 체결됐다고 지어내지 않는다', async () => {
+    // 이 목록은 현재 attempt·run 귀속 주문만 오므로 정상적으로는 일어나지 않아야 하는 방어적 케이스다.
     vi.useFakeTimers()
-    vi.mocked(getPendingOrders)
-      .mockResolvedValueOnce({ content: [pendingSummary({ orderId: 83 })], nextCursor: null, hasNext: false })
-      .mockResolvedValue({ content: [], nextCursor: null, hasNext: false })
-    vi.mocked(getOrders).mockRejectedValue(new Error('network'))
+    vi.mocked(getPracticeAttemptOrders)
+      .mockResolvedValueOnce([practiceOrder({ orderId: 83 })])
+      .mockResolvedValue([])
     renderFlow()
     await flushPromises()
     await flushPromises()
@@ -1173,6 +1207,25 @@ describe('AttemptTutorialFlow', () => {
     expect(
       screen.getByText('예약이 대기 목록에서 사라졌습니다. 체결됐는지 취소됐는지는 확인하지 못했습니다.'),
     ).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('주문 조회가 실패해도 예약 카드를 함부로 지우지 않고 다음 주기에 다시 확인한다', async () => {
+    // 네트워크 오류 한 번으로 체결·취소를 지어내면 안 된다 — 카드는 그대로 두고 다음 tick에 재시도한다.
+    vi.useFakeTimers()
+    vi.mocked(getPracticeAttemptOrders)
+      .mockResolvedValueOnce([practiceOrder({ orderId: 83 })])
+      .mockRejectedValueOnce(new Error('network'))
+    renderFlow()
+    await flushPromises()
+    await flushPromises()
+    expect(screen.getByText(/정한 값이 되기를 기다리는 중입니다/)).toBeInTheDocument()
+
+    await act(async () => vi.advanceTimersByTime(3000))
+    await flushPromises()
+    await flushPromises()
+
+    expect(screen.getByText(/정한 값이 되기를 기다리는 중입니다/)).toBeInTheDocument()
     vi.useRealTimers()
   })
 
@@ -1193,11 +1246,7 @@ describe('AttemptTutorialFlow', () => {
     ])
     crypto.unmount()
 
-    vi.mocked(getPendingOrders).mockResolvedValue({
-      content: [pendingSummary({ orderId: 83 })],
-      nextCursor: null,
-      hasNext: false,
-    })
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83 })])
     renderFlow(attempt({ riskSnapshot: null }), progress())
     await waitFor(() => expect(tourSpy.targets).toContain('pending'))
     expect(tourSpy.targets).toEqual([
