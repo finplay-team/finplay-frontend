@@ -1773,6 +1773,7 @@ export function AttemptTutorialFlow({
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
           <h2 className="text-lg font-semibold text-ink">1. 연습할 종목을 고릅니다</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted">
+            여러 종목 중 하나를 골라야 그 종목 하나의 값 움직임에만 집중해서 사고팔기 연습을 할 수 있습니다.
             고르면 바로 가격이 움직이기 시작합니다. 실제 회사가 아니라 연습용으로 만든 가상 종목이에요.
           </p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1820,8 +1821,9 @@ export function AttemptTutorialFlow({
               </div>
               <p className="mt-3 text-sm leading-relaxed text-muted">
                 사는 순간의 값을 기준으로 팔 기준선 두 개(손절 {STOP_LOSS_LABEL} · 익절 {TAKE_PROFIT_LABEL})가
-                자동으로 만들어집니다.
-                비율을 직접 입력할 필요는 없습니다.
+                자동으로 만들어집니다. 손절선은 값이 이만큼 떨어지면 더 잃지 않도록 팔라고 알려주는 선이고,
+                익절선은 이만큼 오르면 이익을 챙기고 팔라고 알려주는 선이에요. 비율을 직접 입력할 필요는
+                없습니다.
               </p>
               {market === 'CRYPTO' && (
                 <>
@@ -1903,7 +1905,8 @@ export function AttemptTutorialFlow({
             <Card innerClassName="p-5">
               <h2 className="text-base font-semibold text-ink">3. 값이 어디로 가는지 지켜봅니다</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted">
-                값이 두 기준선에 얼마나 가까워졌는지 차트로 확인하세요. 지켜본 기록은 자동으로 남습니다.
+                값이 두 기준선에 얼마나 가까워졌는지 차트로 확인하세요. 값이 오르내리는 걸 직접 눈으로 보면서
+                실제 투자에서 느끼는 감을 미리 익힐 수 있습니다. 지켜본 기록은 자동으로 남습니다.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {observing && <span className="text-xs text-muted">기록하는 중…</span>}
@@ -1936,6 +1939,11 @@ export function AttemptTutorialFlow({
           {attempt.riskSnapshot && (
             <Card innerClassName="p-5">
               <h2 className="text-base font-semibold text-ink">4. 판매(매도)하고, 왜 그랬는지 적어 봅니다</h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                매도는 산 종목을 다시 팔아서 값을 돈으로 바꾸는 것을 뜻합니다. 판 뒤에는 왜 그때 팔았는지 한
+                줄로 적어 보세요. 잘한 점과 아쉬운 점을 스스로 짚어보면 다음 연습에서 더 나은 판단을 할 수
+                있습니다.
+              </p>
               {!fullySold ? (
                 <div className="mt-4 space-y-4">
                   {/* 판매 카드도 차트에서 멀리 떨어져 있어 "그래서 지금 얼마인지"를 여기서 다시 말해야 한다. */}
