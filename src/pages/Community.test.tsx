@@ -55,6 +55,7 @@ describe('Community 글쓰기 폼 — 사진 첨부', () => {
       instrumentName: null,
       imageId: 7,
       imageUrl: '/api/community/posts/images/7/file',
+      sharedTrade: null,
       createdAt: '2026-08-18T00:00:00',
       updatedAt: '2026-08-18T00:00:00',
     })

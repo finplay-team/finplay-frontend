@@ -1,6 +1,7 @@
 // 주식·코인 매매 화면 — 시장 탭으로 전환하며 시세(주식 SSE / 코인 폴링)·캔들·시장가/지정가 주문을 한 화면에서 처리한다
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { CandleChart } from '../components/CandleChart'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -133,6 +134,7 @@ function Stat({ label, value, tone = 'text-ink' }: { label: string; value: strin
 }
 
 export function Trade() {
+  const navigate = useNavigate()
   // 코인이 우선 시장이라 기본 탭도 코인으로 연다(탭 순서도 MarketTabs.tsx에서 코인이 먼저다).
   const [market, setMarket] = useState<Market>('CRYPTO')
   const isCrypto = market === 'CRYPTO'
@@ -1142,7 +1144,7 @@ export function Trade() {
                   </dl>
 
                   {/* 매수·매도 모두 체결 직후 바로 작성란을 띄운다 — Portfolio 체결내역에서도 같은 진입점을 제공한다. */}
-                  <div className="mt-4 border-t border-white/[0.08] pt-4">
+                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/[0.08] pt-4">
                     {journalTradeId === result.tradeId ? (
                       <JournalEditor
                         journalType={result.side === 'BUY' ? 'BUY' : 'SELL'}
@@ -1154,17 +1156,37 @@ export function Trade() {
                         }}
                         onCancel={() => setJournalTradeId(null)}
                       />
-                    ) : journalSavedTradeId === result.tradeId ? (
-                      <p className="text-xs text-muted">투자일기를 저장했습니다.</p>
                     ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setJournalTradeId(result.tradeId)}
-                      >
-                        투자일기 작성하러가기
-                      </Button>
+                      <>
+                        {journalSavedTradeId === result.tradeId ? (
+                          <p className="text-xs text-muted">투자일기를 저장했습니다.</p>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setJournalTradeId(result.tradeId)}
+                          >
+                            투자일기 작성하러가기
+                          </Button>
+                        )}
+                        {/*
+                          매도 체결만 수익 인증 카드로 공유할 수 있다(매수는 실현손익이 없다).
+                          코인·주식 모두 지원 — 클릭 시 커뮤니티 글쓰기 화면으로 이동하며 이 체결 id 를 실어 보낸다.
+                        */}
+                        {result.side === 'SELL' && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              navigate('/community', { state: { sharedTradeId: result.tradeId } })
+                            }
+                          >
+                            수익 인증 카드로 공유하기
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

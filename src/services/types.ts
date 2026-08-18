@@ -540,6 +540,22 @@ export interface MyRanking {
 /* ---------- 커뮤니티 ---------- */
 
 /**
+ * 게시물에 첨부된 매매 데이터 — 캔버스 이미지가 아니라 네이티브 UI(TradeShareCard)로 렌더링된다.
+ * 본인 소유·매도(SELL) 체결만 백엔드가 허용하며, 코인·주식 둘 다 지원한다.
+ */
+export interface SharedTrade {
+  symbol: string
+  name: string
+  market: Market
+  buyPrice: number
+  sellPrice: number
+  quantity: number
+  realizedPnl: number
+  /** scale-4 비율. 0.138 == 13.8% */
+  returnRate: number
+}
+
+/**
  * 목록도 content 를 전부 포함한다. authorId 가 없어 소유 판정은 authorNickname 비교뿐이다.
  * 종목 태그 3필드는 항상 셋 다 값이거나 셋 다 null 이며, symbol·name 이 함께 오므로
  * 배지를 그리는 데 instrumentService 캐시 조인이 필요 없다.
@@ -556,6 +572,8 @@ export interface Post {
   /** 첨부 이미지. 게시물당 최대 1장이며 미첨부면 둘 다 null. imageUrl 은 Access Bearer 가 필요해 <img src> 로 바로 못 그린다 */
   imageId: number | null
   imageUrl: string | null
+  /** 첨부된 매매 카드. imageId 와 동시에 값을 가질 수 없다(둘 중 하나만). 미첨부면 null */
+  sharedTrade: SharedTrade | null
   createdAt: LocalDateTimeString
   updatedAt: LocalDateTimeString
 }
@@ -572,12 +590,14 @@ export interface PostPage {
 /**
  * title 최대 100자, content 최대 5000자. instrumentId 는 선택이며 미태그면 생략한다.
  * imageId 는 POST /community/posts/images 로 미리 업로드한 이미지의 id — 미첨부면 생략한다.
+ * sharedTradeId 는 매매 카드로 공유할 본인 매도 체결 id — imageId 와 동시에 지정할 수 없다(둘 중 하나만).
  */
 export interface PostCreateRequest {
   title: string
   content: string
   instrumentId?: number | null
   imageId?: number | null
+  sharedTradeId?: number | null
 }
 
 /** POST /community/posts/images 성공(201) 응답. imageUrl 은 GET .../images/{imageId}/file 상대경로다. */

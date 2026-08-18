@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { AttachedImage } from '../components/community/AttachedImage'
+import { TradeShareCard } from '../components/community/TradeShareCard'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -469,12 +470,17 @@ export function CommunityPost() {
                 {post.content}
               </p>
 
-              {post.imageId !== null && (
-                <AttachedImage
-                  imageId={post.imageId}
-                  alt={`${post.title} 첨부 사진`}
-                  className="mt-6 max-h-[480px] w-full rounded-2xl object-cover"
-                />
+              {/* 매매 카드와 사진은 한 게시물에 동시에 붙지 않는다(서로 배타적). */}
+              {post.sharedTrade !== null ? (
+                <TradeShareCard trade={post.sharedTrade} className="mt-6" />
+              ) : (
+                post.imageId !== null && (
+                  <AttachedImage
+                    imageId={post.imageId}
+                    alt={`${post.title} 첨부 사진`}
+                    className="mt-6 max-h-[480px] w-full rounded-2xl object-cover"
+                  />
+                )
               )}
 
               <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-6">
