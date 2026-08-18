@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { AttachedImage } from '../components/community/AttachedImage'
+import { LikeButton } from '../components/community/LikeButton'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -16,6 +17,8 @@ import {
   deletePost,
   getComments,
   getPost,
+  likePost,
+  unlikePost,
   updatePost,
 } from '../services/communityService'
 import type { Comment, Post } from '../services/types'
@@ -80,6 +83,9 @@ export function CommunityPost() {
   const [shareBusy, setShareBusy] = useState<'link' | 'image' | null>(null)
   /** 공유 결과 안내 문구. 몇 초 뒤 자동으로 사라진다. */
   const [shareMessage, setShareMessage] = useState<string | null>(null)
+
+  const [likeBusy, setLikeBusy] = useState(false)
+  const [likeError, setLikeError] = useState<string | null>(null)
 
   const [commentInput, setCommentInput] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
@@ -256,6 +262,33 @@ export function CommunityPost() {
       setDeleteError(toUserMessage(err, { FORBIDDEN: '내가 쓴 글만 삭제할 수 있습니다.' }))
     } finally {
       setDeleting(false)
+    }
+  }
+
+  /** 낙관적 업데이트: 즉시 카운트·상태를 바꾸고 서버를 부른 뒤, 실패하면 되돌리고 오류를 보여준다. */
+  const handleToggleLike = async () => {
+    if (likeBusy || !post) return
+    const wasLiked = post.likedByMe
+    const prevCount = post.likeCount
+    const nextLiked = !wasLiked
+    const nextCount = prevCount + (nextLiked ? 1 : -1)
+
+    setLikeBusy(true)
+    setLikeError(null)
+    setPost((prev) => (prev ? { ...prev, likedByMe: nextLiked, likeCount: nextCount } : prev))
+
+    try {
+      if (nextLiked) {
+        const res = await likePost(postId)
+        setPost((prev) => (prev ? { ...prev, likedByMe: res.likedByMe, likeCount: res.likeCount } : prev))
+      } else {
+        await unlikePost(postId)
+      }
+    } catch (err: unknown) {
+      setPost((prev) => (prev ? { ...prev, likedByMe: wasLiked, likeCount: prevCount } : prev))
+      setLikeError(toUserMessage(err))
+    } finally {
+      setLikeBusy(false)
     }
   }
 
@@ -478,6 +511,12 @@ export function CommunityPost() {
               )}
 
               <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-6">
+                <LikeButton
+                  liked={post.likedByMe}
+                  count={post.likeCount}
+                  busy={likeBusy}
+                  onClick={() => void handleToggleLike()}
+                />
                 <Button variant="ghost" size="sm" onClick={handleShareLink} disabled={shareBusy !== null}>
                   {shareBusy === 'link' ? '공유 준비 중…' : '공유하기'}
                 </Button>
@@ -490,6 +529,7 @@ export function CommunityPost() {
                   </p>
                 )}
               </div>
+              {likeError && <p className="mt-2 text-sm text-rose-300">{likeError}</p>}
 
               {isMine && (
                 <div className="mt-4 flex flex-wrap items-center justify-end gap-2">

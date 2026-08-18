@@ -1,16 +1,29 @@
 // 커뮤니티 게시글 목록·페이지 이동·글쓰기 폼을 담당하는 페이지
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { AttachedImage } from '../components/community/AttachedImage'
+import { LikeButton } from '../components/community/LikeButton'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
 import { Layers } from '../components/ui/icons'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
-import { createPost, getPostImageBlobUrl, getPosts, uploadPostImage } from '../services/communityService'
+import {
+  createPost,
+  getPostImageBlobUrl,
+  getPosts,
+  likePost,
+  unlikePost,
+  uploadPostImage,
+} from '../services/communityService'
 import { useInstruments } from '../hooks/useInstruments'
-import type { PostPage } from '../services/types'
+import type { Post, PostPage, PostSort } from '../services/types'
+
+const SORT_OPTIONS: { value: PostSort; label: string }[] = [
+  { value: 'popular', label: '인기순' },
+  { value: 'latest', label: '최신순' },
+]
 
 const PAGE_SIZE = 10
 const TITLE_MAX = 100
@@ -30,10 +43,15 @@ function toExcerpt(content: string): string {
 
 export function Community() {
   const [page, setPage] = useState(0)
+  const [sort, setSort] = useState<PostSort>('latest')
   const [reloadKey, setReloadKey] = useState(0)
   const [data, setData] = useState<PostPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+
+  /** 좋아요 처리 중인 게시글 id 집합 — 게시글 단위로 막아야 다른 카드의 좋아요가 함께 잠기지 않는다. */
+  const [likeBusy, setLikeBusy] = useState<ReadonlySet<number>>(new Set())
+  const [likeErrors, setLikeErrors] = useState<Record<number, string>>({})
 
   const [formOpen, setFormOpen] = useState(false)
   const [title, setTitle] = useState('')
@@ -71,7 +89,7 @@ export function Community() {
     let cancelled = false
     setLoading(true)
     setLoadError(null)
-    getPosts({ page, size: PAGE_SIZE, instrumentId: filterInstrumentId })
+    getPosts({ page, size: PAGE_SIZE, instrumentId: filterInstrumentId, sort })
       .then((res) => {
         if (!cancelled) setData(res)
       })
@@ -86,7 +104,70 @@ export function Community() {
     return () => {
       cancelled = true
     }
-  }, [page, reloadKey, filterInstrumentId])
+  }, [page, reloadKey, filterInstrumentId, sort])
+
+  /** 정렬을 바꾸면 첫 페이지부터 다시 본다 — 이전 정렬의 2페이지가 남아 있으면 헷갈린다. */
+  const handleSortChange = (next: PostSort) => {
+    if (next === sort) return
+    setSort(next)
+    setPage(0)
+  }
+
+  /**
+   * 낙관적 업데이트: 클릭 즉시 카운트·상태를 바꾸고 서버를 부른다. 실패하면 되돌리고
+   * 그 카드에만 오류 문구를 남긴다(다른 카드는 영향받지 않는다).
+   * 카드 전체가 상세로 가는 Link 라서 클릭이 새 페이지로 튀지 않게 막아야 한다.
+   */
+  const handleToggleLike = async (post: Post, e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (likeBusy.has(post.postId)) return
+
+    const wasLiked = post.likedByMe
+    const prevCount = post.likeCount
+    const nextLiked = !wasLiked
+    const nextCount = prevCount + (nextLiked ? 1 : -1)
+
+    const applyLike = (postId: number, liked: boolean, count: number) => {
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              content: prev.content.map((p) =>
+                p.postId === postId ? { ...p, likedByMe: liked, likeCount: count } : p,
+              ),
+            }
+          : prev,
+      )
+    }
+
+    setLikeBusy((prev) => new Set(prev).add(post.postId))
+    setLikeErrors((prev) => {
+      if (!(post.postId in prev)) return prev
+      const next = { ...prev }
+      delete next[post.postId]
+      return next
+    })
+    applyLike(post.postId, nextLiked, nextCount)
+
+    try {
+      if (nextLiked) {
+        const res = await likePost(post.postId)
+        applyLike(post.postId, res.likedByMe, res.likeCount)
+      } else {
+        await unlikePost(post.postId)
+      }
+    } catch (err: unknown) {
+      applyLike(post.postId, wasLiked, prevCount)
+      setLikeErrors((prev) => ({ ...prev, [post.postId]: toUserMessage(err) }))
+    } finally {
+      setLikeBusy((prev) => {
+        const next = new Set(prev)
+        next.delete(post.postId)
+        return next
+      })
+    }
+  }
 
   // 로컬 미리보기용 object URL 은 바뀌거나(재선택) 페이지를 벗어날 때 해제해야 메모리가 새지 않는다.
   useEffect(() => {
@@ -320,7 +401,27 @@ export function Community() {
 
         {!formOpen && (
           <>
-            <section className="mt-8 space-y-4">
+            <div
+              role="group"
+              aria-label="정렬 방식"
+              className="mt-8 inline-flex items-center gap-1 rounded-full bg-white/[0.04] p-1"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleSortChange(opt.value)}
+                  aria-pressed={sort === opt.value}
+                  className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors duration-300 ${
+                    sort === opt.value ? 'bg-brand text-brand-ink' : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <section className="mt-4 space-y-4">
               {loading &&
                 Array.from({ length: 3 }).map((_, i) => (
                   <Card key={i} innerClassName="p-6">
@@ -385,11 +486,22 @@ export function Community() {
                             className="mt-3 h-40 w-full rounded-2xl object-cover"
                           />
                         )}
-                        <p className="mt-4 text-xs text-muted">
-                          <span className="text-ink/80">{post.authorNickname}</span>
-                          <span className="px-2 text-muted/50">·</span>
-                          <span className="tabular">{formatDateTime(post.createdAt)}</span>
-                        </p>
+                        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs text-muted">
+                            <span className="text-ink/80">{post.authorNickname}</span>
+                            <span className="px-2 text-muted/50">·</span>
+                            <span className="tabular">{formatDateTime(post.createdAt)}</span>
+                          </p>
+                          <LikeButton
+                            liked={post.likedByMe}
+                            count={post.likeCount}
+                            busy={likeBusy.has(post.postId)}
+                            onClick={(e) => void handleToggleLike(post, e)}
+                          />
+                        </div>
+                        {likeErrors[post.postId] && (
+                          <p className="mt-2 text-xs text-rose-300">{likeErrors[post.postId]}</p>
+                        )}
                       </div>
                     </Card>
                   </Link>

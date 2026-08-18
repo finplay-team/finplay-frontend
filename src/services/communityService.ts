@@ -6,7 +6,9 @@ import type {
   Post,
   PostCreateRequest,
   PostImageUploadResponse,
+  PostLikeResponse,
   PostPage,
+  PostSort,
   PostUpdateRequest,
 } from './types'
 
@@ -14,16 +16,18 @@ import type {
  * page 는 0부터, size 는 1..50.
  * instrumentId 는 조회 조건일 뿐이라 **존재하지 않는 값을 넣어도 400 이 아니라 빈 content** 다 —
  * 생성·수정 시의 태그 유효성 검증과 의도적으로 다르다.
+ * sort 는 생략하면 latest(서버 기본값)와 같다 — 굳이 값을 실어 보내지 않아도 된다.
  */
 export function getPosts(p?: {
   page?: number
   size?: number
   instrumentId?: number | null
+  sort?: PostSort
 }): Promise<PostPage> {
   const page = Math.max(0, p?.page ?? 0)
   const size = Math.min(50, Math.max(1, p?.size ?? 20))
   return api.get<PostPage>('/community/posts', {
-    query: { page, size, instrumentId: p?.instrumentId ?? undefined },
+    query: { page, size, instrumentId: p?.instrumentId ?? undefined, sort: p?.sort ?? undefined },
   })
 }
 
@@ -52,6 +56,16 @@ export function updatePost(postId: number, req: PostUpdateRequest): Promise<Post
 
 export function deletePost(postId: number): Promise<void> {
   return api.del<void>(`/community/posts/${postId}`)
+}
+
+/** 멱등 — 이미 눌렀어도 200 으로 성공한다(신규만 201). 본인 글에도 좋아요를 누를 수 있다. */
+export function likePost(postId: number): Promise<PostLikeResponse> {
+  return api.post<PostLikeResponse>(`/community/posts/${postId}/likes`)
+}
+
+/** 멱등 — 좋아요를 누른 적이 없어도 204 로 성공한다. 본문이 없어 호출부가 낙관적 값을 그대로 쓴다. */
+export function unlikePost(postId: number): Promise<void> {
+  return api.del<void>(`/community/posts/${postId}/likes`)
 }
 
 /**

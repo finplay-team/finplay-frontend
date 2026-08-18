@@ -556,9 +556,15 @@ export interface Post {
   /** 첨부 이미지. 게시물당 최대 1장이며 미첨부면 둘 다 null. imageUrl 은 Access Bearer 가 필요해 <img src> 로 바로 못 그린다 */
   imageId: number | null
   imageUrl: string | null
+  likeCount: number
+  /** 내가 좋아요를 눌렀는지. 비로그인 상태에서도 필드 자체는 내려오되 항상 false 다. */
+  likedByMe: boolean
   createdAt: LocalDateTimeString
   updatedAt: LocalDateTimeString
 }
+
+/** sort 생략 시 latest 와 동일. popular 는 좋아요 내림차순이며 동률은 최신순이다. */
+export type PostSort = 'latest' | 'popular'
 
 export interface PostPage {
   content: Post[]
@@ -567,6 +573,16 @@ export interface PostPage {
   totalElements: number
   totalPages: number
   hasNext: boolean
+}
+
+/**
+ * POST/DELETE /api/community/posts/{postId}/likes 공통 응답 — 멱등이라 신규 등록(201)과
+ * 재요청(200) 모두 이 모양이다. DELETE 는 204 라 본문이 없다(호출부가 낙관적 값을 그대로 쓴다).
+ */
+export interface PostLikeResponse {
+  postId: number
+  likeCount: number
+  likedByMe: boolean
 }
 
 /**
