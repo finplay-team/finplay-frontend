@@ -1,5 +1,5 @@
 // 주문 수량을 주문가능 현금·보유수량의 비율로 한 번에 채워 주는 프리셋 버튼 묶음
-import { useMemo } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { presetQuantity } from '../../lib/quantity'
 import type { OrderSide } from '../../services/types'
 
@@ -19,6 +19,10 @@ interface Props {
   disabledReason: string | null
   onPick: (quantity: number) => void
 }
+
+/** 코치마크(자동 스팟라이트) 대신 필요할 때만 눌러서 보는 설명 — 항상 같은 자리에 있어 다시 찾기 쉽다. */
+const HELP_TEXT =
+  '가진 돈(팔 때는 가진 수량)의 10%·25%·50%·최대를 누르면 수량이 알아서 채워져요. 직접 계산하지 않아도 돼요.'
 
 export function QuantityPresets({
   side,
@@ -47,6 +51,26 @@ export function QuantityPresets({
         : '팔 수 있는 수량이 없어요.'
       : null)
 
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpId = useId()
+  const helpRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!helpOpen) return
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!helpRef.current?.contains(e.target as Node)) setHelpOpen(false)
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHelpOpen(false)
+    }
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [helpOpen])
+
   return (
     <div className="mt-2">
       <div
@@ -66,6 +90,27 @@ export function QuantityPresets({
             {ratio < 1 ? `${ratio * 100}%` : side === 'BUY' ? '최대' : '전량'}
           </button>
         ))}
+        <div ref={helpRef} className="relative ml-auto">
+          <button
+            type="button"
+            aria-label="이 버튼들 설명 보기"
+            aria-expanded={helpOpen}
+            aria-describedby={helpOpen ? helpId : undefined}
+            onClick={() => setHelpOpen((v) => !v)}
+            className="flex h-4 w-4 items-center justify-center rounded-full border border-line text-[10px] leading-none text-muted transition-colors hover:border-ink/40 hover:text-ink"
+          >
+            ?
+          </button>
+          {helpOpen && (
+            <div
+              id={helpId}
+              role="tooltip"
+              className="absolute right-0 top-[calc(100%+6px)] z-10 w-64 rounded-2xl border border-line bg-elevated p-3 text-[12px] leading-relaxed text-muted shadow-soft-sm"
+            >
+              {HELP_TEXT}
+            </div>
+          )}
+        </div>
       </div>
       {message && <p className="mt-1.5 text-[11px] leading-relaxed text-muted">{message}</p>}
     </div>
