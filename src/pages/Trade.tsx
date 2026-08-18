@@ -377,9 +377,15 @@ export function Trade() {
   const renderInstrumentRow = (instrument: Instrument) => {
     const price = isCrypto ? cryptoPrices[instrument.instrumentId] : stockPrices[instrument.symbol]
     const active = instrument.instrumentId === selectedId
+    /*
+     * ring(box-shadow)이 아니라 border 를 쓴다 — 이 행의 조상에 overflow:hidden(카드) +
+     * overflow-y-auto(목록 스크롤 영역)이 겹쳐 있어서, box-shadow 기반 ring 이 위·왼쪽 모서리가
+     * 잘려 보이는 렌더링 버그를 냈다(2026-08-18 피드백). border 는 box-shadow 가 아니라 박스
+     * 모델 자체라 이런 클리핑에 영향받지 않는다.
+     */
     const activeTone = isCrypto
-      ? 'bg-coin-soft ring-1 ring-coin/40'
-      : 'bg-brand-soft ring-1 ring-brand/40'
+      ? 'bg-coin-soft border border-coin/40'
+      : 'bg-brand-soft border border-brand/40'
     const starred = watchlist.has(instrument.instrumentId)
     const starBusy = watchlist.busy.has(instrument.instrumentId)
     return (
@@ -800,16 +806,25 @@ export function Trade() {
                 {/*
                   즐겨찾기 종목을 아래 전체 목록에서 옮기는 게 아니다 — 원래 자리는 그대로 두고,
                   같은 종목을 위쪽에 별도로 한 번 더 모아 보여준다(의도된 중복 노출).
+                  즐겨찾기가 하나도 없어도 이 섹션 자체(라벨 + 안내 문구)는 보여준다 — 그래야
+                  별 아이콘을 처음 보는 사용자가 "누르면 여기에 고정되겠구나"를 미리 알 수 있다
+                  (2026-08-18 피드백). watchlist.items 가 로딩 중(null)일 때만 숨긴다.
                 */}
-                {favoriteInstruments.length > 0 && (
+                {watchlist.items !== null && (
                   <>
                     {/* 옅은 배경으로 한 묶음임을 표시 — 아래 전체 목록과 색부터 구분된다. */}
                     <div className="rounded-2xl bg-white/[0.03] p-2">
                       <p className="px-1 pb-1 pt-1 text-xs font-medium text-muted">즐겨찾기한 종목</p>
-                      {/* 스크롤 박스에 가두지 않는다 — 종목 수만큼 자연스럽게 늘어나고 페이지가 대신 스크롤된다. */}
-                      <ul className="space-y-1">
-                        {favoriteInstruments.map((instrument) => renderInstrumentRow(instrument))}
-                      </ul>
+                      {favoriteInstruments.length > 0 ? (
+                        // 스크롤 박스에 가두지 않는다 — 종목 수만큼 자연스럽게 늘어나고 페이지가 대신 스크롤된다.
+                        <ul className="space-y-1">
+                          {favoriteInstruments.map((instrument) => renderInstrumentRow(instrument))}
+                        </ul>
+                      ) : (
+                        <p className="px-1 pb-1 text-xs leading-relaxed text-muted">
+                          별 아이콘을 누르면 종목이 여기에 고정돼요.
+                        </p>
+                      )}
                     </div>
                     <div aria-hidden className="my-6 border-t border-line" />
                   </>
