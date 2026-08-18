@@ -6,6 +6,7 @@ import type {
   PracticeHoldingObservationResponse,
   PracticeHoldingReflectionResponse,
   PracticeAttemptResponse,
+  PracticeOrderResponse,
   PracticeTutorialChartResponse,
 } from './tutorialTypes'
 
@@ -67,4 +68,12 @@ export function getPracticeAttemptChart(market: Market): Promise<PracticeTutoria
 
 export function tickPracticeAttempt(market: Market): Promise<PracticeTutorialChartResponse> {
   return api.post<PracticeTutorialChartResponse>(`/education/practice/attempts/${market}/tick`)
+}
+
+/**
+ * 튜토리얼 attempt 자기 주문 조회(435). /api/orders·/api/orders/pending 은 튜토리얼 샌드박스 종목
+ * 주문을 걸러내므로(spec 033) 튜토리얼 화면의 주문 상태 폴링·복원은 이 엔드포인트를 써야 한다.
+ */
+export function getPracticeAttemptOrders(market: Market): Promise<PracticeOrderResponse[]> {
+  return api.get<PracticeOrderResponse[]>(`/education/practice/attempts/${market}/orders`)
 }

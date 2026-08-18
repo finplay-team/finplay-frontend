@@ -19,13 +19,12 @@ import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../
 import {
   amendLimitOrder,
   cancelLimitOrder,
-  getOrders,
-  getPendingOrders,
   placeLimitOrder,
   placeOrder,
 } from '../../services/orderService'
 import {
   getPracticeAttemptChart,
+  getPracticeAttemptOrders,
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
@@ -687,8 +686,10 @@ function RiskEducationCard({
 }
 
 /**
- * 대기 목록에서 사라진 예약의 결말. 사라진 이유는 체결·취소 두 가지인데 폴링만으로는 구분이 안 되므로
- * 주문 목록에서 그 orderId의 최종 status를 직접 읽는다. 읽지 못하면 UNKNOWN으로 두고 **추측하지 않는다**.
+ * 대기 카드가 사라진 뒤 남기는 결말. 튜토리얼 전용 주문 조회(435)는 상태 무관(PENDING·FILLED·CANCELLED)
+ * 전부 오므로, tick마다 이 목록에서 그 orderId를 직접 찾아 PENDING 이면 카드를 유지하고 FILLED·CANCELLED면
+ * 확정 상태를 남긴다. 목록에서 아예 찾지 못하면 UNKNOWN으로 두고 **추측하지 않는다** — 이 목록은 현재
+ * attempt·run 귀속 주문만 오므로 정상적으로는 일어나지 않아야 하는 경우지만, 방어적으로 남겨 둔다.
  */
 interface PendingOutcome {
   status: 'FILLED' | 'CANCELLED' | 'UNKNOWN'
@@ -698,19 +699,6 @@ interface PendingOutcome {
 }
 
 const sideVerb: Record<OrderSide, string> = { BUY: '구매', SELL: '판매' }
-
-async function resolveVanishedPending(order: LimitOrderResponse): Promise<PendingOutcome> {
-  const base = { side: order.side, quantity: order.quantity, limitPrice: order.limitPrice }
-  try {
-    const page = await getOrders({ market: 'CRYPTO', limit: 100 })
-    const found = page.content.find((candidate) => candidate.orderId === order.orderId)
-    if (found?.status === 'FILLED') return { ...base, status: 'FILLED' }
-    if (found?.status === 'CANCELLED') return { ...base, status: 'CANCELLED' }
-    return { ...base, status: 'UNKNOWN' }
-  } catch {
-    return { ...base, status: 'UNKNOWN' }
-  }
-}
 
 /**
  * 지정가는 체결가가 지정가로 고정되므로(services/types.ts의 OrderSummary.limitPrice 주석) 체결됐다면
@@ -1101,15 +1089,16 @@ export function AttemptTutorialFlow({
   useEffect(() => {
     if (market !== 'CRYPTO' || replay || attempt.instrumentId === null) return
     let cancelled = false
-    getPendingOrders({ market: 'CRYPTO', limit: 100 })
-      .then((page) => {
+    // 튜토리얼 전용 주문 조회(435)는 인증 사용자의 현재 attempt·run 귀속 주문만 오므로
+    // attemptId·runNumber로 다시 걸러낼 필요가 없다 — /api/orders/pending 시절과 다른 점이다.
+    getPracticeAttemptOrders(market)
+      .then((orders) => {
         if (cancelled) return
-        const found = page.content.find(
+        const found = orders.find(
           (order) =>
             order.instrumentId === attempt.instrumentId &&
             order.orderType === 'LIMIT' &&
-            order.practiceAttemptId === attempt.attemptId &&
-            order.practiceAttemptRunNumber === attempt.runNumber,
+            order.status === 'PENDING',
         )
         if (!found || found.limitPrice === null) return
         setPendingOrder({
@@ -1124,9 +1113,9 @@ export function AttemptTutorialFlow({
     return () => {
       cancelled = true
     }
-    // 필터가 attemptId·runNumber를 읽으므로 의존성에도 넣는다. 지금은 부모(pages/Tutorial.tsx)가
-    // key={attemptId:runNumber}로 이 컴포넌트를 통째로 remount 시켜서 실제로는 값이 바뀌기 전에
-    // 효과가 새로 도는데, 그 key가 사라지면 이전 실행의 예약을 그대로 들고 있게 된다.
+    // 부모(pages/Tutorial.tsx)가 key={attemptId:runNumber}로 이 컴포넌트를 통째로 remount 시켜서
+    // 실제로는 값이 바뀌기 전에 효과가 새로 도는데, 그 key가 사라지면 이전 실행의 예약을 그대로
+    // 들고 있게 되므로 의존성은 그대로 남겨 둔다.
   }, [attempt.attemptId, attempt.instrumentId, attempt.runNumber, market, replay])
 
   // 매도 제한 시각이 있을 때만 초 단위로 다시 그린다 — 제한이 없으면 타이머 자체를 걸지 않는다.
@@ -1159,14 +1148,23 @@ export function AttemptTutorialFlow({
         setChartError(null)
         const pending = pendingOrderRef.current
         if (pending) {
-          const page = await getPendingOrders({ market: 'CRYPTO', limit: 100 })
-          if (!page.content.some((order) => order.orderId === pending.orderId)) {
-            // 카드를 그냥 지우면 팔렸는지 취소됐는지 알 수 없다 — 최종 status를 읽어 남긴다.
+          // 튜토리얼 전용 주문 조회(435)는 상태 무관 전부 오므로 한 번의 호출로 여전히 대기
+          // 중인지, 체결·취소로 끝났는지를 함께 판단한다 — /api/orders/pending 시절처럼 "사라졌는지"와
+          // "왜 사라졌는지"를 따로 조회할 필요가 없다.
+          const orders = await getPracticeAttemptOrders(market)
+          if (stopped) return
+          const foundStatus = orders.find((order) => order.orderId === pending.orderId)?.status
+          if (foundStatus !== 'PENDING') {
+            // 카드를 그냥 지우면 팔렸는지 취소됐는지 알 수 없다 — 확인한 status만 말하고,
+            // 목록에서 아예 찾지 못했으면 지어내지 않고 UNKNOWN으로 남긴다.
             setPendingOrder(null)
             setAmendOpen(false)
-            const outcome = await resolveVanishedPending(pending)
-            if (stopped) return
-            setPendingOutcome(outcome)
+            setPendingOutcome({
+              status: foundStatus ?? 'UNKNOWN',
+              side: pending.side,
+              quantity: pending.quantity,
+              limitPrice: pending.limitPrice,
+            })
           }
         }
         await onRefresh()
