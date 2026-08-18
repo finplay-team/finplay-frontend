@@ -705,9 +705,8 @@ export function Trade() {
                     }`}
                     aria-hidden
                   />
-                  {cryptoUpdatedAt === null ? '시세 불러오는 중' : '5초 폴링 수신'}
+                  {cryptoUpdatedAt === null ? '시세 불러오는 중' : '24시간 거래'}
                 </Pill>
-                <Pill active>24시간 거래</Pill>
                 <Pill>빗썸 실시세</Pill>
               </>
             ) : (
@@ -733,9 +732,14 @@ export function Trade() {
             )}
           </div>
 
+          {/*
+            코인 설명은 "5초마다 폴링·분봉 갱신" 같은 구현 디테일 대신 사용자 관점 문구로 바꿨다
+            (2026-08-18 피드백 — 위 배지가 이미 24시간 거래·빗썸 실시세를 보여주니, 이 문장은 그걸
+            "왜/어떻게 쓰면 좋은지"로 풀어준다).
+          */}
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             {isCrypto
-              ? '빗썸 실시간 시세를 그대로 사용합니다. 코인은 전용 스트림이 없어 5초마다 현재가와 분봉을 다시 불러오며, 진행 중인 분봉도 함께 갱신됩니다.'
+              ? '빗썸 실시간 시세로 24시간 언제든 코인 매매를 연습해보세요.'
               : sourceTradingDate
                 ? `실제 거래일 ${sourceTradingDate} 의 시세를 오늘 장 시간에 맞춰 재생합니다. 차트와 시세에 찍힌 시각은 오늘이 아니라 그 거래일 기준입니다.`
                 : '과거 거래일의 시세를 오늘 장 시간에 맞춰 재생하는 방식입니다. 재생할 거래일이 준비되면 여기에 표시됩니다.'}
