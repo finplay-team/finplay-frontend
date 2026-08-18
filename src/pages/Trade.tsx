@@ -100,12 +100,6 @@ const ORDER_ERROR_MESSAGES: Record<Market, Record<string, string>> = {
  */
 const TRADE_COACH_MARKS = [
   {
-    storageKey: 'finplay.coach.trade.priceBar',
-    target: 'trade-price-bar',
-    title: '지금 값이 어디서든 따라다녀요',
-    body: '아래로 내려서 수량을 적는 동안에도 이 줄은 계속 붙어 있어요. 무엇을 얼마에 사고파는지 놓치지 않게요.',
-  },
-  {
     storageKey: 'finplay.coach.trade.quantityPreset',
     target: 'trade-quantity-presets',
     title: '얼마나 살지 한 번에 정할 수 있어요',
@@ -796,18 +790,18 @@ export function Trade() {
         </Card>
 
         {/*
-          종목 목록(3)·현재가 고정 바(2-1)·차트(4)·주문 패널(5~7)을 한 그리드에 둔다. lg 이상에서는
-          3컬럼(목록 20rem · 차트 1fr · 주문 26rem)이다 — 주문 패널이 차트 아래로 스크롤해야 나오지
-          않고 차트 옆에 바로 보이게 하기 위해서다(2026-08-18 피드백, 와이어프레임 참고). 주문 패널이
-          좁아 보인다는 후속 피드백으로 22rem → 26rem 으로 다시 넓혔다.
-          목록은 row-span-2 로 두 행(고정 바 행 + 차트·주문 행)을 채우고, 고정 바는 col-span-2 로
-          차트·주문 두 컬럼에 걸쳐 놓인다. 모바일(<lg)은 order로 고정 바 → 목록 → 차트 → 주문 순서를
-          유지한다(원래 쌓임 순서, lg에서는 order-none 으로 DOM 순서인 목록 → 고정 바 → 차트 → 주문에
-          맡긴다).
+          종목 목록(3) | 나머지(현재가 고정 바 2-1 · 차트 4 · 주문 패널 5~7) 2컬럼 그리드.
+          처음엔 목록에 row-span-2, 고정 바에 col-span-2 를 써서 한 그리드 안에 다 넣었는데, 목록(긴
+          컬럼)이 row-span 되는 행 트랙 높이 계산에 끼어들면서 1행(고정 바) 트랙 자체가 목록 높이만큼
+          부풀어 고정 바 밑에 빈 여백이 크게 생겼다(주식처럼 목록이 길 때 특히 눈에 띔, 2026-08-18
+          피드백). 그래서 "나머지"를 통째로 별도 중첩 그리드로 뺐다 — 바깥 그리드는 목록·중첩그리드
+          단 2개뿐이라 row-span 자체가 없고, 트랙 부풀림 버그가 구조적으로 발생하지 않는다.
+          모바일(<lg)은 각 그리드가 단일 컬럼으로 접혀 DOM 순서(목록 → 고정 바 → 차트 → 주문)대로
+          쌓인다.
         */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)]">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           {/* 3. 종목 목록 */}
-          <Card innerClassName="p-4" className="order-2 lg:order-none lg:row-span-2">
+          <Card innerClassName="p-4">
             <h2 className="px-2 pb-2 text-sm font-semibold text-ink">
               {isCrypto ? '코인' : '종목'}
             </h2>
@@ -854,53 +848,40 @@ export function Trade() {
           </Card>
 
           {/*
-            2-1. 현재가 고정 바 — 아래로 스크롤해 주문 폼을 채우는 동안에도 "무엇을 얼마에" 사고파는지
-            계속 보여야 한다. 상단 내비(z-40)는 top 20px + 높이 54px 라 아래끝이 74px 다 — 고정 위치는
-            그보다 8px 아래인 82px 로 잡는다(브라우저 실측: 68px 이면 내비가 이 바의 위 6px 을 덮는다).
-            z-20 은 내비보다 아래, 스포트라이트(z-50)·확인 다이얼로그(z-[60])보다도 아래다.
-            아래 차트 카드에는 같은 현재가를 다시 두지 않는다(중복 표시 방지).
+            차트 · 주문 패널 — 목록 옆 컬럼. 예전엔 여기에 스크롤을 따라다니는 현재가 고정 바가
+            추가로 있었는데, sticky 그리드 아이템이 자기 행(row) 트랙 계산에 끼어들어 옆 목록이
+            길어질 때(특히 주식) 행 자체가 부풀어 밑에 빈 여백이 크게 생기는 문제가 반복됐다.
+            바를 없애고 그 정보(종목명·가격·등락)는 바로 아래 차트 카드 제목 옆으로 옮겼다
+            (2026-08-18 피드백).
           */}
-          {selected && (
-            <div
-              data-coach="trade-price-bar"
-              className="order-1 sticky top-[82px] z-20 flex items-center justify-between gap-3 self-start rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl lg:order-none lg:col-span-2"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-ink">{selected.name}</p>
-                <p className="truncate text-[11px] text-muted tabular">
-                  {selected.symbol}
-                  {isStalePrice ? ' · 지연' : ''}
-                </p>
-              </div>
-              <div className="min-w-0 flex-none text-right">
-                <p className="text-lg font-semibold text-ink tabular md:text-xl">
-                  {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
-                </p>
-                {changePercent !== null && changeAmount !== null && (
-                  <p className={`mt-0.5 text-[11px] tabular ${pnlTone(changePercent)}`}>
-                    {isCrypto ? '차트 시작 대비' : '당일 시가 대비'} {signedKRW(changeAmount)} (
-                    {formatPercent(changePercent)})
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="order-3 space-y-6 lg:order-none">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+            <div className="space-y-6">
             {/* 4. 차트 */}
             <Card innerClassName="p-6">
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                  <h2 className="font-display text-xl font-semibold text-ink">
-                    {selected ? selected.name : '종목을 선택해 주세요'}
-                  </h2>
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <h2 className="font-display text-xl font-semibold text-ink">
+                      {selected ? selected.name : '종목을 선택해 주세요'}
+                    </h2>
+                    {selected && changePercent !== null && changeAmount !== null && (
+                      <span className={`text-xs tabular ${pnlTone(changePercent)}`}>
+                        {isCrypto ? '차트 시작 대비' : '장 시작 대비'} {signedKRW(changeAmount)} (
+                        {formatPercent(changePercent)})
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1 text-xs text-muted tabular">
                     {selected ? selected.symbol : '—'}
                     {snapshot?.sourceTime ? ` · ${formatHhMm(snapshot.sourceTime)} 기준` : ''}
                     {isStalePrice ? ' · 지연' : ''}
                   </p>
                 </div>
-                {/* 현재가·등락은 위 고정 바가 계속 보여준다 — 여기서 다시 찍지 않는다. */}
+                {selected && (
+                  <p className="text-lg font-semibold text-ink tabular md:text-xl">
+                    {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
+                  </p>
+                )}
               </div>
 
               {/* 봉 주기 전환 — 백엔드가 대소문자를 구분하므로 '1m'(분)과 '1M'(월)을 섞지 않는다 */}
@@ -986,12 +967,12 @@ export function Trade() {
             )}
           </div>
 
-          {/*
-            5~7. 주문 패널 + 미체결 지정가 주문 + 커뮤니티 미리보기 — 차트 옆(lg 이상) 세 번째 컬럼.
-            둘을 쌓아 두지 않고 한 박스 안에서 탭으로 전환한다(2026-08-18 피드백, 와이어프레임 참고)
-            — 탭 버튼이 박스 밖에 따로 뜨는 게 아니라 박스 상단에 붙어 있어야 한다.
-          */}
-          <div className="order-4 space-y-6 lg:order-none">
+            {/*
+              5~7. 주문 패널 + 미체결 지정가 주문 + 커뮤니티 미리보기 — 차트 옆(lg 이상) 컬럼.
+              둘을 쌓아 두지 않고 한 박스 안에서 탭으로 전환한다(2026-08-18 피드백, 와이어프레임 참고)
+              — 탭 버튼이 박스 밖에 따로 뜨는 게 아니라 박스 상단에 붙어 있어야 한다.
+            */}
+            <div className="space-y-6">
             <Card accent={accent} innerClassName="p-0 overflow-hidden">
               <div className="grid grid-cols-2 border-b border-line">
                 {(
@@ -1420,6 +1401,7 @@ export function Trade() {
             {rightPanelTab === 'community' && selected && (
               <CommunityPreview instrumentId={selected.instrumentId} instrumentName={selected.name} />
             )}
+            </div>
           </div>
         </div>
       </div>
