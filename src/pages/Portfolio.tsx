@@ -17,6 +17,8 @@ import { getJournals } from '../services/journalService'
 import { PendingOrders } from '../components/trade/PendingOrders'
 import { PostSellFeedback } from '../components/feedback/PostSellFeedback'
 import { JournalEditor } from '../components/journal/JournalEditor'
+import { ProfitShareCardModal } from '../components/portfolio/ProfitShareCardModal'
+import { canCreateShareCard } from '../lib/shareCard'
 import type { AccountSummary, Holding, JournalListItem, Market, OrderSide, Trade } from '../services/types'
 
 const JOURNAL_PREVIEW_SIZE = 3
@@ -70,6 +72,8 @@ export function Portfolio() {
   const [openTradeId, setOpenTradeId] = useState<number | null>(null)
   /** 회고 작성 폼을 연 체결 id. 목록에 회고 유무가 없어 작성/수정을 미리 알 수 없다. */
   const [journalTradeId, setJournalTradeId] = useState<number | null>(null)
+  /** 수익 인증 카드 모달을 연 체결 id. null 이면 닫힘. */
+  const [shareCardTradeId, setShareCardTradeId] = useState<number | null>(null)
 
   const [account, setAccount] = useState<AccountSummary | null>(null)
   const [holdings, setHoldings] = useState<Holding[] | null>(null)
@@ -488,6 +492,23 @@ export function Portfolio() {
                               )}
 
                               {/*
+                                수익 인증 카드 — 매도 회고와 같은 데이터를 쓰므로 같은 대상(주식 매도
+                                체결)에서만 만들 수 있다. 매수만 하고 아직 안 판 거래는 수익률이 없어
+                                대상이 아니다.
+                              */}
+                              {canCreateShareCard(trade.side, isCrypto) && (
+                                <div>
+                                  <Button
+                                    variant="soft"
+                                    size="sm"
+                                    onClick={() => setShareCardTradeId(trade.tradeId)}
+                                  >
+                                    수익 인증 카드 만들기
+                                  </Button>
+                                </div>
+                              )}
+
+                              {/*
                                 투자일기 작성 진입점. GET /api/journal 은 이미 쓴 회고만 돌려주므로
                                 아직 안 쓴 체결은 이 자리에서만 시작할 수 있다.
                                 작성인지 수정인지 목록만으로는 알 수 없어 먼저 작성으로 시도하고,
@@ -595,6 +616,13 @@ export function Portfolio() {
           </div>
         </section>
       </div>
+
+      {shareCardTradeId !== null && (
+        <ProfitShareCardModal
+          tradeId={shareCardTradeId}
+          onClose={() => setShareCardTradeId(null)}
+        />
+      )}
     </div>
   )
 }
