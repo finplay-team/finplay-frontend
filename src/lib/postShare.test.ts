@@ -19,6 +19,8 @@ function makePost(overrides: Partial<Post> = {}): Post {
     instrumentId: null,
     instrumentSymbol: null,
     instrumentName: null,
+    imageId: null,
+    imageUrl: null,
     createdAt: '2026-08-18T09:00:00',
     updatedAt: '2026-08-18T09:00:00',
     ...overrides,
