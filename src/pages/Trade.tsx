@@ -21,6 +21,7 @@ import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { placeLimitOrder, placeOrder } from '../services/orderService'
 import { PendingOrders } from '../components/trade/PendingOrders'
+import { OcoExitPlanPanel } from '../components/trade/OcoExitPlanPanel'
 import { CommunityPreview } from '../components/trade/CommunityPreview'
 import { DayRangeBar } from '../components/trade/DayRangeBar'
 import { QuantityPresets } from '../components/trade/QuantityPresets'
@@ -261,6 +262,12 @@ export function Trade() {
     return isCrypto ? available : Math.floor(available)
   }, [holdings, isCrypto, selected])
 
+  /** OCO(손절·익절) 패널이 쓸 해당 holding 전신 — 보유하지 않은 종목은 null이다. */
+  const selectedHolding = useMemo(() => {
+    if (!holdings || !selected) return null
+    return holdings.find((h) => h.instrumentId === selected.instrumentId) ?? null
+  }, [holdings, selected])
+
   const [side, setSide] = useState<OrderSide>('BUY')
   const [quantity, setQuantity] = useState('')
   /** 지정가는 코인 전용이다 — 주식에 걸면 백엔드가 400 을 낸다. */
@@ -281,6 +288,8 @@ export function Trade() {
   const [successNonce, setSuccessNonce] = useState(0)
   /** 미체결 목록을 즉시 다시 읽게 하는 신호. */
   const [pendingNonce, setPendingNonce] = useState(0)
+  /** 손절·익절 OCO 패널 토글 — 기본은 접혀 있다. */
+  const [ocoOpen, setOcoOpen] = useState(false)
   // disabled 상태만으로는 빠른 더블클릭이 두 핸들러를 모두 통과한다. 동기 플래그로 한 번 더 막는다.
   const submittingRef = useRef(false)
   /**
@@ -1209,6 +1218,40 @@ export function Trade() {
                       </Button>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* 손절·익절 자동 예약(OCO) — 지정가 매매 바로 아래, 기본은 접힌 토글이다. 코인 holding 전용(021)이고
+                  보유 중인 걸 파는 개념이라 side 필드 자체가 없다(항상 SELL) — 매도 탭에서만 보여준다. */}
+              {isCrypto && side === 'SELL' && (
+                <div className="mt-5 border-t border-white/[0.08] pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setOcoOpen((v) => !v)}
+                    aria-expanded={ocoOpen}
+                    aria-controls="oco-exit-plan-panel"
+                    className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-5 py-3.5 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
+                  >
+                    <span className="font-medium">손절·익절 자동 예약 (OCO) {ocoOpen ? '닫기' : '설정'}</span>
+                    <span
+                      aria-hidden="true"
+                      className={`text-muted transition-transform duration-300 ${ocoOpen ? 'rotate-180' : ''}`}
+                    >
+                      ▾
+                    </span>
+                  </button>
+                  {ocoOpen && (
+                    <div id="oco-exit-plan-panel" className="mt-3">
+                      <OcoExitPlanPanel
+                        holding={selectedHolding}
+                        refreshNonce={pendingNonce}
+                        onChanged={() => {
+                          // 예약 생성·취소로 reservedQuantity가 바뀌는데 응답에 실리지 않는다 — 계좌·보유를 다시 읽어야 한다.
+                          setAccountNonce((n) => n + 1)
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
