@@ -60,6 +60,8 @@ describe('Community 진입 시 attachedImageId 프리필', () => {
       imageId: 42,
       imageUrl: '/api/community/posts/images/42/file',
       sharedTrade: null,
+      likeCount: 0,
+      likedByMe: false,
       createdAt: '2026-08-18T00:00:00',
       updatedAt: '2026-08-18T00:00:00',
     })

@@ -331,6 +331,57 @@ export interface LimitOrderResponse {
   requestedAt: LocalDateTimeString
 }
 
+/* ---------- OCO 손절·익절 예약 (021 일반 리스크관리 OCO, 코인 holding 전용) ---------- */
+
+export type ExitPriceType = 'PRICE' | 'PERCENT'
+
+/** intentionId 지정 교육 경로는 컨트롤러가 항상 400으로 거부한다 — 일반 경로만 지원한다. */
+export type ExitPlanStatus = 'PENDING' | 'FILLED_TAKE_PROFIT' | 'FILLED_STOP_LOSS' | 'CANCELLED'
+
+/**
+ * POST /api/exit-plans — holdingId·quantity·exitPriceType 필수, Idempotency-Key 헤더 필수.
+ * exitPriceType='PRICE'면 stopLoss·takeProfit 필수(rate 금지), 'PERCENT'면 그 반대.
+ * rate는 퍼센트 숫자 그대로다(예: "10"은 -10%) — 0.1 같은 분수로 보내면 안 된다.
+ * intentionId·buyTradeId·instrumentId 는 일반 경로에 존재하지 않는다(보내면 400).
+ */
+export interface ExitPlanCreateRequest {
+  holdingId: number
+  quantity: string
+  exitPriceType: ExitPriceType
+  stopLoss?: string
+  takeProfit?: string
+  stopLossRate?: string
+  takeProfitRate?: string
+}
+
+/** POST 201·GET 목록·DELETE 취소가 공유하는 타입. intentionId·buyTradeId는 일반 경로에서 항상 null. */
+export interface ExitPlanResponse {
+  id: number
+  holdingId: number
+  intentionId: number | null
+  buyTradeId: number | null
+  instrumentId: number
+  quantity: Decimal
+  entryPrice: Decimal
+  exitPriceType: ExitPriceType
+  stopLossRate: Decimal | null
+  takeProfitRate: Decimal | null
+  stopLossPrice: Decimal
+  takeProfitPrice: Decimal
+  baselinePrice: Decimal
+  baselineObservedAt: LocalDateTimeString
+  status: ExitPlanStatus
+  reservedAt: LocalDateTimeString
+  closedAt: LocalDateTimeString | null
+  triggeredOrderId: number | null
+  replaySessionId: number | null
+}
+
+/** GET /api/exit-plans?status= — status 생략 시 PENDING 기본값. market·holdingId 필터 파라미터는 없다. */
+export interface ExitPlanListResponse {
+  content: ExitPlanResponse[]
+}
+
 /* ---------- 관심목록 (WATCH-001~003) ---------- */
 
 /** POST /api/watchlist-items — instrumentId 하나뿐이다. market 을 본문에 보내지 않는다. */
@@ -394,6 +445,8 @@ export interface TradePage {
  * (계좌 요약은 같은 상황에서 원가로 폴백해 채운다 — 의도된 차이라 두 화면 숫자가 안 맞아 보일 수 있다.)
  */
 export interface Holding {
+  /** holding row 의 실제 PK. POST /api/exit-plans 의 holdingId 입력이 바로 이 값이다 (Issue #444) */
+  holdingId: number
   instrumentId: number
   symbol: string
   name: string
@@ -574,9 +627,15 @@ export interface Post {
   imageUrl: string | null
   /** 첨부된 매매 카드. imageId 와 동시에 값을 가질 수 없다(둘 중 하나만). 미첨부면 null */
   sharedTrade: SharedTrade | null
+  likeCount: number
+  /** 내가 좋아요를 눌렀는지. 비로그인 상태에서도 필드 자체는 내려오되 항상 false 다. */
+  likedByMe: boolean
   createdAt: LocalDateTimeString
   updatedAt: LocalDateTimeString
 }
+
+/** sort 생략 시 latest 와 동일. popular 는 좋아요 내림차순이며 동률은 최신순이다. */
+export type PostSort = 'latest' | 'popular'
 
 export interface PostPage {
   content: Post[]
@@ -585,6 +644,16 @@ export interface PostPage {
   totalElements: number
   totalPages: number
   hasNext: boolean
+}
+
+/**
+ * POST/DELETE /api/community/posts/{postId}/likes 공통 응답 — 멱등이라 신규 등록(201)과
+ * 재요청(200) 모두 이 모양이다. DELETE 는 204 라 본문이 없다(호출부가 낙관적 값을 그대로 쓴다).
+ */
+export interface PostLikeResponse {
+  postId: number
+  likeCount: number
+  likedByMe: boolean
 }
 
 /**
