@@ -1377,14 +1377,19 @@ export function Trade() {
               )}
                   </>
                 )}
+
+                {/* 7. 커뮤니티 미리보기 — CommunityPreview 는 여기서만 쓰여서 자기 Card 를 빼고 이 탭 박스 안 콘텐츠로 그린다 */}
+                {rightPanelTab === 'community' && selected && (
+                  <CommunityPreview instrumentId={selected.instrumentId} instrumentName={selected.name} />
+                )}
               </div>
             </Card>
 
             {/*
-              6. 미체결 지정가 주문 — PendingOrders·CommunityPreview 는 저마다 자기 Card 를 그리므로
-              위 탭 박스 안에 넣으면 카드 속 카드가 된다. 탭 박스 바로 아래, 탭 값에 따라 하나만
-              보여주는 별도 섹션으로 둔다. 주식 지정가는 백엔드에 없어서(주식은 재생 데이터라
-              "이 가격 도달 시" 조건이 성립하지 않는다) 코인 탭에서만 보여준다.
+              6. 미체결 지정가 주문 — PendingOrders 는 Portfolio 화면에서도 독립된 Card 로 쓰여서
+              여기서만 Card 를 빼면 그쪽이 깨진다. 탭 박스 바로 아래 별도 섹션으로 둔다. 주식 지정가는
+              백엔드에 없어서(주식은 재생 데이터라 "이 가격 도달 시" 조건이 성립하지 않는다) 코인
+              탭에서만 보여준다.
             */}
             {rightPanelTab === 'order' && isCrypto && (
               <PendingOrders
@@ -1395,11 +1400,6 @@ export function Trade() {
                   setAccountNonce((n) => n + 1)
                 }}
               />
-            )}
-
-            {/* 7. 커뮤니티 미리보기 — 선택한 종목 이야기를 모아 보여주고 더보기로 필터링된 커뮤니티로 이동한다 */}
-            {rightPanelTab === 'community' && selected && (
-              <CommunityPreview instrumentId={selected.instrumentId} instrumentName={selected.name} />
             )}
             </div>
           </div>
