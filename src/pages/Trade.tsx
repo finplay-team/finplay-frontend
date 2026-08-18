@@ -229,6 +229,8 @@ export function Trade() {
   const [interval, setInterval_] = useState<CandleInterval>('1m')
   // 변동 원인 카드는 참고용이라 기본은 접어 둔다 — 차트 바로 아래 주문 폼까지 스크롤이 짧아진다.
   const [showPriceMoves, setShowPriceMoves] = useState(false)
+  // 차트 옆 세 번째 컬럼 — 주문 패널과 커뮤니티 미리보기를 쌓아 두지 않고 탭으로 전환한다.
+  const [rightPanelTab, setRightPanelTab] = useState<'order' | 'community'>('order')
   const {
     candles,
     loading: candlesLoading,
@@ -679,7 +681,11 @@ export function Trade() {
     <div className="relative min-h-[100dvh] px-4 pb-24 pt-28 md:pt-32">
       <div className="orb -top-24 left-1/4 h-72 w-72 animate-float-orb" aria-hidden />
 
-      <div className="relative mx-auto max-w-6xl">
+      {/*
+        3컬럼(목록·차트·주문)이 들어서면서 max-w-6xl 로는 옆 공간이 남는다 — 2026-08-18 피드백으로
+        폭 제한 자체를 없앴다. 바깥 wrapper 의 px-4 가 화면 끝 여백을 대신한다.
+      */}
+      <div className="relative mx-auto max-w-none">
         {/* 1. 헤더 + 시장 탭 + 시세 상태 */}
         <header>
           <Eyebrow>모의투자</Eyebrow>
@@ -790,12 +796,16 @@ export function Trade() {
         </Card>
 
         {/*
-          아래 종목 목록(3)·현재가 고정 바(2-1)·차트(4)를 한 그리드에 둔다. 목록은 lg 이상에서
-          row-span-2 로 두 행을 세로로 채워 고정 바와 위쪽이 맞고, 고정 바는 목록 옆(2행 중 1행)에서
-          차트(2행)와 가로 폭이 같아진다. 모바일(<lg)은 order로 고정 바 → 목록 → 차트 순서를 유지한다
-          (원래 쌓임 순서, lg에서는 order-none 으로 DOM 순서인 목록 → 고정 바 → 차트에 맡긴다).
+          종목 목록(3)·현재가 고정 바(2-1)·차트(4)·주문 패널(5~7)을 한 그리드에 둔다. lg 이상에서는
+          3컬럼(목록 20rem · 차트 1fr · 주문 26rem)이다 — 주문 패널이 차트 아래로 스크롤해야 나오지
+          않고 차트 옆에 바로 보이게 하기 위해서다(2026-08-18 피드백, 와이어프레임 참고). 주문 패널이
+          좁아 보인다는 후속 피드백으로 22rem → 26rem 으로 다시 넓혔다.
+          목록은 row-span-2 로 두 행(고정 바 행 + 차트·주문 행)을 채우고, 고정 바는 col-span-2 로
+          차트·주문 두 컬럼에 걸쳐 놓인다. 모바일(<lg)은 order로 고정 바 → 목록 → 차트 → 주문 순서를
+          유지한다(원래 쌓임 순서, lg에서는 order-none 으로 DOM 순서인 목록 → 고정 바 → 차트 → 주문에
+          맡긴다).
         */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)]">
           {/* 3. 종목 목록 */}
           <Card innerClassName="p-4" className="order-2 lg:order-none lg:row-span-2">
             <h2 className="px-2 pb-2 text-sm font-semibold text-ink">
@@ -853,7 +863,7 @@ export function Trade() {
           {selected && (
             <div
               data-coach="trade-price-bar"
-              className="order-1 sticky top-[82px] z-20 flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl lg:order-none"
+              className="order-1 sticky top-[82px] z-20 flex items-center justify-between gap-3 self-start rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl lg:order-none lg:col-span-2"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-ink">{selected.name}</p>
@@ -974,13 +984,47 @@ export function Trade() {
                 )}
               </div>
             )}
+          </div>
 
-            {/* 5. 주문 패널 */}
-            <Card accent={accent} innerClassName="p-6">
-              <h2 className="font-display text-xl font-semibold text-ink">주문</h2>
-              <p className="mt-1 text-xs leading-relaxed text-muted">
+          {/*
+            5~7. 주문 패널 + 미체결 지정가 주문 + 커뮤니티 미리보기 — 차트 옆(lg 이상) 세 번째 컬럼.
+            둘을 쌓아 두지 않고 한 박스 안에서 탭으로 전환한다(2026-08-18 피드백, 와이어프레임 참고)
+            — 탭 버튼이 박스 밖에 따로 뜨는 게 아니라 박스 상단에 붙어 있어야 한다.
+          */}
+          <div className="order-4 space-y-6 lg:order-none">
+            <Card accent={accent} innerClassName="p-0 overflow-hidden">
+              <div className="grid grid-cols-2 border-b border-line">
+                {(
+                  [
+                    ['order', '주문'],
+                    ['community', '커뮤니티'],
+                  ] as const
+                ).map(([value, label]) => {
+                  const active = rightPanelTab === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setRightPanelTab(value)}
+                      aria-pressed={active}
+                      className={`px-4 py-3.5 text-sm font-medium transition-colors duration-300 ${
+                        active
+                          ? `border-b-2 text-ink ${isCrypto ? 'border-coin' : 'border-brand'}`
+                          : 'border-b-2 border-transparent text-muted hover:text-ink'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="p-6">
+                {rightPanelTab === 'order' && (
+                  <>
+              <p className="whitespace-pre-line text-xs leading-relaxed text-muted">
                 {isLimit
-                  ? '지정한 가격에 도달하면 체결됩니다. 접수 시점에는 체결되지 않고 현금·수량이 예약됩니다.'
+                  ? '지정한 가격에 도달하면 체결됩니다.\n접수 시점에는 체결되지 않고 현금·수량이 예약됩니다.'
                   : isCrypto
                     ? '시장가는 즉시 체결됩니다. 수수료는 서버가 계산합니다.'
                     : '시장가 주문만 지원합니다. 주문하면 즉시 체결되고 수수료는 서버가 계산합니다.'}
@@ -1172,6 +1216,7 @@ export function Trade() {
                 <Button
                   type="submit"
                   size="lg"
+                  variant={side === 'BUY' ? 'buy' : 'sell'}
                   className="w-full"
                   disabled={submitting || disableReason !== null}
                 >
@@ -1349,14 +1394,18 @@ export function Trade() {
                   )}
                 </div>
               )}
+                  </>
+                )}
+              </div>
             </Card>
 
             {/*
-              6. 미체결 지정가 주문 — 주식 지정가는 백엔드에 없어서(주식은 재생 데이터라 "이 가격
-              도달 시" 조건이 성립하지 않는다) 코인 탭에서만 보여준다. 주식에서 항상 빈 목록을
-              띄우면 기능이 고장난 것처럼 읽힌다.
+              6. 미체결 지정가 주문 — PendingOrders·CommunityPreview 는 저마다 자기 Card 를 그리므로
+              위 탭 박스 안에 넣으면 카드 속 카드가 된다. 탭 박스 바로 아래, 탭 값에 따라 하나만
+              보여주는 별도 섹션으로 둔다. 주식 지정가는 백엔드에 없어서(주식은 재생 데이터라
+              "이 가격 도달 시" 조건이 성립하지 않는다) 코인 탭에서만 보여준다.
             */}
-            {isCrypto && (
+            {rightPanelTab === 'order' && isCrypto && (
               <PendingOrders
                 market={market}
                 refreshNonce={pendingNonce}
@@ -1368,7 +1417,7 @@ export function Trade() {
             )}
 
             {/* 7. 커뮤니티 미리보기 — 선택한 종목 이야기를 모아 보여주고 더보기로 필터링된 커뮤니티로 이동한다 */}
-            {selected && (
+            {rightPanelTab === 'community' && selected && (
               <CommunityPreview instrumentId={selected.instrumentId} instrumentName={selected.name} />
             )}
           </div>

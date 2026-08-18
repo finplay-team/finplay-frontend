@@ -3,7 +3,8 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight } from './icons'
 
-type Variant = 'primary' | 'ghost' | 'soft'
+/** buy/sell 은 매수·매도 주문 버튼 전용 — gain(빨강)/loss(파랑) 토큰을 그대로 써서 종목 등락 표시와 색을 통일한다. */
+type Variant = 'primary' | 'ghost' | 'soft' | 'buy' | 'sell'
 /** sm 은 표·목록 행 안의 액션용이다 (미체결 주문 정정·취소 등). md 는 행에서 너무 크다. */
 type Size = 'sm' | 'md' | 'lg'
 
@@ -21,12 +22,16 @@ const variantStyles: Record<Variant, string> = {
   primary: 'bg-brand text-brand-ink shadow-glow hover:bg-brand/90 disabled:opacity-50',
   soft: 'bg-brand-soft text-brand hover:bg-brand-soft/70 disabled:opacity-50',
   ghost: 'bg-white/[0.04] text-ink ring-1 ring-white/[0.08] hover:bg-white/[0.08] disabled:opacity-50',
+  buy: 'bg-gain text-white shadow-glow hover:bg-gain/90 disabled:opacity-50',
+  sell: 'bg-loss text-white shadow-glow hover:bg-loss/90 disabled:opacity-50',
 }
 
 const iconBg: Record<Variant, string> = {
   primary: 'bg-brand-ink/15 text-brand-ink',
   soft: 'bg-brand/15 text-brand',
   ghost: 'bg-white/[0.06] text-ink',
+  buy: 'bg-white/20 text-white',
+  sell: 'bg-white/20 text-white',
 }
 
 const sizeStyles: Record<Size, string> = {
