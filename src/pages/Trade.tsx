@@ -790,43 +790,14 @@ export function Trade() {
         </Card>
 
         {/*
-          2-1. 현재가 고정 바 — 아래로 스크롤해 주문 폼을 채우는 동안에도 "무엇을 얼마에" 사고파는지
-          계속 보여야 한다. 상단 내비(z-40)는 top 20px + 높이 54px 라 아래끝이 74px 다 — 고정 위치는
-          그보다 8px 아래인 82px 로 잡는다(브라우저 실측: 68px 이면 내비가 이 바의 위 6px 을 덮는다).
-          z-20 은 내비보다 아래, 스포트라이트(z-50)·확인 다이얼로그(z-[60])보다도 아래다.
-          아래 차트 카드에는 같은 현재가를 다시 두지 않는다(중복 표시 방지).
+          아래 종목 목록(3)·현재가 고정 바(2-1)·차트(4)를 한 그리드에 둔다. 목록은 lg 이상에서
+          row-span-2 로 두 행을 세로로 채워 고정 바와 위쪽이 맞고, 고정 바는 목록 옆(2행 중 1행)에서
+          차트(2행)와 가로 폭이 같아진다. 모바일(<lg)은 order로 고정 바 → 목록 → 차트 순서를 유지한다
+          (원래 쌓임 순서, lg에서는 order-none 으로 DOM 순서인 목록 → 고정 바 → 차트에 맡긴다).
         */}
-        {selected && (
-          <div className="sticky top-[82px] z-20 mt-6">
-            <div
-              data-coach="trade-price-bar"
-              className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-ink">{selected.name}</p>
-                <p className="truncate text-[11px] text-muted tabular">
-                  {selected.symbol}
-                  {isStalePrice ? ' · 지연' : ''}
-                </p>
-              </div>
-              <div className="min-w-0 flex-none text-right">
-                <p className="text-lg font-semibold text-ink tabular md:text-xl">
-                  {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
-                </p>
-                {changePercent !== null && changeAmount !== null && (
-                  <p className={`mt-0.5 text-[11px] tabular ${pnlTone(changePercent)}`}>
-                    {isCrypto ? '차트 시작 대비' : '당일 시가 대비'} {signedKRW(changeAmount)} (
-                    {formatPercent(changePercent)})
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           {/* 3. 종목 목록 */}
-          <Card innerClassName="p-4">
+          <Card innerClassName="p-4" className="order-2 lg:order-none lg:row-span-2">
             <h2 className="px-2 pb-2 text-sm font-semibold text-ink">
               {isCrypto ? '코인' : '종목'}
             </h2>
@@ -872,7 +843,40 @@ export function Trade() {
             )}
           </Card>
 
-          <div className="space-y-6">
+          {/*
+            2-1. 현재가 고정 바 — 아래로 스크롤해 주문 폼을 채우는 동안에도 "무엇을 얼마에" 사고파는지
+            계속 보여야 한다. 상단 내비(z-40)는 top 20px + 높이 54px 라 아래끝이 74px 다 — 고정 위치는
+            그보다 8px 아래인 82px 로 잡는다(브라우저 실측: 68px 이면 내비가 이 바의 위 6px 을 덮는다).
+            z-20 은 내비보다 아래, 스포트라이트(z-50)·확인 다이얼로그(z-[60])보다도 아래다.
+            아래 차트 카드에는 같은 현재가를 다시 두지 않는다(중복 표시 방지).
+          */}
+          {selected && (
+            <div
+              data-coach="trade-price-bar"
+              className="order-1 sticky top-[82px] z-20 flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl lg:order-none"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-ink">{selected.name}</p>
+                <p className="truncate text-[11px] text-muted tabular">
+                  {selected.symbol}
+                  {isStalePrice ? ' · 지연' : ''}
+                </p>
+              </div>
+              <div className="min-w-0 flex-none text-right">
+                <p className="text-lg font-semibold text-ink tabular md:text-xl">
+                  {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
+                </p>
+                {changePercent !== null && changeAmount !== null && (
+                  <p className={`mt-0.5 text-[11px] tabular ${pnlTone(changePercent)}`}>
+                    {isCrypto ? '차트 시작 대비' : '당일 시가 대비'} {signedKRW(changeAmount)} (
+                    {formatPercent(changePercent)})
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="order-3 space-y-6 lg:order-none">
             {/* 4. 차트 */}
             <Card innerClassName="p-6">
               <div className="flex flex-wrap items-end justify-between gap-4">
