@@ -5,6 +5,7 @@ import type {
   CommentCreateRequest,
   Post,
   PostCreateRequest,
+  PostImageUploadResponse,
   PostPage,
   PostUpdateRequest,
 } from './types'
@@ -81,4 +82,26 @@ export function deleteComment(commentId: number): Promise<void> {
 /** 부모 + 대댓글을 합한 총 댓글 수. 화면의 "댓글 N" 표기가 과소 집계되지 않게 한다. */
 export function countComments(comments: Comment[]): number {
   return comments.reduce((sum, c) => sum + 1 + c.replies.length, 0)
+}
+
+/**
+ * 이미지 선(先)업로드. 성공하면 imageId 를 돌려주는데, 게시물이 아직 아무 것도 참조하지 않은
+ * 상태라 createPost 에 이 값을 함께 보내야 첨부가 확정된다 — 업로드만 하고 글을 등록하지 않으면
+ * 그 이미지는 계속 미첨부 상태로 남는다(서버가 지우지 않는다).
+ *
+ * JPEG·PNG·WEBP 만 허용, 5MB 초과·빈 파일·그 외 형식은 400 VALIDATION_ERROR.
+ */
+export function uploadPostImage(file: File): Promise<PostImageUploadResponse> {
+  const formData = new FormData()
+  formData.append('image', file)
+  return api.post<PostImageUploadResponse>('/community/posts/images', formData)
+}
+
+/**
+ * 첨부 이미지 원본. 다운로드 GET 이 Access Bearer 를 요구해 <img src> 로 바로 못 그리므로
+ * blob 을 받아 object URL 로 바꿔 돌려준다. 호출부가 다 쓰면 URL.revokeObjectURL 로 정리해야
+ * 메모리가 새지 않는다.
+ */
+export function getPostImageBlobUrl(imageId: number): Promise<string> {
+  return api.getBlob(`/community/posts/images/${imageId}/file`).then((blob) => URL.createObjectURL(blob))
 }
