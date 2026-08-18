@@ -35,6 +35,12 @@ import {
   hasSeenOrderTypeGuide,
   markOrderTypeGuideSeen,
 } from '../components/tutorial/OrderTypeGuide'
+import {
+  CoachMark,
+  forgetCoachMark,
+  hasSeenCoachMark,
+  markCoachMarkSeen,
+} from '../components/ui/CoachMark'
 import type {
   AccountSummary,
   CandleInterval,
@@ -82,6 +88,30 @@ const ORDER_ERROR_MESSAGES: Record<Market, Record<string, string>> = {
     NOT_FOUND: '종목 또는 계좌를 찾을 수 없습니다.',
   },
 }
+
+/**
+ * 이 화면에서 처음 온 사람에게 한 번씩만 알려 주는 코치마크. 순서대로 하나씩 뜨고, 닫아야 다음 것이 뜬다.
+ *
+ * 최근에 새로 생긴 두 가지만 고른다 — 코치마크는 "여기 이런 게 있어요"를 알리는 물건이라
+ * 화면 사용법을 처음부터 끝까지 가르치려 들면 개수가 불어나고 아무도 끝까지 읽지 않는다.
+ * 저장 키를 하나로 묶지 않고 대상별로 나눈 이유는, 첫 번째만 닫고 나간 사람이 다시 들어왔을 때
+ * 본 것은 건너뛰고 못 본 것부터 이어서 볼 수 있어야 하기 때문이다.
+ * 이름은 튜토리얼 안내(`finplay.tour.tutorial.${market}`)와 같은 `finplay.<종류>.<화면>.<대상>` 꼴이다.
+ */
+const TRADE_COACH_MARKS = [
+  {
+    storageKey: 'finplay.coach.trade.priceBar',
+    target: 'trade-price-bar',
+    title: '지금 값이 어디서든 따라다녀요',
+    body: '아래로 내려서 수량을 적는 동안에도 이 줄은 계속 붙어 있어요. 무엇을 얼마에 사고파는지 놓치지 않게요.',
+  },
+  {
+    storageKey: 'finplay.coach.trade.quantityPreset',
+    target: 'trade-quantity-presets',
+    title: '얼마나 살지 한 번에 정할 수 있어요',
+    body: '가진 돈(팔 때는 가진 수량)의 10%·25%·50%·최대를 누르면 수량이 알아서 채워져요. 직접 계산하지 않아도 돼요.',
+  },
+] as const
 
 /** 부호를 붙인 정확한 원화 금액. formatPnl 은 만 단위로 축약해 체결 금액 표시에는 쓸 수 없다. */
 function signedKRW(value: number): string {
@@ -307,6 +337,29 @@ export function Trade() {
     // 직접 열어 본 경우에도 "봤다"로 남긴다 — 이미 읽은 설명을 나중에 또 자동으로 덮지 않는다.
     markOrderTypeGuideSeen()
     setOrderTypeGuideOpen(false)
+  }, [])
+
+  /**
+   * 이미 본 코치마크. 처음 한 번만 저장소를 읽어 상태로 들고 있다 — CoachMark 는 저장소를 직접
+   * 보지 않으므로 "다시 보기"에 리마운트가 필요 없고, 이 상태를 비우기만 하면 다시 뜬다.
+   */
+  const [seenCoachMarks, setSeenCoachMarks] = useState<ReadonlySet<string>>(
+    () =>
+      new Set(
+        TRADE_COACH_MARKS.filter((m) => hasSeenCoachMark(m.storageKey)).map((m) => m.storageKey),
+      ),
+  )
+  // 한 번에 하나만 띄운다 — 아직 안 본 것 중 첫 번째다.
+  const currentCoachKey = TRADE_COACH_MARKS.find(
+    (m) => !seenCoachMarks.has(m.storageKey),
+  )?.storageKey
+  const closeCoachMark = useCallback((storageKey: string) => {
+    markCoachMarkSeen(storageKey)
+    setSeenCoachMarks((prev) => new Set(prev).add(storageKey))
+  }, [])
+  const replayCoachMarks = useCallback(() => {
+    TRADE_COACH_MARKS.forEach((m) => forgetCoachMark(m.storageKey))
+    setSeenCoachMarks(new Set())
   }, [])
 
   const isLimit = isCrypto && orderType === 'LIMIT'
@@ -693,6 +746,16 @@ export function Trade() {
           {instrumentsError && (
             <p className="mt-2 text-sm text-loss">{toUserMessage(instrumentsError)}</p>
           )}
+
+          {/*
+            코치마크를 다시 보는 진입점. 주문 패널이 아니라 화면 맨 위에 둔다 — 안내를 놓쳤다고
+            느끼는 사람이 가장 먼저 눈을 두는 자리이고, 주문 패널은 한참 아래로 스크롤해야 나온다.
+          */}
+          <div className="mt-4">
+            <Button type="button" size="sm" variant="ghost" onClick={replayCoachMarks}>
+              화면 안내 다시 보기
+            </Button>
+          </div>
         </header>
 
         {/* 2. 계좌 요약 스트립 */}
@@ -735,7 +798,10 @@ export function Trade() {
         */}
         {selected && (
           <div className="sticky top-[82px] z-20 mt-6">
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl">
+            <div
+              data-coach="trade-price-bar"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas/85 px-4 py-3 shadow-soft-sm backdrop-blur-xl"
+            >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-ink">{selected.name}</p>
                 <p className="truncate text-[11px] text-muted tabular">
@@ -1004,15 +1070,18 @@ export function Trade() {
                     현재가가 아니라 입력한 지정가다(서버가 예약하는 현금도 지정가 기준이다).
                     수량은 handleQuantityChange 로 흘려 보내 기존 정수/소수 규칙을 그대로 태운다.
                   */}
-                  <QuantityPresets
-                    side={side}
-                    isCrypto={isCrypto}
-                    availableCash={availableCash}
-                    held={held}
-                    unitPrice={unitPrice}
-                    disabledReason={presetDisabledReason}
-                    onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
-                  />
+                  {/* QuantityPresets 는 임의 속성을 넘겨받지 않는다 — 코치마크가 가리킬 래퍼를 씌운다. */}
+                  <div data-coach="trade-quantity-presets">
+                    <QuantityPresets
+                      side={side}
+                      isCrypto={isCrypto}
+                      availableCash={availableCash}
+                      held={held}
+                      unitPrice={unitPrice}
+                      disabledReason={presetDisabledReason}
+                      onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
+                    />
+                  </div>
                   {isCrypto && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {['0.001', '0.01', '0.1', '1'].map((preset) => (
@@ -1301,6 +1370,22 @@ export function Trade() {
           </div>
         </div>
       </div>
+
+      {/*
+        코치마크. 대상이 아직 없거나 화면 밖으로 지나갔으면 CoachMark 가 알아서 아무것도 그리지
+        않으므로 여기서 대상 존재 여부를 따로 따지지 않는다. 다만 시장가·지정가 설명 모달(z-[60])은
+        코치마크(z-50)를 통째로 덮으므로, 그것이 닫힌 뒤에 뜨게 한다.
+      */}
+      {TRADE_COACH_MARKS.map((mark) => (
+        <CoachMark
+          key={mark.storageKey}
+          target={mark.target}
+          title={mark.title}
+          body={mark.body}
+          active={!orderTypeGuideOpen && currentCoachKey === mark.storageKey}
+          onClose={() => closeCoachMark(mark.storageKey)}
+        />
+      ))}
 
       <OrderTypeGuideDialog open={orderTypeGuideOpen} onClose={closeOrderTypeGuide} />
     </div>
