@@ -1,5 +1,6 @@
 // 시장(주식/코인)별 계좌 요약·보유 종목·미체결 지정가·체결 내역(커서 페이징)을 보여주는 포트폴리오 화면
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
@@ -17,8 +18,6 @@ import { getJournals } from '../services/journalService'
 import { PendingOrders } from '../components/trade/PendingOrders'
 import { PostSellFeedback } from '../components/feedback/PostSellFeedback'
 import { JournalEditor } from '../components/journal/JournalEditor'
-import { ProfitShareCardModal } from '../components/portfolio/ProfitShareCardModal'
-import { canCreateShareCard } from '../lib/shareCard'
 import type { AccountSummary, Holding, JournalListItem, Market, OrderSide, Trade } from '../services/types'
 
 const JOURNAL_PREVIEW_SIZE = 3
@@ -60,6 +59,7 @@ function SideChip({ side }: { side: OrderSide }) {
 }
 
 export function Portfolio() {
+  const navigate = useNavigate()
   const [market, setMarket] = useState<Market>('CRYPTO')
   const isCrypto = market === 'CRYPTO'
 
@@ -72,8 +72,6 @@ export function Portfolio() {
   const [openTradeId, setOpenTradeId] = useState<number | null>(null)
   /** 회고 작성 폼을 연 체결 id. 목록에 회고 유무가 없어 작성/수정을 미리 알 수 없다. */
   const [journalTradeId, setJournalTradeId] = useState<number | null>(null)
-  /** 수익 인증 카드 모달을 연 체결 id. null 이면 닫힘. */
-  const [shareCardTradeId, setShareCardTradeId] = useState<number | null>(null)
 
   const [account, setAccount] = useState<AccountSummary | null>(null)
   const [holdings, setHoldings] = useState<Holding[] | null>(null)
@@ -492,16 +490,18 @@ export function Portfolio() {
                               )}
 
                               {/*
-                                수익 인증 카드 — 매도 회고와 같은 데이터를 쓰므로 같은 대상(주식 매도
-                                체결)에서만 만들 수 있다. 매수만 하고 아직 안 판 거래는 수익률이 없어
-                                대상이 아니다.
+                                수익 인증 카드 — 매도 체결이면 코인·주식 모두 대상이다. 매수만 하고
+                                아직 안 판 거래는 수익률이 없어 대상이 아니다. 클릭 시 커뮤니티
+                                글쓰기 화면으로 이동하며 이 체결 id 를 실어 보낸다(Community.tsx 가 읽는다).
                               */}
-                              {canCreateShareCard(trade.side, isCrypto) && (
+                              {trade.side === 'SELL' && (
                                 <div>
                                   <Button
                                     variant="soft"
                                     size="sm"
-                                    onClick={() => setShareCardTradeId(trade.tradeId)}
+                                    onClick={() =>
+                                      navigate('/community', { state: { sharedTradeId: trade.tradeId } })
+                                    }
                                   >
                                     수익 인증 카드 만들기
                                   </Button>
@@ -616,13 +616,6 @@ export function Portfolio() {
           </div>
         </section>
       </div>
-
-      {shareCardTradeId !== null && (
-        <ProfitShareCardModal
-          tradeId={shareCardTradeId}
-          onClose={() => setShareCardTradeId(null)}
-        />
-      )}
     </div>
   )
 }

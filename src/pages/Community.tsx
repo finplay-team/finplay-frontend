@@ -2,6 +2,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { AttachedImage } from '../components/community/AttachedImage'
+import { TradeShareCard } from '../components/community/TradeShareCard'
 import { LikeButton } from '../components/community/LikeButton'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -64,6 +65,11 @@ export function Community() {
   const [imageId, setImageId] = useState<number | null>(null)
   const [imageUploading, setImageUploading] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
+  /**
+   * 첨부할 매매 카드의 체결 id. 포트폴리오·매도 직후 화면에서 navigate state 로 들고 온다.
+   * 이미지와 동시에 첨부할 수 없어(백엔드 제약) 사진 첨부 UI와 배타적으로 보여준다.
+   */
+  const [sharedTradeId, setSharedTradeId] = useState<number | null>(null)
   const [searchParams] = useSearchParams()
   const location = useLocation()
   /**
@@ -204,6 +210,19 @@ export function Community() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * 수익 인증 카드(포트폴리오 체결내역·매도 직후)에서 "수익 인증 카드로 공유하기"로 넘어온 진입점.
+   * 이미지와 달리 미리 업로드할 것이 없어 tradeId 만 들고 있다가 등록 시 그대로 실어 보낸다.
+   * 마운트 시 1회만 확인한다 — 폼을 쓰다가 state 가 남아 있어도 다시 덮어쓰지 않는다.
+   */
+  useEffect(() => {
+    const tradeId = (location.state as { sharedTradeId?: number } | null)?.sharedTradeId
+    if (tradeId === undefined) return
+    setFormOpen(true)
+    setSharedTradeId(tradeId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const canSubmit =
     title.trim().length > 0 && content.trim().length > 0 && !submitting && !imageUploading
 
@@ -254,17 +273,19 @@ export function Community() {
     setSubmitting(true)
     setFormError(null)
     try {
+      // 이미지와 매매 카드는 동시에 첨부할 수 없다(백엔드 제약) — sharedTradeId 가 있으면 그쪽만 보낸다.
       await createPost({
         title: title.trim(),
         content: content.trim(),
         instrumentId: filterInstrumentId,
-        imageId,
+        ...(sharedTradeId !== null ? { sharedTradeId } : { imageId }),
       })
       setTitle('')
       setContent('')
       setImagePreviewUrl(null)
       setImageId(null)
       setImageError(null)
+      setSharedTradeId(null)
       setFormOpen(false)
       // 새 글은 최신순 목록의 첫 페이지에 있다.
       if (page !== 0) setPage(0)
@@ -351,10 +372,24 @@ export function Community() {
 
               <div>
                 <div className="mb-1.5 flex items-baseline justify-between">
-                  <span className="text-sm font-medium text-ink">사진 (선택)</span>
+                  <span className="text-sm font-medium text-ink">
+                    {sharedTradeId !== null ? '매매 카드' : '사진 (선택)'}
+                  </span>
                   {imageUploading && <span className="text-xs text-muted">업로드 중…</span>}
                 </div>
-                {imagePreviewUrl ? (
+                {/* 이미지와 매매 카드는 같은 게시물에 동시에 붙지 못한다(백엔드 제약) — 한쪽만 보여준다. */}
+                {sharedTradeId !== null ? (
+                  <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-elevated px-4 py-3">
+                    <p className="text-sm text-ink">이 매매의 수익 인증 카드가 함께 등록돼요.</p>
+                    <button
+                      type="button"
+                      onClick={() => setSharedTradeId(null)}
+                      className="text-xs text-muted underline underline-offset-2 transition-colors duration-300 hover:text-brand"
+                    >
+                      제거
+                    </button>
+                  </div>
+                ) : imagePreviewUrl ? (
                   <div className="relative inline-block">
                     <img
                       src={imagePreviewUrl}
@@ -381,9 +416,11 @@ export function Community() {
                     />
                   </label>
                 )}
-                <p className="mt-1.5 text-xs text-muted">
-                  JPEG, PNG, WEBP만 되고 5MB까지 올릴 수 있어요. 한 장만 첨부할 수 있어요.
-                </p>
+                {sharedTradeId === null && (
+                  <p className="mt-1.5 text-xs text-muted">
+                    JPEG, PNG, WEBP만 되고 5MB까지 올릴 수 있어요. 한 장만 첨부할 수 있어요.
+                  </p>
+                )}
                 {imageError && <p className="mt-1.5 text-sm text-rose-300">{imageError}</p>}
               </div>
 
@@ -479,12 +516,17 @@ export function Community() {
                         <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">
                           {toExcerpt(post.content)}
                         </p>
-                        {post.imageId !== null && (
-                          <AttachedImage
-                            imageId={post.imageId}
-                            alt={`${post.title} 첨부 사진`}
-                            className="mt-3 h-40 w-full rounded-2xl object-cover"
-                          />
+                        {/* 매매 카드와 사진은 한 게시물에 동시에 붙지 않는다(서로 배타적). */}
+                        {post.sharedTrade !== null ? (
+                          <TradeShareCard trade={post.sharedTrade} className="mt-3" />
+                        ) : (
+                          post.imageId !== null && (
+                            <AttachedImage
+                              imageId={post.imageId}
+                              alt={`${post.title} 첨부 사진`}
+                              className="mt-3 h-40 w-full rounded-2xl object-cover"
+                            />
+                          )
                         )}
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                           <p className="text-xs text-muted">

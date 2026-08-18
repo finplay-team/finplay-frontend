@@ -21,6 +21,7 @@ function makePost(overrides: Partial<Post> = {}): Post {
     instrumentName: null,
     imageId: null,
     imageUrl: null,
+    sharedTrade: null,
     likeCount: 0,
     likedByMe: false,
     createdAt: '2026-08-18T09:00:00',
