@@ -758,39 +758,8 @@ export function Trade() {
           </div>
         </header>
 
-        {/* 2. 계좌 요약 스트립 */}
-        <Card className="mt-8" accent={accent} innerClassName="p-6">
-          {accountError ? (
-            <p className="text-sm text-loss">{accountError}</p>
-          ) : (
-            <>
-              <dl className="grid grid-cols-2 gap-6 md:grid-cols-3">
-                <Stat label="총 평가자산" value={account ? formatKRW(account.totalValue) : '—'} />
-                {/* 서버는 availableCash 를 주지 않는다 — 예약분을 뺀 값이 실제 주문 가능액이다. */}
-                <Stat
-                  label="주문가능 현금"
-                  value={availableCash !== null ? formatKRW(availableCash) : '—'}
-                />
-                <Stat
-                  label="평가손익"
-                  value={account ? signedKRW(account.unrealizedPnl) : '—'}
-                  tone={account ? pnlTone(account.unrealizedPnl) : 'text-ink'}
-                />
-              </dl>
-              {/* 예약이 있을 때만 알린다 — 총 현금과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
-              {account !== null && account.reservedCash > 0 && (
-                <p className="mt-4 text-xs leading-relaxed text-muted">
-                  현금 {formatKRW(account.cashBalance)} 중{' '}
-                  <span className="tabular text-coin">{formatKRW(account.reservedCash)}</span>이
-                  미체결 지정가 매수로 예약돼 있습니다. 주문을 취소하면 즉시 돌아옵니다.
-                </p>
-              )}
-            </>
-          )}
-        </Card>
-
         {/*
-          종목 목록(3) | 나머지(현재가 고정 바 2-1 · 차트 4 · 주문 패널 5~7) 2컬럼 그리드.
+          종목 목록(3) | 나머지(계좌 요약 2 · 차트 4 · 주문 패널 5~7) 2컬럼 그리드.
           처음엔 목록에 row-span-2, 고정 바에 col-span-2 를 써서 한 그리드 안에 다 넣었는데, 목록(긴
           컬럼)이 row-span 되는 행 트랙 높이 계산에 끼어들면서 1행(고정 바) 트랙 자체가 목록 높이만큼
           부풀어 고정 바 밑에 빈 여백이 크게 생겼다(주식처럼 목록이 길 때 특히 눈에 띔, 2026-08-18
@@ -856,6 +825,42 @@ export function Trade() {
           */}
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
             <div className="space-y-6">
+            {/*
+              2. 계좌 요약 스트립 — 차트 컬럼 맨 위 첫 항목으로 둔다. 이 컬럼(과 그 옆 주문 컬럼)이
+              이제 목록·주문 컬럼의 전체 높이 기준이 되므로, 옆 목록·주문 박스가 계좌 요약 카드 위
+              끝까지 저절로 따라 올라온다(2026-08-18 피드백 — 목록·주문 박스를 계좌 요약과 같은
+              높이에서 시작하게 해 달라는 요청).
+            */}
+            <Card accent={accent} innerClassName="p-6">
+              {accountError ? (
+                <p className="text-sm text-loss">{accountError}</p>
+              ) : (
+                <>
+                  <dl className="grid grid-cols-2 gap-6 md:grid-cols-3">
+                    <Stat label="총 평가자산" value={account ? formatKRW(account.totalValue) : '—'} />
+                    {/* 서버는 availableCash 를 주지 않는다 — 예약분을 뺀 값이 실제 주문 가능액이다. */}
+                    <Stat
+                      label="주문가능 현금"
+                      value={availableCash !== null ? formatKRW(availableCash) : '—'}
+                    />
+                    <Stat
+                      label="평가손익"
+                      value={account ? signedKRW(account.unrealizedPnl) : '—'}
+                      tone={account ? pnlTone(account.unrealizedPnl) : 'text-ink'}
+                    />
+                  </dl>
+                  {/* 예약이 있을 때만 알린다 — 총 현금과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
+                  {account !== null && account.reservedCash > 0 && (
+                    <p className="mt-4 text-xs leading-relaxed text-muted">
+                      현금 {formatKRW(account.cashBalance)} 중{' '}
+                      <span className="tabular text-coin">{formatKRW(account.reservedCash)}</span>이
+                      미체결 지정가 매수로 예약돼 있습니다. 주문을 취소하면 즉시 돌아옵니다.
+                    </p>
+                  )}
+                </>
+              )}
+            </Card>
+
             {/* 4. 차트 */}
             <Card innerClassName="p-6">
               <div className="flex flex-wrap items-end justify-between gap-4">
