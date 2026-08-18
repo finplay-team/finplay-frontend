@@ -33,6 +33,8 @@ function post(overrides: Partial<Post> = {}): Post {
     imageId: null,
     imageUrl: null,
     sharedTrade: null,
+    likeCount: 0,
+    likedByMe: false,
     createdAt: '2026-08-18T00:00:00',
     updatedAt: '2026-08-18T00:00:00',
     ...overrides,

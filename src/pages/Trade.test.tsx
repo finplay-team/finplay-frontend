@@ -59,6 +59,7 @@ function account(): AccountSummary {
 
 function holding(): Holding {
   return {
+    holdingId: 1,
     instrumentId: 17,
     symbol: 'BTC',
     name: '비트코인',
