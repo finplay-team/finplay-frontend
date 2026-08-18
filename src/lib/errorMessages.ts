@@ -43,6 +43,11 @@ const MESSAGES: Record<string, string> = {
   PRACTICE_ALREADY_COMPLETED: '이미 완료한 튜토리얼입니다.',
   PRACTICE_EVIDENCE_MISSING: '아직 조건이 충족되지 않았습니다. 매수 후 가격을 한 번 이상 관찰한 뒤 다시 시도해 주세요.',
   PRACTICE_STEP_LOCKED: '먼저 이전 단계를 완료해야 합니다. 화면을 새로고침해 진행 상황을 확인해 주세요.',
+  // OCO 손절·익절 예약 (021 일반 리스크관리 OCO)
+  EXIT_PLAN_ALREADY_EXISTS: '이미 이 종목에 걸어둔 예약이 있습니다. 취소한 뒤 다시 시도해 주세요.',
+  EXIT_PLAN_NOT_FOUND: '예약을 찾을 수 없습니다.',
+  EXIT_PLAN_NOT_PENDING: '이미 체결되거나 취소된 예약입니다. 화면을 새로고침해 주세요.',
+  EXIT_PLAN_INVALID_PRICE_RANGE: '손절·익절 비율을 다시 확인해 주세요.',
 }
 
 /** 화면별 문구가 필요할 때 override 를 앞세운다. */

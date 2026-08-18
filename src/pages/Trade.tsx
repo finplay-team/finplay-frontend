@@ -20,6 +20,7 @@ import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { placeLimitOrder, placeOrder } from '../services/orderService'
 import { PendingOrders } from '../components/trade/PendingOrders'
+import { OcoExitPlanPanel } from '../components/trade/OcoExitPlanPanel'
 import { CommunityPreview } from '../components/trade/CommunityPreview'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { Star } from '../components/ui/icons'
@@ -262,6 +263,12 @@ export function Trade() {
     // 주식은 정수 주만 주문할 수 있고, 코인은 소수 수량 그대로 매도할 수 있다.
     return isCrypto ? available : Math.floor(available)
   }, [holdings, isCrypto, selected])
+
+  /** OCO(손절·익절) 패널이 쓸 해당 holding 전신 — 보유하지 않은 종목은 null이다. */
+  const selectedHolding = useMemo(() => {
+    if (!holdings || !selected) return null
+    return holdings.find((h) => h.instrumentId === selected.instrumentId) ?? null
+  }, [holdings, selected])
 
   const [side, setSide] = useState<OrderSide>('BUY')
   const [quantity, setQuantity] = useState('')
@@ -1158,6 +1165,18 @@ export function Trade() {
                 refreshNonce={pendingNonce}
                 onChanged={() => {
                   // 예약분 변화가 응답에 실려 오지 않아 계좌·보유를 반드시 다시 읽어야 한다.
+                  setAccountNonce((n) => n + 1)
+                }}
+              />
+            )}
+
+            {/* 6.5 OCO 손절·익절 자동 예약 — 021 일반 리스크관리 OCO, 코인 holding 전용이라 isCrypto로만 가린다. */}
+            {isCrypto && (
+              <OcoExitPlanPanel
+                holding={selectedHolding}
+                refreshNonce={pendingNonce}
+                onChanged={() => {
+                  // 예약 생성·취소로 reservedQuantity가 바뀌는데 응답에 실리지 않는다 — 계좌·보유를 다시 읽어야 한다.
                   setAccountNonce((n) => n + 1)
                 }}
               />
