@@ -12,7 +12,7 @@ import { useCandles } from '../hooks/useCandles'
 import { useCryptoPrices } from '../hooks/useCryptoPrices'
 import { useIdempotencyKey } from '../hooks/useIdempotencyKey'
 import { useInstruments } from '../hooks/useInstruments'
-import { useStockStream, type StreamConnectionState } from '../hooks/useStockStream'
+import { useStockStream } from '../hooks/useStockStream'
 import { formatDateTime, formatHhMm } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import { formatKRW, formatPercent, formatPrice, pnlTone } from '../lib/format'
@@ -59,14 +59,6 @@ const STALE_MS = 40_000
 const CRYPTO_POLL_MS = 5_000
 /** 코인 계좌·보유는 시세와 달리 자주 바뀌지 않는다 — 더 느리게 다시 읽는다. */
 const CRYPTO_ACCOUNT_REFRESH_MS = 15_000
-
-const streamStateLabels: Record<StreamConnectionState, string> = {
-  idle: '시세 대기',
-  connecting: '시세 연결 중',
-  open: '실시간 수신',
-  reconnecting: '재연결 중',
-  closed: '시세 연결 종료',
-}
 
 /** 주문 실패 시 화면 문맥에 맞게 덮어쓰는 문구. 백엔드 message 는 쓰지 않고 code 로만 분기한다. */
 const ORDER_ERROR_MESSAGES: Record<Market, Record<string, string>> = {
@@ -711,16 +703,19 @@ export function Trade() {
               </>
             ) : (
               <>
-                <Pill active={streamState === 'open' && !stale}>
+                {/*
+                  이전엔 "실시간 수신"(SSE 연결 상태) 배지와 "장 운영 중/장 마감"(marketStatus) 배지가
+                  따로 있었다. 하나로 합쳐 marketStatus 텍스트로 통일했다(2026-08-18 피드백) — 점(dot)
+                  애니메이션은 여전히 스트림이 실제로 살아있는지(streamState === 'open' && !stale)를
+                  보여준다.
+                */}
+                <Pill active={marketStatus === 'OPEN'}>
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
                       streamState === 'open' && !stale ? 'animate-pulse-soft bg-brand' : 'bg-muted'
                     }`}
                     aria-hidden
                   />
-                  {streamStateLabels[streamState]}
-                </Pill>
-                <Pill active={marketStatus === 'OPEN'}>
                   {marketStatus === 'OPEN'
                     ? '장 운영 중'
                     : marketStatus === 'CLOSED'
@@ -733,15 +728,16 @@ export function Trade() {
           </div>
 
           {/*
-            코인 설명은 "5초마다 폴링·분봉 갱신" 같은 구현 디테일 대신 사용자 관점 문구로 바꿨다
-            (2026-08-18 피드백 — 위 배지가 이미 24시간 거래·빗썸 실시세를 보여주니, 이 문장은 그걸
-            "왜/어떻게 쓰면 좋은지"로 풀어준다).
+            코인·주식 설명 둘 다 구현 디테일("5초마다 폴링", "차트 시각은 그 거래일 기준") 대신
+            사용자 관점 문구로 바꿨다(2026-08-18 피드백 — 위 배지가 이미 상태를 보여주니, 이 문장은
+            "왜/어떻게 쓰면 좋은지"로 풀어준다). sourceTradingDate 는 백엔드가 정하는 값이라(보통
+            직전 영업일) 날짜가 바뀌면 이 문구도 자동으로 같이 바뀐다.
           */}
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             {isCrypto
               ? '빗썸 실시간 시세로 24시간 언제든 코인 매매를 연습해보세요.'
               : sourceTradingDate
-                ? `실제 거래일 ${sourceTradingDate} 의 시세를 오늘 장 시간에 맞춰 재생합니다. 차트와 시세에 찍힌 시각은 오늘이 아니라 그 거래일 기준입니다.`
+                ? `${sourceTradingDate} 실제 장의 움직임을 오늘 장 시간에 맞춰 그대로 재현해요. 실전처럼 주식 매매를 연습해보세요.`
                 : '과거 거래일의 시세를 오늘 장 시간에 맞춰 재생하는 방식입니다. 재생할 거래일이 준비되면 여기에 표시됩니다.'}
           </p>
           {stale && !isCrypto && (
