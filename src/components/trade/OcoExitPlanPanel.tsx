@@ -1,7 +1,6 @@
 // 코인 holding에 손절·익절(OCO) 예약을 걸거나, 걸어둔 예약을 확인·취소하는 패널 (021 일반 리스크관리 OCO)
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '../ui/Button'
-import { Card } from '../ui/Card'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { isApiErrorCode, toUserMessage } from '../../lib/errorMessages'
 import { cancelExitPlan, createExitPlan, getExitPlans } from '../../services/exitPlanService'
@@ -173,8 +172,8 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
   }, [cancelBusy, load, onChanged, plan])
 
   return (
-    <Card>
-      <div className="p-6">
+    <div className="rounded-2xl border border-line p-5">
+      <div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-ink">손절·익절 자동 예약 (OCO)</span>
         </div>
@@ -321,6 +320,6 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
           </div>
         )}
       </div>
-    </Card>
+    </div>
   )
 }
