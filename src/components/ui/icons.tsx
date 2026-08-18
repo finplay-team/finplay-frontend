@@ -106,6 +106,15 @@ export const User = (props: IconProps) => (
 
 
 
+/**
+ * 좋아요 버튼용. Star 와 같은 방식으로 눌린 상태는 호출부가 `fill="currentColor"` 로 채워 표현한다.
+ */
+export const Heart = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 20.5 4.6 13.2a5 5 0 0 1 7.1-7.1l.3.3.3-.3a5 5 0 0 1 7.1 7.1L12 20.5Z" />
+  </svg>
+)
+
 export const Logout = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 12h11M17 8l4 4-4 4" />
