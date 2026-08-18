@@ -7,6 +7,7 @@ import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { formatDateTime } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
+import { sharePostImage, sharePostLink } from '../lib/postShare'
 import {
   countComments,
   createComment,
@@ -74,6 +75,11 @@ export function CommunityPost() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  /** '링크 공유' · '이미지로 공유' 버튼 중 지금 처리 중인 것. 중복 클릭 방지용. */
+  const [shareBusy, setShareBusy] = useState<'link' | 'image' | null>(null)
+  /** 공유 결과 안내 문구. 몇 초 뒤 자동으로 사라진다. */
+  const [shareMessage, setShareMessage] = useState<string | null>(null)
+
   const [commentInput, setCommentInput] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [commentError, setCommentError] = useState<string | null>(null)
@@ -124,6 +130,13 @@ export function CommunityPost() {
       cancelled = true
     }
   }, [postId])
+
+  // 공유 안내 문구는 3초 뒤 스스로 사라진다.
+  useEffect(() => {
+    if (!shareMessage) return
+    const timer = window.setTimeout(() => setShareMessage(null), 3000)
+    return () => window.clearTimeout(timer)
+  }, [shareMessage])
 
   // authorId 가 없어 닉네임 비교가 유일한 신호다. 최종 권위는 서버의 403 FORBIDDEN 이다.
   const isMine = post !== null && member !== null && post.authorNickname === member.nickname
@@ -242,6 +255,31 @@ export function CommunityPost() {
       setDeleteError(toUserMessage(err, { FORBIDDEN: '내가 쓴 글만 삭제할 수 있습니다.' }))
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleShareLink = async () => {
+    if (shareBusy || !post) return
+    setShareBusy('link')
+    try {
+      const result = await sharePostLink(post)
+      if (result === 'copied') setShareMessage('링크를 복사했어요.')
+      else if (result === 'failed') setShareMessage('링크 공유에 실패했어요. 다시 시도해 주세요.')
+      // 'shared'는 시스템 공유 시트가 이미 결과를 보여주므로 별도 안내가 필요 없다.
+    } finally {
+      setShareBusy(null)
+    }
+  }
+
+  const handleShareImage = async () => {
+    if (shareBusy || !post) return
+    setShareBusy('image')
+    try {
+      const result = await sharePostImage(post)
+      if (result === 'downloaded') setShareMessage('카드 이미지를 다운로드했어요.')
+      else if (result === 'failed') setShareMessage('이미지 만들기에 실패했어요. 다시 시도해 주세요.')
+    } finally {
+      setShareBusy(null)
     }
   }
 
@@ -430,8 +468,22 @@ export function CommunityPost() {
                 {post.content}
               </p>
 
+              <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-6">
+                <Button variant="ghost" size="sm" onClick={handleShareLink} disabled={shareBusy !== null}>
+                  {shareBusy === 'link' ? '공유 준비 중…' : '공유하기'}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleShareImage} disabled={shareBusy !== null}>
+                  {shareBusy === 'image' ? '이미지 만드는 중…' : '이미지로 공유'}
+                </Button>
+                {shareMessage && (
+                  <p role="status" aria-live="polite" className="text-xs text-brand">
+                    {shareMessage}
+                  </p>
+                )}
+              </div>
+
               {isMine && (
-                <div className="mt-8 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-6">
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                   <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                     수정
                   </Button>
