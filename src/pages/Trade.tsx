@@ -672,7 +672,7 @@ export function Trade() {
         : '아직 공개된 분봉이 없습니다. 매분 새 봉이 추가됩니다.'
 
   return (
-    <div className="relative min-h-[100dvh] px-4 pb-24 pt-28 md:pt-32">
+    <div className="relative min-h-[100dvh] px-8 pb-24 pt-28 md:pt-32">
       <div className="orb -top-24 left-1/4 h-72 w-72 animate-float-orb" aria-hidden />
 
       {/*
@@ -770,10 +770,18 @@ export function Trade() {
         */}
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           {/* 3. 종목 목록 */}
-          <Card innerClassName="p-4">
+          {/*
+            목록·차트·주문 세 컬럼이 전부 같은 max-h-[calc(100vh-556px)] 를 쓴다(아래 두 군데도 반드시
+            같은 값) — 브라우저 창 높이가 바뀌면 셋이 똑같이 함께 커지거나 작아진다. 글자 크기는
+            절대 건드리지 않는다(transform: scale 은 안 쓴다) — 컬럼 자체의 최대 높이만 화면에 맞추고,
+            그 안 내용이 넘치면 그 컬럼 안에서만 스크롤된다(2026-08-18 피드백 — "박스 크기만
+            조절되게, 텍스트는 고정, 창을 늘리면 다 같이 늘어나야 한다").
+          */}
+          <Card innerClassName="flex max-h-[calc(100vh-556px)] flex-col p-4">
             <h2 className="px-2 pb-2 text-sm font-semibold text-ink">
               {isCrypto ? '코인' : '종목'}
             </h2>
+            <div className="overflow-y-auto">
             {instrumentsLoading ? (
               // 텍스트 한 줄 대신 실제 행과 같은 크기의 자리표시를 둬 목록이 튀어오르지 않게 한다
               <ul aria-label="종목을 불러오는 중" className="space-y-1">
@@ -814,6 +822,7 @@ export function Trade() {
             {watchlist.error && (
               <p className="mt-2 px-3 text-xs text-rose-300">{watchlist.error}</p>
             )}
+            </div>
           </Card>
 
           {/*
@@ -821,10 +830,10 @@ export function Trade() {
             추가로 있었는데, sticky 그리드 아이템이 자기 행(row) 트랙 계산에 끼어들어 옆 목록이
             길어질 때(특히 주식) 행 자체가 부풀어 밑에 빈 여백이 크게 생기는 문제가 반복됐다.
             바를 없애고 그 정보(종목명·가격·등락)는 바로 아래 차트 카드 제목 옆으로 옮겼다
-            (2026-08-18 피드백).
+            (2026-08-18 피드백). 목록과 같은 max-h-[calc(100vh-556px)] + overflow-y-auto.
           */}
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
-            <div className="space-y-6">
+            <div className="max-h-[calc(100vh-556px)] space-y-6 overflow-y-auto">
             {/*
               2. 계좌 요약 스트립 — 차트 컬럼 맨 위 첫 항목으로 둔다. 이 컬럼(과 그 옆 주문 컬럼)이
               이제 목록·주문 컬럼의 전체 높이 기준이 되므로, 옆 목록·주문 박스가 계좌 요약 카드 위
@@ -976,8 +985,9 @@ export function Trade() {
               5~7. 주문 패널 + 미체결 지정가 주문 + 커뮤니티 미리보기 — 차트 옆(lg 이상) 컬럼.
               둘을 쌓아 두지 않고 한 박스 안에서 탭으로 전환한다(2026-08-18 피드백, 와이어프레임 참고)
               — 탭 버튼이 박스 밖에 따로 뜨는 게 아니라 박스 상단에 붙어 있어야 한다.
+              목록·차트 컬럼과 같은 max-h-[calc(100vh-556px)] + overflow-y-auto.
             */}
-            <div className="space-y-6">
+            <div className="max-h-[calc(100vh-556px)] space-y-6 overflow-y-auto">
             <Card accent={accent} innerClassName="p-0 overflow-hidden">
               <div className="grid grid-cols-2 border-b border-line">
                 {(
