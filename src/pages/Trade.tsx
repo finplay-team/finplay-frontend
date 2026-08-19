@@ -662,20 +662,19 @@ export function Trade() {
       */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {/*
-          1. 헤더 + 시장 탭 + 시세 상태. 가운데 정렬을 한 번 시도했다가 다시 좌측 정렬로
-          되돌렸다(2026-08-19 피드백) — 아래 3컬럼 그리드가 좌측 정렬이라 그쪽과 맞춘다.
-          계좌 요약 스트립을 헤더 오른쪽 빈 자리로 옮겨봤다가(테두리 카드 버전, 가운데 정렬
-          버전, 테두리 없는 버전까지) 계속 어색하다는 피드백을 받고 원래 자리(차트 컬럼 맨 위)로
-          되돌렸다(2026-08-19) — 헤더 오른쪽 여백은 그냥 여백으로 둔다.
+          1. 헤더 + 시장 탭 + 시세 상태. 좌측 정렬 ↔ 가운데 정렬을 몇 번 오갔는데(2026-08-19
+          피드백) 최종적으로 다시 가운데 정렬. 계좌 요약 스트립은 헤더 오른쪽 빈 자리로 옮겨봤다가
+          계속 어색하다는 피드백을 받고 원래 자리(차트 컬럼 맨 위)로 되돌아가 있다 — 헤더 정렬과는
+          이제 무관하다.
         */}
-        <header className="shrink-0">
+        <header className="shrink-0 text-center">
           {/*
             "모의투자" 라벨은 최종적으로 뺀다 — 붙였다 뗐다 하다가 없는 쪽으로 확정됐다
             (2026-08-19 피드백). 다시 붙이지 않는다.
           */}
           <MarketTabs market={market} onChange={setMarket} size="lg" />
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             {isCrypto ? (
               <>
                 <Pill active={!stale} tone="coin">
@@ -724,7 +723,7 @@ export function Trade() {
             "왜/어떻게 쓰면 좋은지"로 풀어준다). sourceTradingDate 는 백엔드가 정하는 값이라(보통
             직전 영업일) 날짜가 바뀌면 이 문구도 자동으로 같이 바뀐다.
           */}
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             {isCrypto
               ? '빗썸 실시간 시세로 24시간 언제든 코인 매매를 연습해보세요.'
               : sourceTradingDate
