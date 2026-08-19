@@ -1186,7 +1186,12 @@ export function Trade() {
                     onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
                   />
                   {isCrypto && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
+                    <div
+                      role="group"
+                      aria-label="빠른 수량으로 더하기"
+                      className="mt-2 flex flex-wrap items-center gap-1.5"
+                    >
+                      <span className="text-[11px] text-muted">빠른 수량</span>
                       {['0.001', '0.01', '0.1', '1'].map((preset) => (
                         <button
                           key={preset}
