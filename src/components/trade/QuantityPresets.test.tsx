@@ -81,10 +81,10 @@ describe('QuantityPresets — 매수 비율', () => {
 })
 
 describe('QuantityPresets — 매도 비율', () => {
-  it('"전량"은 내림 없이 보유 수량 그대로다', () => {
+  it('"최대"는 내림 없이 보유 수량 그대로다', () => {
     const onPick = renderPresets({ side: 'SELL', isCrypto: true, held: 0.12345678 })
 
-    fireEvent.click(screen.getByRole('button', { name: '전량' }))
+    fireEvent.click(screen.getByRole('button', { name: '최대' }))
 
     expect(onPick).toHaveBeenLastCalledWith(0.12345678)
   })
@@ -108,16 +108,16 @@ describe('QuantityPresets — 매도 비율', () => {
   it('매도는 시세가 없어도 보유 수량만으로 계산한다', () => {
     const onPick = renderPresets({ side: 'SELL', held: 10, unitPrice: null })
 
-    fireEvent.click(screen.getByRole('button', { name: '전량' }))
+    fireEvent.click(screen.getByRole('button', { name: '최대' }))
 
     expect(onPick).toHaveBeenLastCalledWith(10)
   })
 
-  it('보유 수량이 0 이면 버튼을 잠그고 이유를 알린다', () => {
+  it('보유 수량이 0 이면 버튼만 잠그고 별도 안내 문구는 보여주지 않는다', () => {
     renderPresets({ side: 'SELL', held: 0 })
 
-    expect(screen.getByRole('button', { name: '전량' })).toBeDisabled()
-    expect(screen.getByText('팔 수 있는 수량이 없어요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '최대' })).toBeDisabled()
+    expect(screen.queryByText('팔 수 있는 수량이 없어요.')).not.toBeInTheDocument()
   })
 })
 

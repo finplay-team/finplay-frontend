@@ -478,6 +478,18 @@ export function Trade() {
   })
 
   /**
+   * 코인 매도 수량 입력창 placeholder 에 쓸 "최소 ≈ N" 힌트 — 실제 빗썸처럼 최소 주문금액을
+   * 채우는 수량을 올림해서 보여준다(내림하면 min 을 못 채워 주문이 막힐 수 있다).
+   */
+  const minSellQtyHint =
+    isCrypto && selected && selected.minOrderAmount > 0 && unitPrice !== null && unitPrice > 0
+      ? formatQty(
+          Math.ceil((selected.minOrderAmount / unitPrice) * 10 ** CRYPTO_QTY_DECIMALS) /
+            10 ** CRYPTO_QTY_DECIMALS,
+        )
+      : null
+
+  /**
    * 지금 넣은 지정가가 이미 체결 조건을 만족하는가.
    * 서버는 생성 시점에 즉시체결을 판정하지 않고 무조건 PENDING 으로 만든 뒤 다음 가격 틱에서 체결한다.
    * 코인은 시세가 초 단위로 들어와 사실상 즉시 체결되는데, 화면이 "접수됨 · 아직 체결되지 않음"만
@@ -542,7 +554,8 @@ export function Trade() {
    * 계산할 수 없는" 경우만 본다 — 매도는 가격이 필요 없어 보유 수량만 따진다.
    */
   const presetDisabledReason = useMemo<string | null>(() => {
-    if (side === 'SELL') return held > 0 ? null : '가진 수량이 없어서 팔 수 없어요.'
+    // 보유 수량이 0이면 각 버튼이 채울 수량도 0이 되어 자연히 잠긴다 — 별도 안내 문구는 필요 없다(2026-08-19 피드백).
+    if (side === 'SELL') return null
     if (availableCash === null) return '가진 돈을 불러오는 중이에요.'
     if (availableCash <= 0) return '주문에 쓸 수 있는 돈이 없어요.'
     // 지정가는 입력한 가격으로 계산하므로 현재가가 없어도 괜찮다.
@@ -1141,32 +1154,37 @@ export function Trade() {
                   </p>
                 )}
 
-                {/* 매수 탭에서만 의미가 있는 정보라 매수/매도 토글 바로 아래, 매수일 때만 보여준다(2026-08-19 피드백).
-                    수량 입력창과 같은 모양(라벨은 박스 밖, 값은 테두리 있는 박스 안)으로 맞췄다. */}
-                {side === 'BUY' && (
-                  <div>
-                    <p className="mb-1.5 text-sm font-medium text-ink">주문 가능</p>
-                    <div className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] tabular">
-                      {accountError ? (
+                {/* 매수/매도 토글 바로 아래 둔다(2026-08-19 피드백). 수량 입력창과 같은 모양(라벨은 박스
+                    밖, 값은 테두리 있는 박스 안)으로 맞췄다. 매수는 주문가능 현금, 매도는 매도가능 수량이다. */}
+                <div>
+                  <p className="mb-1.5 text-sm font-medium text-ink">주문 가능</p>
+                  <div className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] tabular">
+                    {side === 'BUY' ? (
+                      accountError ? (
                         <span className="text-loss">{accountError}</span>
                       ) : (
                         <span className="text-ink">
                           {availableCash !== null ? formatKRW(availableCash) : '—'}
                         </span>
-                      )}
-                    </div>
-                    {/* 예약이 있을 때만 알린다 — 현금 잔액과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
-                    {account !== null && account.reservedCash > 0 && (
-                      <p className="mt-1.5 text-xs leading-relaxed text-muted">
-                        현금 {formatKRW(account.cashBalance)} 중{' '}
-                        <span className="tabular text-coin">
-                          {formatKRW(account.reservedCash)}
-                        </span>
-                        이 미체결 지정가 매수로 예약돼 있습니다.
-                      </p>
+                      )
+                    ) : (
+                      <span className="text-ink">
+                        {formatQty(held)}
+                        {isCrypto ? ` ${selected?.symbol ?? ''}` : '주'}
+                      </span>
                     )}
                   </div>
-                )}
+                  {/* 예약이 있을 때만 알린다 — 현금 잔액과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
+                  {side === 'BUY' && account !== null && account.reservedCash > 0 && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                      현금 {formatKRW(account.cashBalance)} 중{' '}
+                      <span className="tabular text-coin">
+                        {formatKRW(account.reservedCash)}
+                      </span>
+                      이 미체결 지정가 매수로 예약돼 있습니다.
+                    </p>
+                  )}
+                </div>
 
                 <div>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3">
@@ -1174,15 +1192,15 @@ export function Trade() {
                       htmlFor={isAmountMode ? 'order-amount' : 'order-quantity'}
                       className="text-sm font-medium text-ink"
                     >
-                      {isAmountMode ? '주문 금액' : isCrypto ? '수량 (소수점 가능)' : '수량 (주)'}
+                      {isAmountMode
+                        ? '주문 금액'
+                        : isCrypto
+                          ? side === 'SELL'
+                            ? '주문 수량'
+                            : '수량 (소수점 가능)'
+                          : '수량 (주)'}
                     </label>
-                    {side === 'SELL' && (
-                      // "전량"은 아래 비율 버튼 묶음이 대신한다 — 같은 버튼을 두 곳에 두지 않는다.
-                      <span className="text-xs text-muted tabular">
-                        보유 {formatQty(held)}
-                        {isCrypto ? '' : '주'}
-                      </span>
-                    )}
+                    {/* 매도는 바로 위 "주문 가능" 박스가 보유 수량을 이미 보여주므로 여기서 또 보여주지 않는다. */}
                     {/* 금액 입력 모드에서는 바로 위 "주문 가능" 박스와 중복이라 최대 구매 가능 수량을 보여주지 않는다. */}
                     {side === 'BUY' && !isAmountMode && (
                       <span className="text-xs text-muted tabular">
@@ -1213,7 +1231,13 @@ export function Trade() {
                       type="text"
                       inputMode="decimal"
                       autoComplete="off"
-                      placeholder={isCrypto ? '0.001' : '0'}
+                      placeholder={
+                        side === 'SELL' && isCrypto && minSellQtyHint
+                          ? `최소 ≈ ${minSellQtyHint}`
+                          : isCrypto
+                            ? '0.001'
+                            : '0'
+                      }
                       value={quantity}
                       onChange={(e) => handleQuantityChange(e.target.value)}
                       className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15"
@@ -1259,7 +1283,8 @@ export function Trade() {
                         disabledReason={presetDisabledReason}
                         onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
                       />
-                      {isCrypto && (
+                      {/* 매도는 실제 빗썸에도 없는 패턴이라 뺐다 — 퍼센트 버튼 + placeholder 힌트로 충분하다(2026-08-19 피드백). */}
+                      {isCrypto && side === 'BUY' && (
                         <div
                           role="group"
                           aria-label="빠른 수량으로 더하기"
@@ -1336,7 +1361,9 @@ export function Trade() {
                         ? '예상 매수'
                         : isLimit
                           ? '예약 금액 (지정가 기준)'
-                          : '예상 주문금액 (추정)'}
+                          : side === 'SELL'
+                            ? '예상 매도'
+                            : '예상 주문금액 (추정)'}
                     </span>
                     <span className="font-medium text-ink tabular">
                       {isAmountMode
@@ -1349,8 +1376,8 @@ export function Trade() {
                     </span>
                   </div>
                   {/* 최소 주문금액은 코인 전용 — 주식은 1주 단위라 최소 금액이 곧 현재가라 보여줘도 의미가 없다(2026-08-19 피드백).
-                      금액 입력 모드에서는 입력창 placeholder("최소 금액 5,000원")가 이미 알려주므로 중복 표시하지 않는다. */}
-                  {!isAmountMode && isCrypto && selected && selected.minOrderAmount > 0 && (
+                      금액 입력 모드와 매도는 입력창 placeholder(최소 금액/최소 ≈ 수량)가 이미 알려주므로 중복 표시하지 않는다. */}
+                  {!isAmountMode && side === 'BUY' && isCrypto && selected && selected.minOrderAmount > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-muted">최소 주문금액</span>
                       <span className="text-muted tabular">
@@ -1524,8 +1551,10 @@ export function Trade() {
               )}
 
               {/* 손절·익절 자동 예약(OCO) — 지정가 매매 바로 아래, 기본은 접힌 토글이다. 코인 holding 전용(021)이고
-                  보유 중인 걸 파는 개념이라 side 필드 자체가 없다(항상 SELL) — 매도 탭에서만 보여준다. */}
-              {isCrypto && side === 'SELL' && (
+                  보유 중인 걸 파는 개념이라 side 필드 자체가 없다(항상 SELL) — 매도 탭에서만 보여준다.
+                  시장가는 "지금 즉시 판다"는 의도라 "나중에 조건 닿으면 판다"는 예약형 OCO와 성격이 달라
+                  섞으면 헷갈린다는 피드백으로, 지정가 매도에서만 보여준다(2026-08-19). */}
+              {isCrypto && side === 'SELL' && isLimit && (
                 <div className="mt-4 border-t border-white/[0.08] pt-3">
                   <button
                     type="button"

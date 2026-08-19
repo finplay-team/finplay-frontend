@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { presetQuantity } from '../../lib/quantity'
 import type { OrderSide } from '../../services/types'
 
-/** 마지막 1 은 매수면 "최대", 매도면 "전량"이다. */
+/** 마지막 1 은 매수·매도 모두 "최대"다. */
 const RATIOS = [0.1, 0.25, 0.5, 0.75, 1] as const
 
 interface Props {
@@ -43,13 +43,11 @@ export function QuantityPresets({
 
   // 가장 큰 비율로도 0 이면 어느 버튼을 눌러도 채울 수량이 없다.
   const nothingToFill = disabledReason === null && quantities[quantities.length - 1] <= 0
+  // 매도는 버튼이 자연히 잠기는 것만으로 충분해 안내 문구를 따로 보여주지 않는다(2026-08-19 피드백).
   const message =
-    disabledReason ??
-    (nothingToFill
-      ? side === 'BUY'
-        ? '가진 돈이 적어서 지금 가격으로는 살 수 있는 수량이 없어요.'
-        : '팔 수 있는 수량이 없어요.'
-      : null)
+    side === 'SELL'
+      ? null
+      : (disabledReason ?? (nothingToFill ? '가진 돈이 적어서 지금 가격으로는 살 수 있는 수량이 없어요.' : null))
 
   const [helpOpen, setHelpOpen] = useState(false)
   const helpId = useId()
@@ -87,7 +85,7 @@ export function QuantityPresets({
             onClick={() => onPick(quantities[i])}
             className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/[0.06] disabled:hover:text-muted"
           >
-            {ratio < 1 ? `${ratio * 100}%` : side === 'BUY' ? '최대' : '전량'}
+            {ratio < 1 ? `${ratio * 100}%` : '최대'}
           </button>
         ))}
         <div ref={helpRef} className="relative ml-auto">
