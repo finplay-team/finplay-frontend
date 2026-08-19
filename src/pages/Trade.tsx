@@ -1145,7 +1145,7 @@ export function Trade() {
                     수량 입력창과 같은 모양(라벨은 박스 밖, 값은 테두리 있는 박스 안)으로 맞췄다. */}
                 {side === 'BUY' && (
                   <div>
-                    <p className="mb-1.5 text-sm font-medium text-ink">주문가능 현금</p>
+                    <p className="mb-1.5 text-sm font-medium text-ink">주문 가능</p>
                     <div className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] tabular">
                       {accountError ? (
                         <span className="text-loss">{accountError}</span>
@@ -1183,7 +1183,7 @@ export function Trade() {
                         {isCrypto ? '' : '주'}
                       </span>
                     )}
-                    {/* 금액 입력 모드에서는 바로 위 "주문가능 현금" 박스와 중복이라 최대 구매 가능 수량을 보여주지 않는다. */}
+                    {/* 금액 입력 모드에서는 바로 위 "주문 가능" 박스와 중복이라 최대 구매 가능 수량을 보여주지 않는다. */}
                     {side === 'BUY' && !isAmountMode && (
                       <span className="text-xs text-muted tabular">
                         최대 구매 가능 {formatQty(maxBuyQty)}
