@@ -8,8 +8,14 @@ export const CRYPTO_QTY_DECIMALS = 8
  * 매수 수수료율. 백엔드가 매수 때 `amount + fee` 만큼 현금을 깎으므로(OrderExecutionService
  * `cashRequired`, 지정가는 LimitOrderFeeCalculator) 현금을 가격으로만 나누면 "최대"가 늘 잔고를
  * 넘겨 INSUFFICIENT_CASH 가 난다. 같은 값을 여기서도 빼 두고 계산한다.
+ *
+ * 실제 빗썸 수수료(원화마켓 테이커 0.25%)가 아니라 PRD ORD-004에 명시된 제품 스펙값이다 —
+ * 백엔드 OrderExecutionService.CRYPTO_FEE_RATE·LimitOrderFeeCalculator.CRYPTO_FEE_RATE 둘 다
+ * 0.0005 로 고정돼 있고, AI 피드백의 반사실 수수료 재계산도 같은 값을 쓴다(2026-08-19,
+ * 프로젝트/finplay 백엔드 저장소에서 직접 확인). 여기서 임의로 올리면 이 추정치와 백엔드가
+ * 실제로 떼는 금액이 어긋난다.
  */
-const FEE_RATE = { STOCK: 0.00015, CRYPTO: 0.0005 } as const
+export const FEE_RATE = { STOCK: 0.00015, CRYPTO: 0.0005 } as const
 
 /** 코인은 소수 8자리까지, 주식은 정수 주까지만 주문할 수 있다 — 어느 쪽이든 내림한다. */
 function floorToUnit(value: number, isCrypto: boolean): number {

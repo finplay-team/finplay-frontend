@@ -115,6 +115,12 @@ export const Heart = (props: IconProps) => (
   </svg>
 )
 
+export const Refresh = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 12a8 8 0 0 1 14-5.3M20 4v5h-5M20 12a8 8 0 0 1-14 5.3M4 20v-5h5" />
+  </svg>
+)
+
 export const Logout = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 12h11M17 8l4 4-4 4" />
