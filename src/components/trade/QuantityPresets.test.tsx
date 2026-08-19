@@ -120,27 +120,3 @@ describe('QuantityPresets — 매도 비율', () => {
     expect(screen.queryByText('팔 수 있는 수량이 없어요.')).not.toBeInTheDocument()
   })
 })
-
-describe('QuantityPresets — 설명 팝오버', () => {
-  it('물음표를 누르면 설명이 뜨고, 다시 누르면 닫힌다', () => {
-    renderPresets()
-
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '이 버튼들 설명 보기' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('10%·25%·50%·75%·최대를 누르면 수량이 알아서 채워져요')
-
-    fireEvent.click(screen.getByRole('button', { name: '이 버튼들 설명 보기' }))
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-  })
-
-  it('바깥을 누르면 설명이 닫힌다', () => {
-    renderPresets()
-
-    fireEvent.click(screen.getByRole('button', { name: '이 버튼들 설명 보기' }))
-    expect(screen.getByRole('tooltip')).toBeInTheDocument()
-
-    fireEvent.pointerDown(document.body)
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-  })
-})

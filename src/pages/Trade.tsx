@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { CandleChart } from '../components/CandleChart'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { HelpTooltip } from '../components/ui/HelpTooltip'
 import { MarketTabs } from '../components/ui/MarketTabs'
 import { JournalEditor } from '../components/journal/JournalEditor'
 import { useCandles } from '../hooks/useCandles'
@@ -94,6 +95,14 @@ function toQtyInput(value: number): string {
     .toFixed(CRYPTO_QTY_DECIMALS)
     .replace(/(\.\d*?)0+$/, '$1')
     .replace(/\.$/, '')
+}
+
+/** 지정가 입력창에 천단위 콤마를 붙여 보여준다 — 저장값(limitPrice)은 콤마 없는 원본 그대로 둔다. */
+function formatPriceInput(raw: string): string {
+  if (raw === '') return ''
+  const [intPart, frac] = raw.split('.')
+  const withCommas = Number(intPart || '0').toLocaleString('ko-KR')
+  return frac !== undefined ? `${withCommas}.${frac}` : withCommas
 }
 
 /**
@@ -295,6 +304,8 @@ export function Trade() {
   /** 지정가는 코인 전용이다 — 주식에 걸면 백엔드가 400 을 낸다. */
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET')
   const [limitPrice, setLimitPrice] = useState('')
+  /** 지정가의 "주문 금액" 입력 — 실제 빗썸처럼 주문수량과 서로 연동된다(하나 입력하면 나머지가 계산됨). */
+  const [limitAmountInput, setLimitAmountInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [orderError, setOrderError] = useState<string | null>(null)
   const [result, setResult] = useState<OrderExecutionResponse | null>(null)
@@ -454,8 +465,21 @@ export function Trade() {
     setOrderError(null)
     setQuantity('')
     setAmountInput('')
-    setLimitPrice('')
+    setLimitAmountInput('')
   }, [market, selectedId, side, orderType])
+
+  /**
+   * 지정가 진입 시(또는 종목·매매구분 전환 시) "주문 가격"에 현재가를 기본값으로 채운다 — 그 뒤엔
+   * 시세가 계속 바뀌어도 사용자가 수정한 값을 그대로 둔다(currentPrice 를 deps 에서 뺀 이유).
+   */
+  useEffect(() => {
+    if (!isLimit) {
+      setLimitPrice('')
+      return
+    }
+    if (currentPrice !== null) setLimitPrice(String(currentPrice))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLimit, selectedId, side])
 
   const quantityNumber = quantity === '' ? 0 : Number(quantity)
   const limitPriceNumber = limitPrice === '' ? 0 : Number(limitPrice)
@@ -468,10 +492,10 @@ export function Trade() {
   const availableCash = account ? account.cashBalance - account.reservedCash : null
 
   /**
-   * 코인 매도 수량 입력창 placeholder 에 쓸 "최소 ≈ N" 힌트 — 실제 빗썸처럼 최소 주문금액을
-   * 채우는 수량을 올림해서 보여준다(내림하면 min 을 못 채워 주문이 막힐 수 있다).
+   * 코인 수량 입력창 placeholder 에 쓸 "최소 ≈ N" 힌트 — 실제 빗썸처럼 최소 주문금액을 채우는
+   * 수량을 올림해서 보여준다(내림하면 min 을 못 채워 주문이 막힐 수 있다). 매수·매도 공통이다.
    */
-  const minSellQtyHint =
+  const minQtyHint =
     isCrypto && selected && selected.minOrderAmount > 0 && unitPrice !== null && unitPrice > 0
       ? formatQty(
           Math.ceil((selected.minOrderAmount / unitPrice) * 10 ** CRYPTO_QTY_DECIMALS) /
@@ -479,17 +503,11 @@ export function Trade() {
         )
       : null
 
-  /**
-   * 지금 넣은 지정가가 이미 체결 조건을 만족하는가.
-   * 서버는 생성 시점에 즉시체결을 판정하지 않고 무조건 PENDING 으로 만든 뒤 다음 가격 틱에서 체결한다.
-   * 코인은 시세가 초 단위로 들어와 사실상 즉시 체결되는데, 화면이 "접수됨 · 아직 체결되지 않음"만
-   * 보여주면 몇 초 뒤 미체결 목록에서 사라진 것이 버그로 읽힌다 → 넣기 전에 미리 알린다.
-   */
-  const fillsImmediately =
-    isLimit &&
-    currentPrice !== null &&
-    limitPriceNumber > 0 &&
-    (side === 'BUY' ? currentPrice <= limitPriceNumber : currentPrice >= limitPriceNumber)
+  /** 주문수량이 바뀌면 지정가 × 수량으로 "주문 금액" 칸도 같이 갱신한다(실제 빗썸처럼 서로 연동). */
+  const syncLimitAmountFromQuantity = (qty: number) => {
+    if (!isLimit) return
+    setLimitAmountInput(limitPriceNumber > 0 && qty > 0 ? String(Math.round(qty * limitPriceNumber)) : '')
+  }
 
   const handleQuantityChange = (raw: string) => {
     if (isCrypto) {
@@ -504,9 +522,11 @@ export function Trade() {
       }
       if (side === 'SELL' && held > 0 && cleaned !== '' && Number(cleaned) > held) {
         setQuantity(toQtyInput(held))
+        syncLimitAmountFromQuantity(held)
         return
       }
       setQuantity(cleaned)
+      syncLimitAmountFromQuantity(cleaned === '' ? 0 : Number(cleaned))
       return
     }
     // 주식 수량에 소수점이 있으면 백엔드가 400 VALIDATION_ERROR 를 낸다 → 입력 자체에서 막는다.
@@ -522,6 +542,34 @@ export function Trade() {
   const handleAmountChange = (raw: string) => {
     setAmountInput(raw.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, ''))
   }
+
+  /**
+   * 지정가 "주문 금액" 입력 — 반대로 여기 입력하면 지정가 기준으로 주문수량을 역산한다.
+   * 코인 수량은 소수 8자리까지라 내림해서 채운다(직접 입력과 동일한 규칙).
+   */
+  const handleLimitAmountChange = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '')
+    setLimitAmountInput(digits)
+    if (limitPriceNumber <= 0 || digits === '') {
+      setQuantity('')
+      return
+    }
+    const scale = 10 ** CRYPTO_QTY_DECIMALS
+    const qty = Math.floor((Number(digits) / limitPriceNumber) * scale) / scale
+    setQuantity(qty > 0 ? toQtyInput(qty) : '')
+  }
+
+  /** 지정가를 바꾸면(직접 입력·"현재가" 버튼) 이미 넣어 둔 수량 기준으로 주문 금액도 다시 계산한다. */
+  useEffect(() => {
+    if (!isLimit) return
+    setLimitAmountInput(
+      limitPriceNumber > 0 && quantityNumber > 0
+        ? String(Math.round(limitPriceNumber * quantityNumber))
+        : '',
+    )
+    // quantityNumber 는 의도적으로 뺐다 — 수량 입력 쪽은 handleQuantityChange 가 이미 직접 동기화한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLimit, limitPriceNumber])
 
   const amountNumber = amountInput === '' ? 0 : Number(amountInput)
 
@@ -1179,19 +1227,14 @@ export function Trade() {
                 {/* 지정가 입력 — 실제 빗썸처럼 "주문 가격"을 "주문 수량"보다 먼저 둔다(2026-08-19 피드백). */}
                 {isLimit && (
                   <div>
-                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                    <div className="mb-1.5 flex items-center gap-1.5">
                       <label htmlFor="order-limit-price" className="text-sm font-medium text-ink">
                         주문 가격
                       </label>
-                      {currentPrice !== null && (
-                        <button
-                          type="button"
-                          onClick={() => setLimitPrice(String(currentPrice))}
-                          className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-brand transition-colors hover:bg-white/[0.1]"
-                        >
-                          현재가 {formatPrice(currentPrice)}
-                        </button>
-                      )}
+                      <HelpTooltip label="주문 가격이 뭔지 설명 보기">
+                        내가 {side === 'BUY' ? '사고' : '팔고'} 싶은 목표가예요. 현재가가 이 가격에
+                        도달하면 자동으로 체결되고, 도달하기 전까지는 미체결 상태로 대기해요.
+                      </HelpTooltip>
                     </div>
                     <input
                       id="order-limit-price"
@@ -1199,35 +1242,36 @@ export function Trade() {
                       inputMode="decimal"
                       autoComplete="off"
                       placeholder="0"
-                      value={limitPrice}
+                      value={formatPriceInput(limitPrice)}
                       onChange={(e) => setLimitPrice(e.target.value.replace(/[^0-9.]/g, ''))}
                       className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-coin focus:ring-4 focus:ring-coin/15"
                     />
-                    <p className="mt-2 text-[11px] leading-relaxed text-muted">
-                      {side === 'BUY'
-                        ? '현재가가 지정가 이하로 내려오면 체결됩니다.'
-                        : '현재가가 지정가 이상으로 올라오면 체결됩니다.'}{' '}
-                      체결가는 지정가로 고정됩니다.
-                    </p>
-                    {fillsImmediately && (
-                      <p className="mt-2 rounded-xl bg-coin-soft px-3 py-2 text-[11px] leading-relaxed text-coin">
-                        지금 현재가({formatPrice(currentPrice as number)}) 기준으로 이미 체결 조건을
-                        만족합니다. 접수 직후 바로 체결되어 미체결 목록에 남지 않고, 정정·취소도 할 수
-                        없습니다. 미체결로 두려면 {side === 'BUY' ? '현재가보다 낮게' : '현재가보다 높게'}{' '}
-                        입력해 주세요.
-                      </p>
-                    )}
                   </div>
                 )}
 
                 <div>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                    <label
-                      htmlFor={isAmountMode ? 'order-amount' : 'order-quantity'}
-                      className="text-sm font-medium text-ink"
-                    >
-                      {isAmountMode ? '주문 금액' : isCrypto ? '주문 수량' : '수량 (주)'}
-                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <label
+                        htmlFor={isAmountMode ? 'order-amount' : 'order-quantity'}
+                        className="text-sm font-medium text-ink"
+                      >
+                        {isAmountMode ? '주문 금액' : isCrypto ? '주문 수량' : '수량 (주)'}
+                      </label>
+                      {isCrypto && (
+                        <HelpTooltip
+                          label={
+                            isAmountMode ? '주문 금액이 뭔지 설명 보기' : '주문 수량이 뭔지 설명 보기'
+                          }
+                        >
+                          {isAmountMode
+                            ? '얼마(원화)만큼 살지 정하는 칸이에요. 입력한 금액을 현재가로 나눠 수량을 계산해서 즉시 매수해요.'
+                            : isLimit
+                              ? '몇 개(코인 개수)를 주문할지 정하는 칸이에요. 바로 아래 주문 금액과 서로 연동돼서, 하나를 입력하면 나머지가 자동으로 계산돼요.'
+                              : '몇 개(코인 개수)를 주문할지 정하는 칸이에요.'}
+                        </HelpTooltip>
+                      )}
+                    </div>
                     {/* 매도는 바로 위 "주문 가능" 박스가 보유 수량을 이미 보여주므로 여기서 또 보여주지 않는다.
                         매수도 마찬가지로 "주문 가능" 박스와 중복이라 최대 구매 가능 수량을 따로 보여주지 않는다(2026-08-19 피드백). */}
                   </div>
@@ -1242,7 +1286,7 @@ export function Trade() {
                           ? `최소 금액 ${formatKRW(selected.minOrderAmount)}`
                           : '100000'
                       }
-                      value={amountInput}
+                      value={formatPriceInput(amountInput)}
                       onChange={(e) => handleAmountChange(e.target.value)}
                       className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15"
                     />
@@ -1254,8 +1298,8 @@ export function Trade() {
                       inputMode="decimal"
                       autoComplete="off"
                       placeholder={
-                        side === 'SELL' && isCrypto && minSellQtyHint
-                          ? `최소 ≈ ${minSellQtyHint}`
+                        isCrypto && minQtyHint
+                          ? `최소 ≈ ${minQtyHint}`
                           : isCrypto
                             ? '0.001'
                             : '0'
@@ -1270,9 +1314,8 @@ export function Trade() {
                     <div
                       role="group"
                       aria-label="가진 돈의 비율로 금액 채우기"
-                      className="mt-2 flex flex-wrap items-center gap-1.5"
+                      className="mt-2 flex flex-wrap items-center justify-end gap-1.5"
                     >
-                      <span className="text-[11px] text-muted">가진 돈의</span>
                       {[0.1, 0.25, 0.5, 0.75, 1].map((ratio) => (
                         <button
                           key={ratio}
@@ -1305,44 +1348,50 @@ export function Trade() {
                         disabledReason={presetDisabledReason}
                         onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
                       />
-                      {/* 매도는 실제 빗썸에도 없는 패턴이라 뺐다 — 퍼센트 버튼 + placeholder 힌트로 충분하다(2026-08-19 피드백). */}
-                      {isCrypto && side === 'BUY' && (
-                        <div
-                          role="group"
-                          aria-label="빠른 수량으로 더하기"
-                          className="mt-2 flex flex-wrap items-center gap-1.5"
-                        >
-                          <span className="text-[11px] text-muted">빠른 수량</span>
-                          {['0.001', '0.01', '0.1', '1'].map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              // 누를 때마다 현재 수량에 더한다 — 예: 0.001 을 두 번 누르면 0.002.
-                              onClick={() => {
-                                const current = quantity === '' ? 0 : Number(quantity)
-                                handleQuantityChange(toQtyInput(current + Number(preset)))
-                              }}
-                              className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink"
-                            >
-                              {preset}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      {/* 실제 빗썸에 없는 패턴이라 뺐다 — 퍼센트 버튼 + (지정가는 주문금액 입력)으로 충분하다(2026-08-19 피드백). */}
                     </>
                   )}
                 </div>
 
+                {/* 지정가 "주문 금액" — 주문수량과 서로 연동되는 입력창(실제 빗썸과 동일). 하나에 입력하면
+                    지정가 기준으로 나머지가 자동 계산된다(2026-08-19 피드백). */}
+                {isLimit && (
+                  <div>
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <label htmlFor="order-limit-amount" className="text-sm font-medium text-ink">
+                        주문 금액
+                      </label>
+                      <HelpTooltip label="주문 금액이 뭔지 설명 보기">
+                        얼마(원화)만큼 주문할지 정하는 칸이에요. 바로 위 주문 수량과 서로 연동돼서,
+                        하나를 입력하면 나머지가 자동으로 계산돼요.
+                      </HelpTooltip>
+                    </div>
+                    <input
+                      id="order-limit-amount"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder={
+                        selected && selected.minOrderAmount > 0
+                          ? `최소 금액 ${formatKRW(selected.minOrderAmount)}`
+                          : '0'
+                      }
+                      value={formatPriceInput(limitAmountInput)}
+                      onChange={(e) => handleLimitAmountChange(e.target.value)}
+                      className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-coin focus:ring-4 focus:ring-coin/15"
+                    />
+                  </div>
+                )}
+
+                {!isLimit && (
                 <div className="space-y-1.5 rounded-2xl bg-elevated px-4 py-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-muted">
                       {isAmountMode
                         ? '예상 매수'
-                        : isLimit
-                          ? '주문 금액'
-                          : side === 'SELL'
-                            ? '예상 매도'
-                            : '예상 주문금액 (추정)'}
+                        : side === 'SELL'
+                          ? '예상 매도'
+                          : '예상 주문금액 (추정)'}
                     </span>
                     <span className="font-medium text-ink tabular">
                       {isAmountMode
@@ -1366,13 +1415,12 @@ export function Trade() {
                     <li className="whitespace-pre-line">
                       {isAmountMode
                         ? '현재가 기준 예상 수량이며, 체결 시점 가격에 따라 실제와 다를 수 있어요.'
-                        : isLimit
-                          ? '지정가 × 수량으로 계산한 예약 금액입니다. 접수하면 이 금액이 예약되고, 체결가는 지정가로 고정됩니다.'
-                          : '현재가 × 수량으로 계산한 추정치예요.'}
+                        : '현재가 × 수량으로 계산한 추정치예요.'}
                     </li>
                     <li>최대 주문 가능 금액은 10억원 입니다.</li>
                   </ul>
                 </div>
+                )}
 
                 <Button
                   type="submit"
