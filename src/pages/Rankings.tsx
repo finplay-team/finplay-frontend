@@ -82,31 +82,43 @@ export function Rankings() {
 
       <div className="relative mx-auto max-w-3xl">
         {/* 1. 헤더 — market 은 필수 파라미터라 탭 없이 조회할 수 없다. */}
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <Eyebrow>랭킹</Eyebrow>
-            <h1 className="mt-4 font-display text-3xl font-semibold leading-tight text-ink md:text-4xl">
-              {isCrypto ? '코인 실현손익 랭킹' : '주식 실현손익 랭킹'}
-            </h1>
-            <MarketTabs
-              market={market}
-              onChange={(next) => {
-                setMarket(next)
-                setLimit(TOP_LIMIT)
-              }}
-              className="mt-5"
-            />
-            <p className="mt-3 text-sm leading-relaxed text-muted">
+        <header>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-4">
+            <div aria-hidden />
+            <div className="text-center">
+              <Eyebrow>랭킹</Eyebrow>
+              <h1 className="mt-4 font-display text-3xl font-semibold leading-tight text-ink md:text-4xl">
+                {isCrypto ? '코인 실현손익 랭킹' : '주식 실현손익 랭킹'}
+              </h1>
+              <MarketTabs
+                market={market}
+                onChange={(next) => {
+                  setMarket(next)
+                  setLimit(TOP_LIMIT)
+                }}
+                className="mt-5"
+              />
+            </div>
+            <div aria-hidden />
+          </div>
+          <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+            <div aria-hidden />
+            <p className="text-center text-sm leading-relaxed text-muted">
               매도로 확정된 손익만 집계합니다. 아직 팔지 않은 종목의 평가손익은 순위에 들어가지 않습니다.
             </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="justify-self-end"
+            >
+              새로고침
+            </Button>
           </div>
-          <Button variant="ghost" onClick={() => setReloadKey((k) => k + 1)}>
-            새로고침
-          </Button>
         </header>
 
         {/* 2. 내 랭킹 — 목록과 응답 구조가 달라(flat) 따로 호출한 결과다. */}
-        <Card className="mt-8" accent={accent} innerClassName="p-6 md:p-8">
+        <Card className="mt-5" accent={accent} innerClassName="p-6 md:p-8">
           <h2 className="text-sm font-semibold text-ink">내 랭킹</h2>
 
           {meError && <p className="mt-4 text-sm text-loss">{meError}</p>}
