@@ -9,9 +9,8 @@ import { formatKRW, pnlTone } from '../lib/format'
 import { getMyRanking, getRankings } from '../services/rankingService'
 import type { Market, MyRanking, RankingList } from '../services/types'
 
-/** TOP_LIMIT 은 서버 기본값이다. EXPANDED_LIMIT 은 "더 보기"가 불러오는 개수로, 서버 상한(50)보다 작게 잡았다 — 랭킹을 그렇게까지 길게 스크롤할 일은 드물다. */
+/** 서버 기본값이자 이 화면의 고정 상한이다 — 더 보기 없이 최대 10명까지만 보여준다. */
 const TOP_LIMIT = 10
-const EXPANDED_LIMIT = 20
 
 const errorOverrides = {
   VALIDATION_ERROR: '시장 값이 올바르지 않아 랭킹을 불러오지 못했습니다.',
@@ -26,7 +25,6 @@ function signedKRW(value: number): string {
 
 export function Rankings() {
   const [market, setMarket] = useState<Market>('CRYPTO')
-  const [limit, setLimit] = useState(TOP_LIMIT)
   const [reloadKey, setReloadKey] = useState(0)
 
   const [list, setList] = useState<RankingList | null>(null)
@@ -40,7 +38,7 @@ export function Rankings() {
     let cancelled = false
     setList(null)
     setListError(null)
-    getRankings({ market, limit })
+    getRankings({ market, limit: TOP_LIMIT })
       .then((res) => {
         if (!cancelled) setList(res)
       })
@@ -50,7 +48,7 @@ export function Rankings() {
     return () => {
       cancelled = true
     }
-  }, [market, limit, reloadKey])
+  }, [market, reloadKey])
 
   useEffect(() => {
     let cancelled = false
@@ -90,14 +88,7 @@ export function Rankings() {
               <h1 className="mt-4 font-display text-3xl font-semibold leading-tight text-ink md:text-4xl">
                 {isCrypto ? '코인 실현손익 랭킹' : '주식 실현손익 랭킹'}
               </h1>
-              <MarketTabs
-                market={market}
-                onChange={(next) => {
-                  setMarket(next)
-                  setLimit(TOP_LIMIT)
-                }}
-                className="mt-5"
-              />
+              <MarketTabs market={market} onChange={setMarket} className="mt-5" />
             </div>
             <div aria-hidden />
           </div>
@@ -268,17 +259,9 @@ export function Rankings() {
             </p>
           )}
 
-          {!listError && list !== null && shownCount > 0 && limit === TOP_LIMIT && (
-            <div className="mt-6 flex justify-center">
-              <Button variant="soft" onClick={() => setLimit(EXPANDED_LIMIT)}>
-                더 보기
-              </Button>
-            </div>
-          )}
-
           {/* 동점 처리 규칙을 알려 두지 않으면 2위가 없는 목록이 오류로 보인다. */}
           {!listError && list !== null && shownCount > 0 && (
-            <p className="mt-4 text-[11px] leading-relaxed text-muted">
+            <p className={`text-[11px] leading-relaxed text-muted ${highlighted ? 'mt-1' : 'mt-3'}`}>
               실현손익이 같으면 공동 순위이며 그 인원수만큼 다음 순위를 건너뜁니다(예: 공동 1위 두 명 다음은 3위).
             </p>
           )}
