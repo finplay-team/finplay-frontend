@@ -209,8 +209,16 @@ export function Trade() {
   // 주식은 서버 분 크론에만 새 봉이 생긴다 → 분이 넘어갈 때만 재조회한다. 코인은 폴링이다.
   const minuteTick = Math.floor((lastMessageAt ?? 0) / 60_000)
   const [interval, setInterval_] = useState<CandleInterval>('1m')
-  // 변동 원인 카드는 참고용이라 기본은 접어 둔다 — 차트 바로 아래 주문 폼까지 스크롤이 짧아진다.
+  /** 변동 원인 팝업 — 차트 박스 안 버튼으로 열고, 박스 폭·높이 안에서만 뜬다(미체결 지정가 주문과 같은 패턴, 2026-08-19 피드백). */
   const [showPriceMoves, setShowPriceMoves] = useState(false)
+  useEffect(() => {
+    if (!showPriceMoves) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowPriceMoves(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showPriceMoves])
   // 차트 옆 세 번째 컬럼 — 주문 패널과 커뮤니티 미리보기를 쌓아 두지 않고 탭으로 전환한다.
   const [rightPanelTab, setRightPanelTab] = useState<'order' | 'community'>('order')
   const {
@@ -306,6 +314,16 @@ export function Trade() {
   const [pendingNonce, setPendingNonce] = useState(0)
   /** 손절·익절 OCO 패널 토글 — 기본은 접혀 있다. */
   const [ocoOpen, setOcoOpen] = useState(false)
+  /** 미체결 지정가 주문 팝업 — 주문 탭 박스 안 버튼으로 열고, 박스 폭·높이 안에서만 뜬다. */
+  const [pendingOrdersOpen, setPendingOrdersOpen] = useState(false)
+  useEffect(() => {
+    if (!pendingOrdersOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPendingOrdersOpen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [pendingOrdersOpen])
   // disabled 상태만으로는 빠른 더블클릭이 두 핸들러를 모두 통과한다. 동기 플래그로 한 번 더 막는다.
   const submittingRef = useRef(false)
   /**
@@ -644,16 +662,16 @@ export function Trade() {
         : '아직 공개된 분봉이 없습니다. 매분 새 봉이 추가됩니다.'
 
   return (
-    <div className="relative min-h-[100dvh] px-8 pb-24 pt-28 md:pt-32">
+    <div className="relative flex h-[100dvh] flex-col overflow-hidden px-8 pb-8 pt-28 md:pt-32">
       <div className="orb -top-24 left-1/4 h-72 w-72 animate-float-orb" aria-hidden />
 
       {/*
         3컬럼(목록·차트·주문)이 들어서면서 max-w-6xl 로는 옆 공간이 남는다 — 2026-08-18 피드백으로
         폭 제한 자체를 없앴다. 바깥 wrapper 의 px-4 가 화면 끝 여백을 대신한다.
       */}
-      <div className="relative mx-auto max-w-none">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {/* 1. 헤더 + 시장 탭 + 시세 상태 */}
-        <header>
+        <header className="shrink-0">
           <Eyebrow>모의투자</Eyebrow>
           <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
             {isCrypto ? '코인 매매' : '주식 시장가 매매'}
@@ -741,20 +759,22 @@ export function Trade() {
           모바일(<lg)은 각 그리드가 단일 컬럼으로 접혀 DOM 순서(목록 → 고정 바 → 차트 → 주문)대로
           쌓인다.
         */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+        <div className="mt-6 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
           {/* 3. 종목 목록 */}
           {/*
-            목록·차트·주문 세 컬럼이 전부 같은 max-h-[calc(100vh-556px)] 를 쓴다(아래 두 군데도 반드시
-            같은 값) — 브라우저 창 높이가 바뀌면 셋이 똑같이 함께 커지거나 작아진다. 글자 크기는
-            절대 건드리지 않는다(transform: scale 은 안 쓴다) — 컬럼 자체의 최대 높이만 화면에 맞추고,
-            그 안 내용이 넘치면 그 컬럼 안에서만 스크롤된다(2026-08-18 피드백 — "박스 크기만
-            조절되게, 텍스트는 고정, 창을 늘리면 다 같이 늘어나야 한다").
+            목록·차트·주문 세 컬럼이 전부 부모 그리드 행(위 min-h-0 flex-1)에서 나온 h-full 을 쓴다
+            (아래 두 군데도 반드시 같은 패턴) — 브라우저 창 높이가 바뀌면 셋이 똑같이 함께 커지거나
+            작아진다. 이전엔 max-h-[calc(100vh-556px)] 같은 매직 넘버를 썼는데, 헤더 줄바꿈 등으로
+            실제 남는 높이가 달라지면 값이 안 맞아 컬럼끼리 높이가 어긋나거나 밑에 여백이 남거나
+            내용이 잘려 보였다(2026-08-19 피드백). 글자 크기는 절대 건드리지 않는다(transform: scale
+            은 안 쓴다) — 컬럼 자체의 높이만 화면에 맞추고, 그 안 내용이 넘치면 그 컬럼 안에서만
+            스크롤된다.
           */}
-          <Card innerClassName="flex max-h-[calc(100vh-556px)] flex-col p-4">
-            <h2 className="px-2 pb-2 text-sm font-semibold text-ink">
+          <Card className="min-h-0" innerClassName="flex h-full min-h-0 flex-col p-4">
+            <h2 className="shrink-0 px-2 pb-2 text-sm font-semibold text-ink">
               {isCrypto ? '코인' : '종목'}
             </h2>
-            <div className="overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto">
             {instrumentsLoading ? (
               // 텍스트 한 줄 대신 실제 행과 같은 크기의 자리표시를 둬 목록이 튀어오르지 않게 한다
               <ul aria-label="종목을 불러오는 중" className="space-y-1">
@@ -812,10 +832,10 @@ export function Trade() {
             추가로 있었는데, sticky 그리드 아이템이 자기 행(row) 트랙 계산에 끼어들어 옆 목록이
             길어질 때(특히 주식) 행 자체가 부풀어 밑에 빈 여백이 크게 생기는 문제가 반복됐다.
             바를 없애고 그 정보(종목명·가격·등락)는 바로 아래 차트 카드 제목 옆으로 옮겼다
-            (2026-08-18 피드백). 목록과 같은 max-h-[calc(100vh-556px)] + overflow-y-auto.
+            (2026-08-18 피드백). 목록과 같은 h-full + overflow-y-auto.
           */}
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
-            <div className="max-h-[calc(100vh-556px)] space-y-6 overflow-y-auto">
+          <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+            <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto">
             {/*
               2. 계좌 요약 스트립 — 차트 컬럼 맨 위 첫 항목으로 둔다. 이 컬럼(과 그 옆 주문 컬럼)이
               이제 목록·주문 컬럼의 전체 높이 기준이 되므로, 옆 목록·주문 박스가 계좌 요약 카드 위
@@ -852,9 +872,9 @@ export function Trade() {
               )}
             </Card>
 
-            {/* 4. 차트 */}
-            <Card innerClassName="p-6">
-              <div className="flex flex-wrap items-end justify-between gap-4">
+            {/* 4. 차트 — 계좌 요약은 고정 높이, 이 카드가 남는 세로 공간을 전부 가져간다(flex-1). */}
+            <Card className="min-h-0 flex-1" innerClassName="flex h-full min-h-0 flex-col p-6">
+              <div className="shrink-0 flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <div className="flex flex-wrap items-baseline gap-x-2">
                     <h2 className="font-display text-xl font-semibold text-ink">
@@ -881,7 +901,7 @@ export function Trade() {
               </div>
 
               {/* 봉 주기 전환 — 백엔드가 대소문자를 구분하므로 '1m'(분)과 '1M'(월)을 섞지 않는다 */}
-              <div className="mt-4 flex items-center gap-1">
+              <div className="mt-4 flex shrink-0 items-center gap-1">
                 {(
                   [
                     ['1m', '분'],
@@ -909,19 +929,26 @@ export function Trade() {
                 })}
               </div>
 
-              <div className="mt-3">
+              {/*
+                차트만 flex-1 min-h-0 로 남는 세로 공간을 전부 가져간다 — 세로 공간이 줄어들면
+                스크롤이나 잘림 없이 차트 자체가 작아진다(CandleChart fillHeight, 2026-08-19 피드백).
+              */}
+              <div className="mt-3 min-h-0 flex-1">
                 <CandleChart
                   candles={candles}
                   interval={interval}
                   emptyMessage={emptyChartMessage}
+                  fillHeight
                 />
               </div>
               {candlesError && (
-                <p className="mt-3 text-xs text-loss">{toUserMessage(candlesError)}</p>
+                <p className="mt-3 shrink-0 text-xs text-loss">{toUserMessage(candlesError)}</p>
               )}
               {/* 이미 받아 둔 캔들로만 계산한다 — 하루 저가·고가를 위한 API 호출은 따로 없다. */}
-              <DayRangeBar candles={candles} interval={interval} currentPrice={currentPrice} />
-              <p className="mt-3 text-xs leading-relaxed text-muted">
+              <div className="shrink-0">
+                <DayRangeBar candles={candles} interval={interval} currentPrice={currentPrice} />
+              </div>
+              <p className="mt-3 shrink-0 text-xs leading-relaxed text-muted">
                 {interval === '1m'
                   ? isCrypto
                     ? '1분봉입니다. 진행 중인 분봉도 포함되어 5초마다 마지막 봉이 제자리에서 갱신됩니다.'
@@ -929,47 +956,64 @@ export function Trade() {
                   : // 집계봉은 1m 과 반대로 진행 중 버킷을 포함하고, 거래일이 없는 구간은 아예 빠진다.
                     '집계봉입니다. 진행 중인 봉도 포함되며, 거래가 없던 구간은 봉 자체가 없어 사이가 비어 보일 수 있습니다.'}
               </p>
-            </Card>
 
-            {/*
-              4-1. 변동 원인 카드만 여기 남긴다 — 지금 보고 있는 차트의 "이 구간이 왜 움직였나"라
-              차트 바로 아래가 제자리다. 시장 브리핑과 종목 뉴스 요약은 거래 흐름을 끊으므로
-              전용 화면(/news)으로 옮겼다. 기본은 접어 둬서 차트 다음 바로 주문 폼이 오게 한다 —
-              보고 싶을 때만 펼친다.
-            */}
-            {selectedId !== null && (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowPriceMoves((v) => !v)}
-                  aria-expanded={showPriceMoves}
-                  aria-controls="price-move-cards-panel"
-                  className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-5 py-3.5 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
-                >
-                  <span className="font-medium">변동 원인 {showPriceMoves ? '숨기기' : '보기'}</span>
-                  <span
-                    aria-hidden="true"
-                    className={`text-muted transition-transform duration-300 ${showPriceMoves ? 'rotate-180' : ''}`}
+              {/*
+                4-1. 변동 원인 — 지금 보고 있는 차트의 "이 구간이 왜 움직였나"라 차트 바로 아래가
+                제자리다. 미체결 지정가 주문과 같은 패턴(2026-08-19 피드백): 버튼은 차트 박스 맨
+                아래, 팝업은 이 Card(bezel-core, relative overflow-hidden)안에서만 뜬다.
+              */}
+              {selectedId !== null && (
+                <div className="mt-5 shrink-0 border-t border-white/[0.08] pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowPriceMoves(true)}
+                    className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-5 py-3.5 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
                   >
-                    ▾
-                  </span>
-                </button>
-                {showPriceMoves && (
-                  <div id="price-move-cards-panel" className="mt-3">
-                    <PriceMoveCards instrumentId={selectedId} />
+                    <span className="font-medium">변동 원인 보기</span>
+                    <span aria-hidden="true" className="text-muted">
+                      ›
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {showPriceMoves && selectedId !== null && (
+              <div
+                className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
+                onClick={() => setShowPriceMoves(false)}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="변동 원인"
+                  className="max-h-full w-full overflow-y-auto rounded-2xl border border-line bg-canvas shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="sticky top-0 flex items-center justify-between border-b border-line bg-canvas px-5 py-3.5">
+                    <h3 className="font-display text-sm font-semibold text-ink">변동 원인</h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowPriceMoves(false)}
+                      aria-label="닫기"
+                      className="text-muted transition-colors duration-300 hover:text-ink"
+                    >
+                      ✕
+                    </button>
                   </div>
-                )}
+                  <PriceMoveCards bare instrumentId={selectedId} />
+                </div>
               </div>
-            )}
+              )}
+            </Card>
           </div>
 
             {/*
               5~7. 주문 패널 + 미체결 지정가 주문 + 커뮤니티 미리보기 — 차트 옆(lg 이상) 컬럼.
               둘을 쌓아 두지 않고 한 박스 안에서 탭으로 전환한다(2026-08-18 피드백, 와이어프레임 참고)
               — 탭 버튼이 박스 밖에 따로 뜨는 게 아니라 박스 상단에 붙어 있어야 한다.
-              목록·차트 컬럼과 같은 max-h-[calc(100vh-556px)] + overflow-y-auto.
+              목록·차트 컬럼과 같은 h-full + overflow-y-auto.
             */}
-            <div className="max-h-[calc(100vh-556px)] space-y-6 overflow-y-auto">
+            <div className="h-full min-h-0 space-y-6 overflow-y-auto">
             <Card accent={accent} innerClassName="p-0 overflow-hidden">
               <div className="grid grid-cols-2 border-b border-line">
                 {(
@@ -1369,6 +1413,24 @@ export function Trade() {
                   )}
                 </div>
               )}
+
+              {/* 미체결 지정가 주문 — 탭 박스 안 가장 아래, 버튼을 눌러야 여는 팝업으로 뺀다(2026-08-19 피드백:
+                  이전엔 접으면 아래 콘텐츠가 밀려 스크롤이 길어지는 아코디언이었다). 주식 지정가는 백엔드에
+                  없어(주식은 재생 데이터라 "이 가격 도달 시" 조건이 성립하지 않는다) 코인 탭에서만 보여준다. */}
+              {isCrypto && (
+                <div className="mt-5 border-t border-white/[0.08] pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setPendingOrdersOpen(true)}
+                    className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-5 py-3.5 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
+                  >
+                    <span className="font-medium">미체결 지정가 주문</span>
+                    <span aria-hidden="true" className="text-muted">
+                      ›
+                    </span>
+                  </button>
+                </div>
+              )}
                   </>
                 )}
 
@@ -1377,24 +1439,49 @@ export function Trade() {
                   <CommunityPreview instrumentId={selected.instrumentId} instrumentName={selected.name} />
                 )}
               </div>
-            </Card>
 
-            {/*
-              6. 미체결 지정가 주문 — PendingOrders 는 Portfolio 화면에서도 독립된 Card 로 쓰여서
-              여기서만 Card 를 빼면 그쪽이 깨진다. 탭 박스 바로 아래 별도 섹션으로 둔다. 주식 지정가는
-              백엔드에 없어서(주식은 재생 데이터라 "이 가격 도달 시" 조건이 성립하지 않는다) 코인
-              탭에서만 보여준다.
-            */}
-            {rightPanelTab === 'order' && isCrypto && (
-              <PendingOrders
-                market={market}
-                refreshNonce={pendingNonce}
-                onChanged={() => {
-                  // 예약분 변화가 응답에 실려 오지 않아 계좌·보유를 반드시 다시 읽어야 한다.
-                  setAccountNonce((n) => n + 1)
-                }}
-              />
-            )}
+              {/*
+                6. 미체결 지정가 주문 팝업 — Card(bezel-core)가 이미 relative overflow-hidden 이라
+                absolute 로 띄우면 박스 폭·높이를 벗어나지 못하고 그 안에서만 뜬다("보폭 안에서"
+                피드백). PendingOrders 는 Portfolio 화면에서 독립 Card 로도 쓰여서 bare 모드로
+                자체 Card·제목을 생략하고 여기 팝업 셸에 끼워 넣는다.
+              */}
+              {pendingOrdersOpen && rightPanelTab === 'order' && isCrypto && (
+                <div
+                  className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
+                  onClick={() => setPendingOrdersOpen(false)}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="미체결 지정가 주문"
+                    className="max-h-full w-full overflow-y-auto rounded-2xl border border-line bg-canvas shadow-xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="sticky top-0 flex items-center justify-between border-b border-line bg-canvas px-5 py-3.5">
+                      <h3 className="font-display text-sm font-semibold text-ink">미체결 지정가 주문</h3>
+                      <button
+                        type="button"
+                        onClick={() => setPendingOrdersOpen(false)}
+                        aria-label="닫기"
+                        className="text-muted transition-colors duration-300 hover:text-ink"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <PendingOrders
+                      bare
+                      market={market}
+                      refreshNonce={pendingNonce}
+                      onChanged={() => {
+                        // 예약분 변화가 응답에 실려 오지 않아 계좌·보유를 반드시 다시 읽어야 한다.
+                        setAccountNonce((n) => n + 1)
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </Card>
             </div>
           </div>
         </div>

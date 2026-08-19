@@ -13,6 +13,8 @@ import type { Market } from '../../services/types'
 
 interface Props {
   instrumentId: number
+  /** Trade 화면 팝업 안에 끼워 넣을 때 — 팝업이 이미 제목·테두리를 갖고 있어 자체 Card 와 제목 행을 생략한다. */
+  bare?: boolean
 }
 
 /**
@@ -88,7 +90,7 @@ export function SourceList({ sources }: { sources: FeedbackSource[] }) {
   )
 }
 
-export function PriceMoveCards({ instrumentId }: Props) {
+export function PriceMoveCards({ instrumentId, bare = false }: Props) {
   const [data, setData] = useState<PriceMoveListResponse | null>(null)
   const [market, setMarket] = useState<Market | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
@@ -112,29 +114,37 @@ export function PriceMoveCards({ instrumentId }: Props) {
 
   const view = data === null ? null : resolveView(data, market)
 
-  return (
-    // 주식은 브랜드 민트 대신 모의투자 화면 전용 딥 틸 액센트를 쓴다(2026-08-18 피드백).
-    <Card accent={market === 'CRYPTO' ? 'coin' : 'deepTeal'}>
-      <div className="p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
-          <div>
-            <Eyebrow dotClassName={market === 'CRYPTO' ? 'bg-coin' : 'bg-[#0D9488]'}>변동 원인</Eyebrow>
-            <h3 className="mt-2 font-display text-base font-semibold text-ink">
-              가격이 움직인 구간
-            </h3>
+  // 코인은 originTradeDate 가 항상 null 이고 롤링 24시간이라 날짜 라벨 자체가 없다.
+  const dateBasis =
+    market === 'CRYPTO'
+      ? '최근 24시간 기준'
+      : data?.originTradeDate
+        ? `${formatOriginDate(data.originTradeDate)} 원본 거래일 기준`
+        : ''
+
+  // bare 팝업에서 날짜 기준 배지조차 없을 때(주식 세션 미준비 등)는 위에 아무 것도 없으니
+  // 다음 블록에 mt-4 를 주면 위아래 여백이 비대칭으로 쏠려 보인다 — 그때만 여백을 뺀다.
+  const bareHeaderShown = bare && dateBasis !== ''
+  const topSpacing = !bare || bareHeaderShown ? 'mt-4' : ''
+
+  const content = (
+    <div className={bare ? 'p-5' : 'p-6'}>
+        {bare ? (
+          dateBasis && <span className="text-[10px] text-muted">{dateBasis}</span>
+        ) : (
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
+            <div>
+              <Eyebrow dotClassName={market === 'CRYPTO' ? 'bg-coin' : 'bg-[#0D9488]'}>변동 원인</Eyebrow>
+              <h3 className="mt-2 font-display text-base font-semibold text-ink">
+                가격이 움직인 구간
+              </h3>
+            </div>
+            <span className="text-[10px] text-muted">{dateBasis}</span>
           </div>
-          {/* 코인은 originTradeDate 가 항상 null 이고 롤링 24시간이라 날짜 라벨 자체가 없다. */}
-          <span className="text-[10px] text-muted">
-            {market === 'CRYPTO'
-              ? '최근 24시간 기준'
-              : data?.originTradeDate
-                ? `${formatOriginDate(data.originTradeDate)} 원본 거래일 기준`
-                : ''}
-          </span>
-        </div>
+        )}
 
         {error && (
-          <div className="mt-4">
+          <div className={topSpacing}>
             <p className="text-sm text-rose-300">{error}</p>
             <Button type="button" size="sm" variant="ghost" className="mt-3" onClick={() => void load()}>
               다시 불러오기
@@ -143,14 +153,14 @@ export function PriceMoveCards({ instrumentId }: Props) {
         )}
 
         {data === null && !error && (
-          <div className="mt-4 space-y-2">
+          <div className={`space-y-2 ${topSpacing}`}>
             <div className="skeleton h-20" />
             <div className="skeleton h-20" />
           </div>
         )}
 
         {view !== null && view !== 'CARDS' && (
-          <div className="mt-4 rounded-xl bg-elevated p-4">
+          <div className={`rounded-xl bg-elevated p-4 ${topSpacing}`}>
             <p className="text-sm font-semibold text-ink">{emptyCopy[view].title}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">{emptyCopy[view].body}</p>
             <Button type="button" size="sm" variant="ghost" className="mt-3" onClick={() => void load()}>
@@ -160,7 +170,7 @@ export function PriceMoveCards({ instrumentId }: Props) {
         )}
 
         {view === 'CARDS' && data && (
-          <ul className="mt-4 space-y-3">
+          <ul className={`space-y-3 ${topSpacing}`}>
             {/* 정렬(windowStart 오름차순 + id 오름차순)은 서버가 보장한다. 재정렬하지 않는다. */}
             {data.moves.map((move) => (
               <li key={move.id} className="rounded-xl bg-elevated p-4">
@@ -187,7 +197,10 @@ export function PriceMoveCards({ instrumentId }: Props) {
             ))}
           </ul>
         )}
-      </div>
-    </Card>
+    </div>
   )
+
+  if (bare) return content
+  // 주식은 브랜드 민트 대신 모의투자 화면 전용 딥 틸 액센트를 쓴다(2026-08-18 피드백).
+  return <Card accent={market === 'CRYPTO' ? 'coin' : 'deepTeal'}>{content}</Card>
 }

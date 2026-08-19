@@ -24,6 +24,8 @@ interface Props {
   refreshNonce: number
   /** 정정·취소가 성공하면 부모가 계좌·보유를 다시 읽어야 한다 (예약분이 응답에 안 실려 온다). */
   onChanged: () => void
+  /** Trade 화면 팝업 안에 끼워 넣을 때 — 팝업이 이미 제목·테두리를 갖고 있어 자체 Card 와 제목 행을 생략한다. */
+  bare?: boolean
 }
 
 function formatQty(value: number): string {
@@ -42,7 +44,7 @@ function cleanDecimal(raw: string): string {
   return cleaned
 }
 
-export function PendingOrders({ market, refreshNonce, onChanged }: Props) {
+export function PendingOrders({ market, refreshNonce, onChanged, bare = false }: Props) {
   const [orders, setOrders] = useState<OrderSummary[] | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [hasNext, setHasNext] = useState(false)
@@ -162,13 +164,14 @@ export function PendingOrders({ market, refreshNonce, onChanged }: Props) {
     [handleGone, load, onChanged],
   )
 
-  return (
-    <Card>
-      <div className="p-6">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="font-display text-base font-semibold">미체결 지정가 주문</h3>
-          <span className="text-[10px] text-muted">5초마다 갱신</span>
-        </div>
+  const content = (
+    <div className={bare ? 'p-5' : 'p-6'}>
+        {!bare && (
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="font-display text-base font-semibold">미체결 지정가 주문</h3>
+            <span className="text-[10px] text-muted">5초마다 갱신</span>
+          </div>
+        )}
 
         {listError && <p className="mt-3 text-sm text-rose-300">{listError}</p>}
         {rowError && <p className="mt-3 text-sm text-rose-300">{rowError}</p>}
@@ -181,8 +184,8 @@ export function PendingOrders({ market, refreshNonce, onChanged }: Props) {
         )}
 
         {orders !== null && orders.length === 0 && (
-          <p className="mt-4 text-sm leading-relaxed text-muted">
-            미체결 주문이 없습니다. 지정가로 주문하면 체결 전까지 여기에 표시됩니다.
+          <p className={`whitespace-pre-line text-sm leading-relaxed text-muted ${bare ? '' : 'mt-4'}`}>
+            {'미체결 주문이 없습니다.\n지정가로 주문하면 체결 전까지 여기에 표시됩니다.'}
           </p>
         )}
 
@@ -306,7 +309,9 @@ export function PendingOrders({ market, refreshNonce, onChanged }: Props) {
             더 보기
           </Button>
         )}
-      </div>
-    </Card>
+    </div>
   )
+
+  if (bare) return content
+  return <Card>{content}</Card>
 }
