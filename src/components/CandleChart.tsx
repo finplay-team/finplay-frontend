@@ -54,6 +54,11 @@ const MIN_VISIBLE_BARS = 15
  * 손가락 접지면은 보통 8~10mm 라 몸통 폭(좁은 화면에서 3px 남짓)으로는 아무도 열지 못한다.
  */
 const TOUCH_SLOP_PX = 12
+/**
+ * 마우스로 캔들을 세로로 찾을 때 주는 여유(px). 몸통·꼬리가 1~2px 로 얇은 캔들도 있어 딱 그
+ * 범위만 판정하면 역시 못 잡는다 — 다만 터치용 TOUCH_SLOP_PX 보다는 훨씬 좁게 잡는다.
+ */
+const MOUSE_Y_SLOP_PX = 6
 /** 버튼 클릭 한 번에 곱하는 배수 — 클릭은 이산적이라 큼직하게 반응해도 된다. */
 const ZOOM_STEP = 1.4
 /**
@@ -267,7 +272,7 @@ export function CandleChart({
     return (
       <div
         ref={ref}
-        className={`w-full ${fillHeight ? 'h-full' : ''} ${className}`}
+        className={`w-full ${fillHeight ? 'min-h-0 flex-1' : ''} ${className}`}
         style={fillHeight ? undefined : { height }}
       />
     )
@@ -305,7 +310,7 @@ export function CandleChart({
 
   if (n === 0) {
     return (
-      <div ref={ref} className={`w-full ${fillHeight ? 'h-full' : ''} ${className}`}>
+      <div ref={ref} className={`w-full ${fillHeight ? 'min-h-0 flex-1' : ''} ${className}`}>
         <svg
           viewBox={`0 0 ${width} ${chartH}`}
           width="100%"
@@ -414,17 +419,32 @@ export function CandleChart({
   /**
    * 포인터 좌표를 봉 인덱스로 바꾼다. 닿는 곳이 없으면 null.
    *
-   * 예전에는 "실제 캔들(몸통 폭 × 고가~저가)" 위에서만 잡았는데, 30봉·375px 화면이면 가로
-   * 허용 오차가 ±3px 남짓이라 손가락으로는 사실상 열 수 없었다 — 세로 판정은 없애고 플롯
-   * 영역 전체로, 가로는 최소 TOUCH_SLOP_PX 까지 넓힌다.
+   * 예전엔 "실제 캔들(몸통 폭 × 고가~저가)" 위에서만 잡았는데, 30봉·375px 화면이면 가로 허용
+   * 오차가 ±3px 남짓이라 손가락으로는 사실상 열 수 없어서 터치는 세로 판정을 없애고 플롯 영역
+   * 전체로 넓혔다. 그런데 마우스까지 똑같이 풀어 두니, 세로 위치와 무관하게 그 열에 마우스만
+   * 들어가면 계속 툴팁이 떠서 오히려 차트를 가려 불편했다(2026-08-19 피드백) — mouse 는
+   * preciseY=true 로 그 봉의 고가~저가(± MOUSE_Y_SLOP_PX) 범위에 실제로 들어왔을 때만 잡고,
+   * touch 는 그대로 플롯 전체 높이를 쓴다.
    */
-  const hitIndexAt = (clientX: number, clientY: number, rect: DOMRect): number | null => {
+  const hitIndexAt = (
+    clientX: number,
+    clientY: number,
+    rect: DOMRect,
+    preciseY: boolean,
+  ): number | null => {
     const px = ((clientX - rect.left) / rect.width) * width
     const py = ((clientY - rect.top) / rect.height) * chartH
     if (py < PAD.top || py > plotBottom) return null
     const idx = Math.floor((px - PAD.left) / barW)
     if (idx < 0 || idx >= n) return null
-    return Math.abs(px - x(idx)) <= Math.max(TOUCH_SLOP_PX, bodyW / 2) ? idx : null
+    if (Math.abs(px - x(idx)) > Math.max(TOUCH_SLOP_PX, bodyW / 2)) return null
+    if (preciseY) {
+      const b = bars[idx]
+      const top = Math.min(y(b.high), y(b.low)) - MOUSE_Y_SLOP_PX
+      const bottom = Math.max(y(b.high), y(b.low)) + MOUSE_Y_SLOP_PX
+      if (py < top || py > bottom) return null
+    }
+    return idx
   }
 
   /**
@@ -452,7 +472,7 @@ export function CandleChart({
     }
     // 두 손가락 핀치 중에는 손가락마다 pointermove 가 따로 와서 툴팁이 제멋대로 튄다 — 건너뛴다.
     if (e.pointerType !== 'mouse' && pinchDistRef.current !== null) return
-    setHover(hitIndexAt(e.clientX, e.clientY, rect))
+    setHover(hitIndexAt(e.clientX, e.clientY, rect, e.pointerType === 'mouse'))
   }
 
   /**
@@ -462,7 +482,7 @@ export function CandleChart({
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.pointerType !== 'mouse') {
       if (pinchDistRef.current !== null) return
-      setHover(hitIndexAt(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()))
+      setHover(hitIndexAt(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), false))
       return
     }
     if (e.button !== 0) return
@@ -501,7 +521,7 @@ export function CandleChart({
   }
 
   return (
-    <div ref={ref} className={`relative w-full ${fillHeight ? 'h-full' : ''} ${className}`}>
+    <div ref={ref} className={`relative w-full ${fillHeight ? 'min-h-0 flex-1' : ''} ${className}`}>
       {/* 확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다. */}
       <div className="absolute right-1 -top-10 z-10 flex items-center gap-1">
         {isModified && (
