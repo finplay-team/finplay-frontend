@@ -67,7 +67,10 @@ export function MyPage() {
                (finplay-api docs/prd.md AUTH-005, 2026-08-16 결정). 이메일 회원만 이 카드를 본다. */}
         {isEmailAccount && <EmailSection currentEmail={member.email} />}
 
-        {/* 4. 로그아웃 */}
+        {/* 4. 비밀번호 변경 — OAuth 전용 회원은 password_hash 자체가 없어 칸을 숨긴다. */}
+        {isEmailAccount && <PasswordSection />}
+
+        {/* 5. 로그아웃 */}
         <div className="flex justify-end">
           <Button
             variant="ghost"
@@ -353,6 +356,103 @@ function EmailSection({ currentEmail }: { currentEmail: string }) {
           </div>
         </form>
       )}
+    </Card>
+  )
+}
+
+function PasswordSection() {
+  const { changePassword } = useAuth()
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [done, setDone] = useState('')
+  const [pending, setPending] = useState(false)
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setDone('')
+
+    if (!currentPassword) {
+      setError('현재 비밀번호를 입력해 주세요.')
+      return
+    }
+    if (newPassword.length < 8 || newPassword.length > 100) {
+      setError('새 비밀번호는 8자 이상 100자 이하로 입력해 주세요.')
+      return
+    }
+    if (newPassword !== newPasswordConfirm) {
+      setError('새 비밀번호가 일치하지 않습니다.')
+      return
+    }
+    if (newPassword === currentPassword) {
+      setError('새 비밀번호는 현재 비밀번호와 달라야 합니다.')
+      return
+    }
+
+    setPending(true)
+    try {
+      // 이 기기는 서버가 돌려준 새 토큰 쌍으로 로그인 상태를 유지한다 — 로그아웃되는 건 다른 기기들이다.
+      await changePassword(currentPassword, newPassword)
+      setCurrentPassword('')
+      setNewPassword('')
+      setNewPasswordConfirm('')
+      setDone('비밀번호를 변경했습니다. 다른 기기는 모두 로그아웃되었습니다.')
+    } catch (err) {
+      setError(
+        toUserMessage(err, {
+          REAUTHENTICATION_FAILED: '현재 비밀번호가 올바르지 않습니다.',
+          VALIDATION_ERROR: '새 비밀번호는 8자 이상 100자 이하로, 현재 비밀번호와 다르게 입력해 주세요.',
+        }),
+      )
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Card innerClassName="p-8">
+      <h2 className="font-display text-lg font-semibold text-ink">비밀번호 변경</h2>
+      <p className="mt-1 text-sm text-muted">
+        변경을 완료하면 보안을 위해 이 기기를 제외한 모든 기기에서 로그아웃됩니다.
+      </p>
+
+      <form onSubmit={onSubmit} noValidate className="mt-5 space-y-4">
+        {error && <p className="text-sm text-rose-300">{error}</p>}
+        {done && <p className="text-sm text-brand">{done}</p>}
+        <Field
+          label="현재 비밀번호"
+          name="passwordCurrentPassword"
+          type="password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+        <Field
+          label="새 비밀번호"
+          name="newPassword"
+          type="password"
+          placeholder="8~100자"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          maxLength={100}
+          autoComplete="new-password"
+        />
+        <Field
+          label="새 비밀번호 확인"
+          name="newPasswordConfirm"
+          type="password"
+          value={newPasswordConfirm}
+          onChange={(e) => setNewPasswordConfirm(e.target.value)}
+          maxLength={100}
+          autoComplete="new-password"
+        />
+        <Button type="submit" disabled={pending}>
+          {pending ? '변경 중…' : '비밀번호 변경'}
+        </Button>
+      </form>
     </Card>
   )
 }

@@ -28,6 +28,8 @@ interface AuthContextValue {
   signupWithToken: (req: SignupRequest) => Promise<void>
   logout: () => Promise<void>
   refreshMember: () => Promise<void>
+  /** 성공하면 다른 기기는 전부 로그아웃되지만 이 기기는 새 토큰 쌍으로 로그인 상태를 유지한다. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -118,6 +120,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokenStore.setCachedMember(m)
   }, [])
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const t = await authService.changePassword({ currentPassword, newPassword })
+    tokenStore.setSession({ accessToken: t.accessToken, refreshToken: t.refreshToken })
+  }, [])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       status,
@@ -128,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signupWithToken,
       logout,
       refreshMember,
+      changePassword,
     }),
     [
       status,
@@ -138,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signupWithToken,
       logout,
       refreshMember,
+      changePassword,
     ],
   )
 
