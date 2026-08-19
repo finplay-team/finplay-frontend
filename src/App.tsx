@@ -35,11 +35,14 @@ export default function App() {
 
   // 인증 페이지는 자체 풀스크린 레이아웃이라 푸터를 숨긴다.
   // /trade 는 스크롤 없이 한 화면에 다 보이게 하려고 푸터를 없앴다(2026-08-18 피드백).
+  // /tutorial 도 같은 이유로 함께 숨긴다 — 화면 구조를 /trade 와 같은 100dvh 고정으로 맞추면서
+  // 푸터를 두면 그 높이만큼 페이지가 스크롤돼 "한 화면에 다 보인다"는 전제가 깨진다.
   const hideChrome =
     location.pathname === '/login' ||
     location.pathname === '/signup' ||
     location.pathname.startsWith('/oauth/') ||
-    location.pathname === '/trade'
+    location.pathname === '/trade' ||
+    location.pathname === '/tutorial'
 
   return (
     <div className="flex min-h-[100dvh] flex-col">

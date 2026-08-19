@@ -2199,7 +2199,13 @@ export function AttemptTutorialFlow({
         <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,46fr)_minmax(0,22fr)]">
           {/* 2. 차트 */}
           <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
-            <Card className="min-h-0 flex-1" innerClassName="flex h-full min-h-0 flex-col p-5">
+            {/*
+              모의투자 화면의 차트 카드는 flex-1 로 남는 높이를 전부 가져가지만, 튜토리얼 카드는
+              차트 아래에 요약·캔들 설명·시나리오가 더 붙는다. 같은 방식으로 두면 그 설명들이 높이를
+              다 먹고 차트의 flex-1 이 0으로 접힌다(실측). 그래서 이 카드만 높이를 내용에 맡기고,
+              넘치는 만큼은 컬럼이 스크롤한다.
+            */}
+            <Card innerClassName="flex flex-col p-5">
               <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
                 <div>
                   <h2 className="font-display text-lg font-semibold text-ink">
@@ -2212,10 +2218,13 @@ export function AttemptTutorialFlow({
                 </div>
                 {attempt.instrumentId !== null && (
                   <div className="text-right">
+                    {/*
+                      모의투자 화면은 이 자리에 등락률을 쓴다. 튜토리얼에는 비교 기준이 될 전일 종가가
+                      없어 값만 둔다 — 설명 문구를 넣었더니 차트가 그리는 확대 버튼과 겹쳤다(실측).
+                    */}
                     <p className="text-base font-semibold text-ink tabular md:text-lg">
                       {latestPrice === null ? '불러오는 중…' : formatKRW(latestPrice)}
                     </p>
-                    <p className="mt-1 text-xs text-muted">막대 하나가 하루입니다</p>
                   </div>
                 )}
               </div>
@@ -2226,8 +2235,9 @@ export function AttemptTutorialFlow({
                   하나가 지금 움직이는 오늘입니다.
                 </p>
               ) : (
-                <div data-tour="chart" className="mt-3 flex min-h-0 flex-1 flex-col">
-                  <div className="flex aspect-[21/9] min-h-0 flex-1 flex-col">
+                <div data-tour="chart" className="mt-3 flex flex-col">
+                  {/* 폭에서 나오는 21:9 비율로 높이가 정해진다 — 바닥값을 둬서 좁은 창에서도 안 접힌다. */}
+                  <div className="flex aspect-[21/9] min-h-[240px] flex-col">
                     <CandleChart
                       candles={candles}
                       interval="1d"
@@ -2255,7 +2265,7 @@ export function AttemptTutorialFlow({
                       }
                     />
                   </div>
-                  <div className="shrink-0">
+                  <div>
                     <ChartSummary
                       latestPrice={latestPrice}
                       high={chartHigh}
