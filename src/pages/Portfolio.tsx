@@ -175,7 +175,7 @@ export function Portfolio() {
     return () => {
       cancelled = true
     }
-  }, [market, journalPreviewNonce])
+  }, [market, journalPreviewNonce, refreshNonce])
 
   const holdingsEmpty = holdings !== null && holdings.length === 0
   const marketLine = useMemo(() => {
