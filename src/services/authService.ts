@@ -7,6 +7,7 @@ import type {
   NicknameChangeRequest,
   OAuthProvider,
   OAuthReauthorizeResponse,
+  PasswordChangeRequest,
   ReauthExchangeResponse,
   SignupRequest,
   TokenResponse,
@@ -114,4 +115,12 @@ export function requestEmailChange(req: EmailChangeRequest): Promise<void> {
  */
 export function confirmEmailChange(newEmail: string, code: string): Promise<Member> {
   return api.post<Member>('/auth/email-changes/confirm', { newEmail, code })
+}
+
+/**
+ * 비밀번호 변경 — 이메일 회원 전용. 성공하면 서버가 기존 리프레시 토큰을 전부 폐기하고
+ * 이 기기가 쓸 새 토큰 쌍을 돌려준다. 호출부는 반드시 tokenStore.setSession() 으로 갈아 끼워야 한다.
+ */
+export function changePassword(req: PasswordChangeRequest): Promise<TokenResponse> {
+  return api.patch<TokenResponse>('/auth/me/password', req)
 }

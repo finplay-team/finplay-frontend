@@ -99,6 +99,14 @@ export interface EmailChangeRequest {
   currentPassword?: string
   reauthToken?: string
 }
+/**
+ * PATCH /api/auth/me/password — 이메일 회원 전용(OAuth 전용 회원이 호출하면 400 VALIDATION_ERROR).
+ * 성공 시 기존 리프레시 토큰이 전부 폐기되고 이 기기가 쓸 새 토큰 쌍이 응답으로 온다(TokenResponse).
+ */
+export interface PasswordChangeRequest {
+  currentPassword: string
+  newPassword: string
+}
 export interface EmailChangeConfirmRequest {
   newEmail: string
   code: string
