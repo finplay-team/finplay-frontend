@@ -1071,33 +1071,6 @@ export function Trade() {
                 </div>
               )}
 
-              {/* 주문 유형 — 지정가는 코인 전용이라 주식 탭에서는 아예 보이지 않는다. */}
-              {isCrypto && (
-                <div className="mt-3 flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
-                  {(
-                    [
-                      ['MARKET', '시장가'],
-                      ['LIMIT', '지정가'],
-                    ] as const
-                  ).map(([value, label]) => {
-                    const active = orderType === value
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setOrderType(value)}
-                        aria-pressed={active}
-                        className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
-                          active ? 'bg-coin-soft text-coin ring-1 ring-coin/40' : 'text-muted hover:text-ink'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
               <form onSubmit={handleSubmit} className="mt-3 space-y-3">
                 <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
                   {(['BUY', 'SELL'] as OrderSide[]).map((value) => {
@@ -1121,6 +1094,34 @@ export function Trade() {
                     )
                   })}
                 </div>
+
+                {/* 주문 유형 — 지정가는 코인 전용이라 주식 탭에서는 아예 보이지 않는다. 매수/매도 토글
+                    바로 아래로 옮겼다(2026-08-19 피드백). */}
+                {isCrypto && (
+                  <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
+                    {(
+                      [
+                        ['MARKET', '시장가'],
+                        ['LIMIT', '지정가'],
+                      ] as const
+                    ).map(([value, label]) => {
+                      const active = orderType === value
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setOrderType(value)}
+                          aria-pressed={active}
+                          className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
+                            active ? 'bg-coin-soft text-coin ring-1 ring-coin/40' : 'text-muted hover:text-ink'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
 
                 {/* 코인 시장가·지정가 안내. 매수/매도 토글 바로 아래(매수는 주문가능 현금 박스 위)에 둔다.
                     지정가 매도는 별도 안내가 없어 여기서 다루지 않는다(2026-08-19 피드백). */}
