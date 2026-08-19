@@ -1171,7 +1171,11 @@ export function Trade() {
                         <button
                           key={preset}
                           type="button"
-                          onClick={() => handleQuantityChange(preset)}
+                          // 누를 때마다 현재 수량에 더한다 — 예: 0.001 을 두 번 누르면 0.002.
+                          onClick={() => {
+                            const current = quantity === '' ? 0 : Number(quantity)
+                            handleQuantityChange(toQtyInput(current + Number(preset)))
+                          }}
                           className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink"
                         >
                           {preset}
