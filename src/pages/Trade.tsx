@@ -237,6 +237,18 @@ export function Trade() {
     pollMs: CRYPTO_POLL_MS,
     interval,
   })
+  /**
+   * 헤더 등락 표시 전용 — 사용자가 보고 있는 차트 주기(분/일/주/월)와 무관하게 항상 같은 기준을
+   * 써야 한다. 코인은 24시간 연속 시장이라 오늘 일봉의 시가가 곧 어제 일봉의 종가와 같다 — 이
+   * 값을 빗썸이 보여주는 "전일 종가 대비"와 같은 기준으로 쓴다(2026-08-19 피드백, 실제 빗썸과
+   * 대조해 확인함).
+   */
+  const { candles: dailyCandles } = useCandles({
+    instrumentId: isCrypto ? selectedId : null,
+    market,
+    pollMs: CRYPTO_POLL_MS,
+    interval: '1d',
+  })
 
   const [account, setAccount] = useState<AccountSummary | null>(null)
   const [holdings, setHoldings] = useState<Holding[] | null>(null)
@@ -726,8 +738,15 @@ export function Trade() {
   const stale = isCrypto
     ? cryptoUpdatedAt !== null && now - cryptoUpdatedAt > CRYPTO_POLL_MS * 4
     : lastMessageAt !== null && now - lastMessageAt > STALE_MS
-  // 백엔드는 전일 종가를 주지 않는다. 등락률은 첫 분봉의 시가 대비로만 계산할 수 있다.
-  const openPrice = candles.length > 0 ? candles[0].open : null
+  // 코인은 위 dailyCandles(오늘 일봉의 시가 = 어제 종가)를, 주식은 백엔드가 전일 종가를 안 줘서
+  // 여전히 오늘 첫 분봉의 시가(장 시작가)를 기준으로 쓴다.
+  const openPrice = isCrypto
+    ? dailyCandles.length > 0
+      ? dailyCandles[dailyCandles.length - 1].open
+      : null
+    : candles.length > 0
+      ? candles[0].open
+      : null
   const changePercent =
     openPrice !== null && openPrice !== 0 && currentPrice !== null
       ? ((currentPrice - openPrice) / openPrice) * 100
@@ -965,7 +984,7 @@ export function Trade() {
                     </p>
                     {changePercent !== null && changeAmount !== null && (
                       <p className={`mt-1 text-xs tabular ${pnlTone(changePercent)}`}>
-                        {isCrypto ? '차트 시작 대비' : '장 시작 대비'} {signedKRW(changeAmount)} (
+                        {isCrypto ? '전일 대비' : '장 시작 대비'} {signedKRW(changeAmount)} (
                         {formatPercent(changePercent)})
                       </p>
                     )}
