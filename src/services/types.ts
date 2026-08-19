@@ -477,14 +477,6 @@ export interface AccountSummary {
   realizedPnl: Decimal
   unrealizedPnl: Decimal
 }
-
-/** GET /api/portfolio — 파라미터 없음. 두 시장 합산이므로 분모는 20,000,000 이다. */
-export interface PortfolioTotal {
-  totalValue: Decimal
-  unrealizedPnl: Decimal
-  realizedPnl: Decimal
-}
-
 /* ---------- 투자일기 (JOUR-001~006) ---------- */
 
 export type JournalType = 'BUY' | 'SELL'
