@@ -467,16 +467,6 @@ export function Trade() {
   /** 서버가 availableCash 를 주지 않는다 — 예약분을 직접 빼야 실제 주문 가능 금액이다. */
   const availableCash = account ? account.cashBalance - account.reservedCash : null
 
-  /** 매수 탭 수량 입력 옆에 보여줄 최대 구매 가능 수량. */
-  const maxBuyQty = presetQuantity({
-    side: 'BUY',
-    isCrypto,
-    ratio: 1,
-    availableCash,
-    held,
-    unitPrice,
-  })
-
   /**
    * 코인 매도 수량 입력창 placeholder 에 쓸 "최소 ≈ N" 힌트 — 실제 빗썸처럼 최소 주문금액을
    * 채우는 수량을 올림해서 보여준다(내림하면 min 을 못 채워 주문이 막힐 수 있다).
@@ -558,13 +548,13 @@ export function Trade() {
     if (side === 'SELL') return null
     if (availableCash === null) return '가진 돈을 불러오는 중이에요.'
     if (availableCash <= 0) return '주문에 쓸 수 있는 돈이 없어요.'
-    // 지정가는 입력한 가격으로 계산하므로 현재가가 없어도 괜찮다.
-    if (isLimit) return limitPriceNumber > 0 ? null : '먼저 사고 싶은 가격을 적어 주세요.'
+    // 지정가는 가격을 안 넣으면 unitPrice 가 null 이 되어 채울 수량이 자연히 0이 된다 — 별도 안내는 없앴다(2026-08-19 피드백).
+    if (isLimit) return null
     if (currentPrice === null) return '지금 가격을 받지 못해서 얼마나 살 수 있는지 계산할 수 없어요.'
     // 시세가 STALE 이어도 막지 않는다 — 이 화면은 STALE 가격으로도 주문을 허용하므로(disableReason
     // 참고), 비율 버튼만 잠그면 "주문은 되는데 버튼은 안 눌리는" 상태가 된다.
     return null
-  }, [availableCash, currentPrice, held, isLimit, limitPriceNumber, side])
+  }, [availableCash, currentPrice, isLimit, side])
 
   const disableReason = useMemo<string | null>(() => {
     if (!selected) return '주문할 종목을 선택해 주세요.'
@@ -1186,28 +1176,60 @@ export function Trade() {
                   )}
                 </div>
 
+                {/* 지정가 입력 — 실제 빗썸처럼 "주문 가격"을 "주문 수량"보다 먼저 둔다(2026-08-19 피드백). */}
+                {isLimit && (
+                  <div>
+                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                      <label htmlFor="order-limit-price" className="text-sm font-medium text-ink">
+                        주문 가격
+                      </label>
+                      {currentPrice !== null && (
+                        <button
+                          type="button"
+                          onClick={() => setLimitPrice(String(currentPrice))}
+                          className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-brand transition-colors hover:bg-white/[0.1]"
+                        >
+                          현재가 {formatPrice(currentPrice)}
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      id="order-limit-price"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="0"
+                      value={limitPrice}
+                      onChange={(e) => setLimitPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+                      className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-coin focus:ring-4 focus:ring-coin/15"
+                    />
+                    <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                      {side === 'BUY'
+                        ? '현재가가 지정가 이하로 내려오면 체결됩니다.'
+                        : '현재가가 지정가 이상으로 올라오면 체결됩니다.'}{' '}
+                      체결가는 지정가로 고정됩니다.
+                    </p>
+                    {fillsImmediately && (
+                      <p className="mt-2 rounded-xl bg-coin-soft px-3 py-2 text-[11px] leading-relaxed text-coin">
+                        지금 현재가({formatPrice(currentPrice as number)}) 기준으로 이미 체결 조건을
+                        만족합니다. 접수 직후 바로 체결되어 미체결 목록에 남지 않고, 정정·취소도 할 수
+                        없습니다. 미체결로 두려면 {side === 'BUY' ? '현재가보다 낮게' : '현재가보다 높게'}{' '}
+                        입력해 주세요.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3">
                     <label
                       htmlFor={isAmountMode ? 'order-amount' : 'order-quantity'}
                       className="text-sm font-medium text-ink"
                     >
-                      {isAmountMode
-                        ? '주문 금액'
-                        : isCrypto
-                          ? side === 'SELL'
-                            ? '주문 수량'
-                            : '수량 (소수점 가능)'
-                          : '수량 (주)'}
+                      {isAmountMode ? '주문 금액' : isCrypto ? '주문 수량' : '수량 (주)'}
                     </label>
-                    {/* 매도는 바로 위 "주문 가능" 박스가 보유 수량을 이미 보여주므로 여기서 또 보여주지 않는다. */}
-                    {/* 금액 입력 모드에서는 바로 위 "주문 가능" 박스와 중복이라 최대 구매 가능 수량을 보여주지 않는다. */}
-                    {side === 'BUY' && !isAmountMode && (
-                      <span className="text-xs text-muted tabular">
-                        최대 구매 가능 {formatQty(maxBuyQty)}
-                        {isCrypto ? '' : '주'}
-                      </span>
-                    )}
+                    {/* 매도는 바로 위 "주문 가능" 박스가 보유 수량을 이미 보여주므로 여기서 또 보여주지 않는다.
+                        매수도 마찬가지로 "주문 가능" 박스와 중복이라 최대 구매 가능 수량을 따로 보여주지 않는다(2026-08-19 피드백). */}
                   </div>
                   {isAmountMode ? (
                     <input
@@ -1311,65 +1333,20 @@ export function Trade() {
                   )}
                 </div>
 
-                {isLimit && (
-                  <div>
-                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                      <label htmlFor="order-limit-price" className="text-sm font-medium text-ink">
-                        지정가 (원)
-                      </label>
-                      {currentPrice !== null && (
-                        <button
-                          type="button"
-                          onClick={() => setLimitPrice(String(currentPrice))}
-                          className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-brand transition-colors hover:bg-white/[0.1]"
-                        >
-                          현재가 {formatPrice(currentPrice)}
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      id="order-limit-price"
-                      type="text"
-                      inputMode="decimal"
-                      autoComplete="off"
-                      placeholder="0"
-                      value={limitPrice}
-                      onChange={(e) => setLimitPrice(e.target.value.replace(/[^0-9.]/g, ''))}
-                      className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-coin focus:ring-4 focus:ring-coin/15"
-                    />
-                    <p className="mt-2 text-[11px] leading-relaxed text-muted">
-                      {side === 'BUY'
-                        ? '현재가가 지정가 이하로 내려오면 체결됩니다.'
-                        : '현재가가 지정가 이상으로 올라오면 체결됩니다.'}{' '}
-                      체결가는 지정가로 고정됩니다.
-                    </p>
-                    {fillsImmediately && (
-                      <p className="mt-2 rounded-xl bg-coin-soft px-3 py-2 text-[11px] leading-relaxed text-coin">
-                        지금 현재가({formatPrice(currentPrice as number)}) 기준으로 이미 체결 조건을
-                        만족합니다. 접수 직후 바로 체결되어 미체결 목록에 남지 않고, 정정·취소도 할 수
-                        없습니다. 미체결로 두려면 {side === 'BUY' ? '현재가보다 낮게' : '현재가보다 높게'}{' '}
-                        입력해 주세요.
-                      </p>
-                    )}
-                  </div>
-                )}
-
                 <div className="space-y-1.5 rounded-2xl bg-elevated px-4 py-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-muted">
                       {isAmountMode
                         ? '예상 매수'
                         : isLimit
-                          ? '예약 금액 (지정가 기준)'
+                          ? '주문 금액'
                           : side === 'SELL'
                             ? '예상 매도'
                             : '예상 주문금액 (추정)'}
                     </span>
                     <span className="font-medium text-ink tabular">
                       {isAmountMode
-                        ? quantityNumber > 0
-                          ? `${formatQty(quantityNumber)} ${selected?.symbol ?? ''}`
-                          : '—'
+                        ? `${formatQty(quantityNumber)} ${selected?.symbol ?? ''}`
                         : estimatedAmount !== null
                           ? formatKRW(estimatedAmount)
                           : '—'}
@@ -1412,12 +1389,14 @@ export function Trade() {
                 </Button>
               </form>
 
-              {/* "수량을 입력해 주세요" 안내는 불필요한 잔소리라 뺐다 — 다른 차단 사유만 보여준다(2026-08-19 피드백). */}
+              {/* "수량을 입력해 주세요"·"지정가를 입력해 주세요" 안내는 불필요한 잔소리라 뺐다 —
+                  다른 차단 사유만 보여준다(2026-08-19 피드백). */}
               {disableReason &&
                 disableReason !==
                   (isCrypto
                     ? '주문 수량을 입력해 주세요. (예: 0.001)'
-                    : '주문 수량을 1주 이상 입력해 주세요.') && (
+                    : '주문 수량을 1주 이상 입력해 주세요.') &&
+                disableReason !== '지정가를 입력해 주세요.' && (
                   <p className="mt-3 text-xs leading-relaxed text-muted">{disableReason}</p>
                 )}
               {orderError && <p className="mt-3 text-sm text-loss">{orderError}</p>}

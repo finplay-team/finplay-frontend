@@ -54,14 +54,14 @@ describe('QuantityPresets — 매수 비율', () => {
     expect(onPick).toHaveBeenLastCalledWith(0.49975012)
   })
 
-  it('같은 금액이라도 주식은 한 주도 못 사면 버튼을 잠그고 이유를 알린다', () => {
+  it('같은 금액이라도 주식은 한 주도 못 사면 버튼만 잠그고 별도 안내는 없다', () => {
     renderPresets({ availableCash: 1_000, unitPrice: 2_000 })
 
     expect(screen.getByRole('button', { name: '최대' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '10%' })).toBeDisabled()
     expect(
-      screen.getByText('가진 돈이 적어서 지금 가격으로는 살 수 있는 수량이 없어요.'),
-    ).toBeInTheDocument()
+      screen.queryByText('가진 돈이 적어서 지금 가격으로는 살 수 있는 수량이 없어요.'),
+    ).not.toBeInTheDocument()
   })
 
   it('기준 가격이 없으면 아무 버튼도 누를 수 없다', () => {

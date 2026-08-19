@@ -41,13 +41,8 @@ export function QuantityPresets({
     [availableCash, held, isCrypto, side, unitPrice],
   )
 
-  // 가장 큰 비율로도 0 이면 어느 버튼을 눌러도 채울 수량이 없다.
-  const nothingToFill = disabledReason === null && quantities[quantities.length - 1] <= 0
-  // 매도는 버튼이 자연히 잠기는 것만으로 충분해 안내 문구를 따로 보여주지 않는다(2026-08-19 피드백).
-  const message =
-    side === 'SELL'
-      ? null
-      : (disabledReason ?? (nothingToFill ? '가진 돈이 적어서 지금 가격으로는 살 수 있는 수량이 없어요.' : null))
+  // 채울 수량이 0 이면(가장 큰 비율로도) 각 버튼이 자연히 잠긴다 — 별도 안내 문구는 두지 않는다(2026-08-19 피드백).
+  const message = side === 'SELL' ? null : disabledReason
 
   const [helpOpen, setHelpOpen] = useState(false)
   const helpId = useId()
