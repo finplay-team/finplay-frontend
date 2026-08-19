@@ -1,4 +1,4 @@
-// 내정보 페이지 — 프로필·주식/코인 계좌 요약·닉네임/이메일 변경·최근 체결 내역·로그아웃
+// 내정보 페이지 — 프로필·닉네임/이메일 변경·최근 체결 내역·로그아웃
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/Button'
@@ -9,10 +9,9 @@ import { DevCodeNotice } from '../components/DevCodeNotice'
 import { Logout } from '../components/ui/icons'
 import { useAuth } from '../auth/AuthContext'
 import { useInstruments } from '../hooks/useInstruments'
-import { getAccountSummary } from '../services/accountService'
 import { changeNickname, confirmEmailChange, requestEmailChange } from '../services/authService'
 import { getTrades } from '../services/tradeService'
-import type { AccountSummary, Market, NicknameChangeRequest, SignupMethod, Trade } from '../services/types'
+import type { Market, NicknameChangeRequest, SignupMethod, Trade } from '../services/types'
 import { ApiError } from '../lib/apiClient'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import { openReauthPopup, providerFromSignupMethod } from '../lib/reauthPopup'
@@ -28,17 +27,13 @@ const MARKETS: Market[] = ['STOCK', 'CRYPTO']
 /** 응답의 Trade 에는 market 이 없다. 어느 호출에서 왔는지를 붙여 표에서 구분한다. */
 type RecentTrade = Trade & { market: Market }
 
-const marketMeta: Record<Market, { label: string; accent: 'brand' | 'coin'; tone: string; chip: string }> = {
+const marketMeta: Record<Market, { label: string; chip: string }> = {
   STOCK: {
     label: '주식',
-    accent: 'brand',
-    tone: 'text-brand',
     chip: 'bg-brand-soft text-brand',
   },
   CRYPTO: {
     label: '코인',
-    accent: 'coin',
-    tone: 'text-coin',
     chip: 'bg-coin-soft text-coin',
   },
 }
@@ -63,33 +58,11 @@ export function MyPage() {
   const navigate = useNavigate()
   const { index } = useInstruments()
 
-  // 가입하면 주식·코인 계좌가 함께 생긴다. 한쪽만 보여주면 반대쪽 매매가 이 화면에서 사라진다.
-  // 두 시장을 합산하는 /api/portfolio 는 쓰지 않는다 — 계좌는 구조적으로 분리돼 있고
-  // 수익률 분모도 계좌마다 1,000만원이라 합산값은 화면의 다른 숫자와 이어지지 않는다.
-  const [summaries, setSummaries] = useState<Record<Market, AccountSummary | null>>({
-    STOCK: null,
-    CRYPTO: null,
-  })
-  const [summaryErrors, setSummaryErrors] = useState<Record<Market, string>>({
-    STOCK: '',
-    CRYPTO: '',
-  })
   const [trades, setTrades] = useState<RecentTrade[] | null>(null)
   const [tradesError, setTradesError] = useState('')
 
   useEffect(() => {
     let cancelled = false
-
-    for (const market of MARKETS) {
-      getAccountSummary(market)
-        .then((s) => {
-          if (!cancelled) setSummaries((prev) => ({ ...prev, [market]: s }))
-        })
-        .catch((e: unknown) => {
-          // 한쪽 계좌가 실패해도 반대쪽은 그대로 보여준다.
-          if (!cancelled) setSummaryErrors((prev) => ({ ...prev, [market]: toUserMessage(e) }))
-        })
-    }
 
     // 체결 내역은 시장별 엔드포인트뿐이라 두 번 부른 뒤 체결시각으로 합친다.
     // 응답의 Trade 에는 market 이 없으므로 어느 호출에서 왔는지로 표시한다.
@@ -149,36 +122,18 @@ export function MyPage() {
           </div>
         </Card>
 
-        {/* 2. 계좌 요약 — 주식·코인 두 계좌를 나란히 둔다 (합산하지 않는다) */}
-        <section>
-          <div className="grid gap-4 md:grid-cols-2">
-            {MARKETS.map((market) => (
-              <AccountCard
-                key={market}
-                market={market}
-                summary={summaries[market]}
-                error={summaryErrors[market]}
-              />
-            ))}
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-muted">
-            두 계좌는 완전히 분리돼 있습니다. 시드머니도 수익률 기준도 계좌마다 따로이고, 계좌 사이
-            이체는 없습니다.
-          </p>
-        </section>
-
-        {/* 3. 닉네임 변경 */}
+        {/* 2. 닉네임 변경 */}
         <NicknameSection
           signupMethod={member.signupMethod}
           currentNickname={member.nickname}
           onChanged={refreshMember}
         />
 
-        {/* 4. 이메일 변경 — OAuth 전용 회원에게는 재인증 팝업 왕복이 아직 없어 칸 자체를 숨긴다
+        {/* 3. 이메일 변경 — OAuth 전용 회원에게는 재인증 팝업 왕복이 아직 없어 칸 자체를 숨긴다
                (finplay-api docs/prd.md AUTH-005, 2026-08-16 결정). 이메일 회원만 이 카드를 본다. */}
         {isEmailAccount && <EmailSection currentEmail={member.email} />}
 
-        {/* 5. 최근 체결 내역 */}
+        {/* 4. 최근 체결 내역 */}
         <Card innerClassName="p-8">
           <h2 className="font-display text-lg font-semibold text-ink">최근 체결 내역</h2>
           {tradesError ? (
@@ -265,7 +220,7 @@ export function MyPage() {
           )}
         </Card>
 
-        {/* 6. 로그아웃 */}
+        {/* 5. 로그아웃 */}
         <div className="flex justify-end">
           <Button
             variant="ghost"
@@ -278,64 +233,6 @@ export function MyPage() {
         </div>
       </div>
     </div>
-  )
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div>
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className={`tabular mt-1 text-lg font-semibold ${tone ?? 'text-ink'}`}>{value}</dd>
-    </div>
-  )
-}
-
-/** 한 계좌의 요약 카드. 로딩·오류를 카드 안에서 처리해 반대쪽 계좌에 영향을 주지 않는다. */
-function AccountCard({
-  market,
-  summary,
-  error,
-}: {
-  market: Market
-  summary: AccountSummary | null
-  error: string
-}) {
-  const meta = marketMeta[market]
-  return (
-    <Card accent={meta.accent} className="h-full" innerClassName="flex h-full flex-col p-6 md:p-7">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className={`font-display text-lg font-semibold ${meta.tone}`}>{meta.label} 계좌</h2>
-        <span className="whitespace-nowrap text-xs text-muted">시드머니 1,000만원</span>
-      </div>
-      {error ? (
-        <p className="mt-4 text-sm text-rose-300">{error}</p>
-      ) : !summary ? (
-        <dl className="mt-6 grid grid-cols-2 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i}>
-              <div className="skeleton h-2.5 w-16" />
-              <div className="skeleton mt-2 h-5 w-24" />
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <dl className="mt-6 grid grid-cols-2 gap-4">
-          <Stat label="총 평가자산" value={formatKRW(summary.totalValue)} />
-          <Stat label="주문가능 현금" value={formatKRW(summary.cashBalance)} />
-          <Stat label="보유 평가금액" value={formatKRW(summary.holdingsValue)} />
-          <Stat
-            label="평가손익"
-            value={signedKRW(summary.unrealizedPnl)}
-            tone={pnlTone(summary.unrealizedPnl)}
-          />
-          <Stat
-            label="실현손익"
-            value={signedKRW(summary.realizedPnl)}
-            tone={pnlTone(summary.realizedPnl)}
-          />
-        </dl>
-      )}
-    </Card>
   )
 }
 
