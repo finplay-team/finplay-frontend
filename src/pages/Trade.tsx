@@ -27,7 +27,7 @@ import { CommunityPreview } from '../components/trade/CommunityPreview'
 import { DayRangeBar } from '../components/trade/DayRangeBar'
 import { QuantityPresets } from '../components/trade/QuantityPresets'
 import { useWatchlist } from '../hooks/useWatchlist'
-import { Star } from '../components/ui/icons'
+import { Refresh, Star } from '../components/ui/icons'
 import { PriceMoveCards } from '../components/feedback/PriceMoveCards'
 import {
   OrderTypeGuideButton,
@@ -1246,14 +1246,30 @@ export function Trade() {
                 {/* 지정가 입력 — 실제 빗썸처럼 "주문 가격"을 "주문 수량"보다 먼저 둔다(2026-08-19 피드백). */}
                 {isLimit && (
                   <div>
-                    <div className="mb-1.5 flex items-center gap-1.5">
-                      <label htmlFor="order-limit-price" className="text-sm font-medium text-ink">
-                        주문 가격
-                      </label>
-                      <HelpTooltip label="주문 가격이 뭔지 설명 보기">
-                        내가 {side === 'BUY' ? '사고' : '팔고'} 싶은 목표가예요. 현재가가 이 가격에
-                        도달하면 자동으로 체결되고, 도달하기 전까지는 미체결 상태로 대기해요.
-                      </HelpTooltip>
+                    <div className="mb-1.5 flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <label htmlFor="order-limit-price" className="text-sm font-medium text-ink">
+                          주문 가격
+                        </label>
+                        <HelpTooltip label="주문 가격이 뭔지 설명 보기">
+                          내가 {side === 'BUY' ? '사고' : '팔고'} 싶은 목표가예요. 현재가가 이 가격에
+                          도달하면 자동으로 체결되고, 도달하기 전까지는 미체결 상태로 대기해요.
+                        </HelpTooltip>
+                      </div>
+                      {/* 진입 시 한 번만 현재가로 채워지고 그 뒤론 안 따라간다(위 useEffect 주석 참고) —
+                          시세가 움직인 걸 알아채기 어렵다는 피드백으로, 누르면 지금 현재가로 다시
+                          채워주는 버튼을 달았다(2026-08-19 피드백). */}
+                      <button
+                        type="button"
+                        aria-label="주문 가격을 현재가로 새로고침"
+                        disabled={currentPrice === null}
+                        onClick={() => {
+                          if (currentPrice !== null) setLimitPrice(String(currentPrice))
+                        }}
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-line text-muted transition-colors hover:border-ink/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line disabled:hover:text-muted"
+                      >
+                        <Refresh width={14} height={14} strokeWidth={1.6} />
+                      </button>
                     </div>
                     <input
                       id="order-limit-price"
