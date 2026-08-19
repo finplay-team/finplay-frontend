@@ -522,8 +522,13 @@ export function CandleChart({
 
   return (
     <div ref={ref} className={`relative w-full ${fillHeight ? 'min-h-0 flex-1' : ''} ${className}`}>
-      {/* 확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다. */}
-      <div className="absolute right-1 -top-10 z-10 flex items-center gap-1">
+      {/*
+        확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다.
+        세로는 봉 주기(분/일/주/월) 버튼 줄과 같은 가로 라인(-top-8). 가로는 스크린샷에 노란색으로
+        표시해 준 지점 — 가격축 라벨("274,940" 등)이 시작되는 경계선, 즉 PAD.right(58px) 만큼
+        플롯 영역 오른쪽 끝에 맞춘다(2026-08-19 피드백).
+      */}
+      <div className="absolute right-[58px] -top-8 z-10 flex items-center gap-1">
         {isModified && (
           <button
             type="button"
