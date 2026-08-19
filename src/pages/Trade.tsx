@@ -1358,13 +1358,16 @@ export function Trade() {
                       </span>
                     </div>
                   )}
-                  <p className="whitespace-pre-line pt-1 text-xs leading-relaxed text-muted">
-                    {isAmountMode
-                      ? '입력한 금액을 현재가로 나눠 계산한 예상 수량이에요.\n실제 체결 수량은 체결 시점 가격에 따라 조금 다를 수 있습니다.'
-                      : isLimit
-                        ? '지정가 × 수량으로 계산한 예약 금액입니다. 접수하면 이 금액이 예약되고, 체결가는 지정가로 고정됩니다.'
-                        : '현재가 × 수량으로 계산한 추정치예요.'}
-                  </p>
+                  <ul className="list-disc space-y-1 pl-4 pt-1 text-xs leading-relaxed text-muted">
+                    <li className="whitespace-pre-line">
+                      {isAmountMode
+                        ? '현재가 기준 예상 수량이며, 체결 시점 가격에 따라 실제와 다를 수 있어요.'
+                        : isLimit
+                          ? '지정가 × 수량으로 계산한 예약 금액입니다. 접수하면 이 금액이 예약되고, 체결가는 지정가로 고정됩니다.'
+                          : '현재가 × 수량으로 계산한 추정치예요.'}
+                    </li>
+                    <li>최대 주문 가능 금액은 10억원 입니다.</li>
+                  </ul>
                 </div>
 
                 <Button
