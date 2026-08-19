@@ -1,4 +1,4 @@
-// 시장(주식/코인)별 계좌 요약·보유 종목·미체결 지정가·체결 내역(커서 페이징)을 보여주는 포트폴리오 화면
+// 시장(주식/코인)별 계좌 요약·보유 종목·미체결 지정가·체결 내역 미리보기를 보여주는 포트폴리오 화면
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, LinkButton } from '../components/ui/Button'
@@ -22,7 +22,8 @@ import type { AccountSummary, Holding, JournalListItem, Market, OrderSide, Trade
 
 const JOURNAL_PREVIEW_SIZE = 3
 
-const TRADE_PAGE_SIZE = 20
+/** 체결 내역 미리보기 건수. 전체 목록은 /trades 가 정본이다("전체보기"). */
+const TRADE_PREVIEW_SIZE = 10
 /** 코인은 분 tick 이 없어 자체 주기로 계좌를 다시 읽는다. */
 const CRYPTO_ACCOUNT_REFRESH_MS = 15_000
 
@@ -95,8 +96,6 @@ export function Portfolio() {
     setAccountError(null)
     setTrades([])
     setTradesLoaded(false)
-    setNextCursor(null)
-    setHasNext(false)
   }, [market])
 
   useEffect(() => {
@@ -119,56 +118,27 @@ export function Portfolio() {
 
   const [trades, setTrades] = useState<Trade[]>([])
   const [tradesLoaded, setTradesLoaded] = useState(false)
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [hasNext, setHasNext] = useState(false)
-  const [tradesLoading, setTradesLoading] = useState(false)
   const [tradesError, setTradesError] = useState<string | null>(null)
 
-  // 체결 내역은 분 tick 으로 되감지 않는다. 더보기로 펼친 페이지가 사라지면 안 된다.
+  // 체결 내역은 분 tick 으로 되감지 않는다.
   useEffect(() => {
     let cancelled = false
-    setTradesLoading(true)
     void (async () => {
       try {
-        const page = await getTrades({ market, limit: TRADE_PAGE_SIZE })
+        const page = await getTrades({ market, limit: TRADE_PREVIEW_SIZE })
         if (cancelled) return
         setTrades(page.content)
-        setNextCursor(page.nextCursor)
-        setHasNext(page.hasNext)
         setTradesError(null)
       } catch (e) {
         if (!cancelled) setTradesError(toUserMessage(e))
       } finally {
-        if (!cancelled) {
-          setTradesLoading(false)
-          setTradesLoaded(true)
-        }
+        if (!cancelled) setTradesLoaded(true)
       }
     })()
     return () => {
       cancelled = true
     }
   }, [market, refreshNonce])
-
-  const loadMoreTrades = useCallback(async () => {
-    if (!nextCursor || tradesLoading) return
-    setTradesLoading(true)
-    try {
-      const page = await getTrades({
-        market,
-        cursor: nextCursor,
-        limit: TRADE_PAGE_SIZE,
-      })
-      setTrades((prev) => [...prev, ...page.content])
-      setNextCursor(page.nextCursor)
-      setHasNext(page.hasNext)
-      setTradesError(null)
-    } catch (e) {
-      setTradesError(toUserMessage(e))
-    } finally {
-      setTradesLoading(false)
-    }
-  }, [market, nextCursor, tradesLoading])
 
   const instrumentName = useCallback(
     (instrumentId: number) => index?.byId.get(instrumentId)?.name ?? `#${instrumentId}`,
@@ -177,7 +147,7 @@ export function Portfolio() {
 
   /**
    * 최근 투자일기 몇 개만 간략히 보여준다 — 전체 목록은 /journal 이 정본이다("전체보기").
-   * 종목명은 이미 받아 둔 `trades`(최신 20건)에서 찾는다. 목록 항목엔 종목 정보가 없고
+   * 종목명은 이미 받아 둔 `trades`(최신 10건)에서 찾는다. 목록 항목엔 종목 정보가 없고
    * (spec 007 설계) 미리보기는 최근 몇 건뿐이라 최신 체결 페이지 안에 거의 항상 걸린다 —
    * 못 찾으면 "—"로 둔다(전체보기에서는 전 페이지를 훑어 정확히 맞춘다).
    */
@@ -400,13 +370,16 @@ export function Portfolio() {
           </section>
         )}
 
-        {/* 5. 체결 내역 */}
+        {/* 5. 체결 내역 미리보기 — 전체 목록은 /trades 가 정본이다 */}
         <section className="mt-12">
           <h2 className="font-display text-2xl font-semibold text-ink">체결 내역</h2>
-          <p className="mt-2 text-sm text-muted">
-            시장가 주문은 즉시 체결되므로 미체결 주문은 존재하지 않습니다. 수수료는 서버가 계산한
-            실제 금액입니다.
-          </p>
+          {/* 설명과 전체보기를 한 줄에 둬야 "이 목록의 전체 보기"라는 게 한눈에 이어진다(투자일기 섹션과 동일한 배치). */}
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">수수료는 서버가 계산한 실제 금액입니다.</p>
+            <LinkButton to="/trades" variant="ghost" size="sm">
+              전체보기
+            </LinkButton>
+          </div>
 
           <Card className="mt-5" innerClassName="p-2">
             <div className="overflow-x-auto">
@@ -552,14 +525,6 @@ export function Portfolio() {
           </Card>
 
           {tradesError && <p className="mt-3 text-sm text-loss">{tradesError}</p>}
-
-          {hasNext && (
-            <div className="mt-5 flex justify-center">
-              <Button variant="soft" onClick={loadMoreTrades} disabled={tradesLoading}>
-                {tradesLoading ? '불러오는 중' : '더보기'}
-              </Button>
-            </div>
-          )}
         </section>
 
         {/* 6. 투자일기 미리보기 — 전체 목록·수정은 /journal 이 정본이다 */}
