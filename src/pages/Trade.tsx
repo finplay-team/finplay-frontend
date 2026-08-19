@@ -1032,31 +1032,7 @@ export function Trade() {
               <div className="p-5">
                 {rightPanelTab === 'order' && (
                   <>
-              {/*
-                계좌 요약 3개(총 평가자산·주문가능 현금·평가손익) 중 이 화면(지금 매매하는
-                화면)에 실제로 필요한 건 주문가능 현금뿐이라는 피드백으로, 헤더/차트 위에
-                떠 있던 계좌 요약 카드를 없애고 이것만 주문 탭 맨 위로 옮겼다(2026-08-19).
-              */}
-              <div className="rounded-2xl bg-elevated px-4 py-3">
-                <p className="text-xs text-muted">주문가능 현금</p>
-                {accountError ? (
-                  <p className="mt-1 text-sm text-loss">{accountError}</p>
-                ) : (
-                  <p className="mt-1 text-base font-semibold text-ink tabular">
-                    {availableCash !== null ? formatKRW(availableCash) : '—'}
-                  </p>
-                )}
-                {/* 예약이 있을 때만 알린다 — 현금 잔액과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
-                {account !== null && account.reservedCash > 0 && (
-                  <p className="mt-1.5 text-xs leading-relaxed text-muted">
-                    현금 {formatKRW(account.cashBalance)} 중{' '}
-                    <span className="tabular text-coin">{formatKRW(account.reservedCash)}</span>이
-                    미체결 지정가 매수로 예약돼 있습니다.
-                  </p>
-                )}
-              </div>
-
-              <p className="mt-4 whitespace-pre-line text-xs leading-relaxed text-muted">
+              <p className="whitespace-pre-line text-xs leading-relaxed text-muted">
                 {isLimit
                   ? '지정한 가격에 도달하면 자동으로 체결됩니다.\n그 전까지는 체결되지 않고, 주문한 만큼의 현금·수량만 미리 묶어둡니다.'
                   : isCrypto
@@ -1121,6 +1097,33 @@ export function Trade() {
                   })}
                 </div>
 
+                {/* 매수 탭에서만 의미가 있는 정보라 매수/매도 토글 바로 아래, 매수일 때만 보여준다(2026-08-19 피드백).
+                    수량 입력창과 같은 모양(라벨은 박스 밖, 값은 테두리 있는 박스 안)으로 맞췄다. */}
+                {side === 'BUY' && (
+                  <div>
+                    <p className="mb-1.5 text-sm font-medium text-ink">주문가능 현금</p>
+                    <div className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] tabular">
+                      {accountError ? (
+                        <span className="text-loss">{accountError}</span>
+                      ) : (
+                        <span className="text-ink">
+                          {availableCash !== null ? formatKRW(availableCash) : '—'}
+                        </span>
+                      )}
+                    </div>
+                    {/* 예약이 있을 때만 알린다 — 현금 잔액과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
+                    {account !== null && account.reservedCash > 0 && (
+                      <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                        현금 {formatKRW(account.cashBalance)} 중{' '}
+                        <span className="tabular text-coin">
+                          {formatKRW(account.reservedCash)}
+                        </span>
+                        이 미체결 지정가 매수로 예약돼 있습니다.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3">
                     <label htmlFor="order-quantity" className="text-sm font-medium text-ink">
@@ -1133,7 +1136,7 @@ export function Trade() {
                         {isCrypto ? '' : '주'}
                       </span>
                     ) : (
-                      // 주문가능 현금은 차트 위 "주문가능 현금" 카드와 중복이라 대신 최대 구매 가능 수량을 보여준다.
+                      // 주문가능 현금은 바로 위 "주문가능 현금" 박스와 중복이라 대신 최대 구매 가능 수량을 보여준다.
                       <span className="text-xs text-muted tabular">
                         최대 구매 가능 {formatQty(maxBuyQty)}
                         {isCrypto ? '' : '주'}
