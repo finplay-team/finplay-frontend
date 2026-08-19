@@ -1,14 +1,15 @@
 // 코인 holding에 손절·익절(OCO) 예약을 걸거나, 걸어둔 예약을 확인·취소하는 패널 (021 일반 리스크관리 OCO)
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '../ui/Button'
+import { QuantityPresets } from './QuantityPresets'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { isApiErrorCode, toUserMessage } from '../../lib/errorMessages'
 import { cancelExitPlan, createExitPlan, getExitPlans } from '../../services/exitPlanService'
 import type { ExitPlanResponse, Holding } from '../../services/types'
 
 const QTY_DECIMALS = 8
-const STOP_LOSS_PRESETS = ['5', '10', '15']
-const TAKE_PROFIT_PRESETS = ['10', '20', '30']
+/** 손절·익절 비율 프리셋 — 두 방향 다 같은 퍼센트를 쓴다(2026-08-19 피드백). */
+const PERCENT_PRESETS = ['5', '10', '15']
 
 interface Props {
   /** 선택한 종목의 holding. 보유하지 않은 종목은 null — 이 경우 예약을 걸 수 없다. */
@@ -46,13 +47,25 @@ function formatKRW(value: number): string {
   return `${Math.round(value).toLocaleString('ko-KR')}원`
 }
 
+/** 손절가·익절가 입력창에 천단위 콤마를 붙여 보여준다 — 저장값은 콤마 없는 원본 그대로 둔다. */
+function formatPriceInput(raw: string): string {
+  if (raw === '') return ''
+  const [intPart, frac] = raw.split('.')
+  const withCommas = Number(intPart || '0').toLocaleString('ko-KR')
+  return frac !== undefined ? `${withCommas}.${frac}` : withCommas
+}
+
 export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
   const [plan, setPlan] = useState<ExitPlanResponse | null>(null)
   const [listError, setListError] = useState<string | null>(null)
 
   const [quantity, setQuantity] = useState('')
+  /** 손절·익절 기준을 비율(%)로 정할지 직접 금액(원)으로 정할지 — 서버 exitPriceType 과 그대로 대응한다. */
+  const [priceMode, setPriceMode] = useState<'PERCENT' | 'PRICE'>('PERCENT')
   const [stopLossPercent, setStopLossPercent] = useState('')
   const [takeProfitPercent, setTakeProfitPercent] = useState('')
+  const [stopLossPrice, setStopLossPrice] = useState('')
+  const [takeProfitPrice, setTakeProfitPrice] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [successNonce, setSuccessNonce] = useState(0)
@@ -89,6 +102,8 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
   const quantityNumber = quantity === '' ? 0 : Number(quantity)
   const stopLossNumber = stopLossPercent === '' ? 0 : Number(stopLossPercent)
   const takeProfitNumber = takeProfitPercent === '' ? 0 : Number(takeProfitPercent)
+  const stopLossPriceNumber = stopLossPrice === '' ? 0 : Number(stopLossPrice)
+  const takeProfitPriceNumber = takeProfitPrice === '' ? 0 : Number(takeProfitPrice)
 
   const previewStopLossPrice =
     holding && stopLossNumber > 0 ? holding.averagePrice * (1 - stopLossNumber / 100) : null
@@ -103,19 +118,28 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
         ? '수량을 입력해 주세요.'
         : quantityNumber > available
           ? `보유 가능 수량을 초과했습니다. (가능 ${formatQty(available)})`
-          : stopLossNumber <= 0
-            ? '손절 비율을 입력해 주세요.'
-            : stopLossNumber >= 100
-              ? '손절 비율은 100%보다 작아야 합니다.'
-              : takeProfitNumber <= 0
-                ? '익절 비율을 입력해 주세요.'
+          : priceMode === 'PERCENT'
+            ? stopLossNumber <= 0
+              ? '손절 비율을 입력해 주세요.'
+              : stopLossNumber >= 100
+                ? '손절 비율은 100%보다 작아야 합니다.'
+                : takeProfitNumber <= 0
+                  ? '익절 비율을 입력해 주세요.'
+                  : null
+            : stopLossPriceNumber <= 0
+              ? '손절가를 입력해 주세요.'
+              : takeProfitPriceNumber <= 0
+                ? '익절가를 입력해 주세요.'
                 : null
 
   const idempotencyKey = useIdempotencyKey([
     holding?.holdingId,
     quantity,
+    priceMode,
     stopLossPercent,
     takeProfitPercent,
+    stopLossPrice,
+    takeProfitPrice,
     successNonce,
   ])
 
@@ -137,15 +161,17 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
         {
           holdingId: holding.holdingId,
           quantity,
-          exitPriceType: 'PERCENT',
-          stopLossRate: stopLossPercent,
-          takeProfitRate: takeProfitPercent,
+          ...(priceMode === 'PERCENT'
+            ? { exitPriceType: 'PERCENT', stopLossRate: stopLossPercent, takeProfitRate: takeProfitPercent }
+            : { exitPriceType: 'PRICE', stopLoss: stopLossPrice, takeProfit: takeProfitPrice }),
         },
         idempotencyKey,
       )
       setSuccessNonce((n) => n + 1)
       setStopLossPercent('')
       setTakeProfitPercent('')
+      setStopLossPrice('')
+      setTakeProfitPrice('')
       await load()
       onChanged()
     } catch (e) {
@@ -154,7 +180,19 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
     } finally {
       setSubmitting(false)
     }
-  }, [disableReason, holding, idempotencyKey, load, onChanged, quantity, stopLossPercent, takeProfitPercent])
+  }, [
+    disableReason,
+    holding,
+    idempotencyKey,
+    load,
+    onChanged,
+    priceMode,
+    quantity,
+    stopLossPercent,
+    stopLossPrice,
+    takeProfitPercent,
+    takeProfitPrice,
+  ])
 
   const handleCancel = useCallback(async () => {
     if (!plan || cancelBusy) return
@@ -184,6 +222,34 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
 
         {listError && <p className="mt-3 text-sm text-loss">{listError}</p>}
 
+        {/* 손절·익절 기준을 비율(%)로 정할지 직접 금액(원)으로 정할지 — 이미 걸린 예약을 보는
+            중엔 의미가 없어 새로 예약을 거는 폼(!plan)에서만 보여준다(2026-08-19 피드백). */}
+        {!plan && (
+          <div className="mt-3 flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
+            {(
+              [
+                ['PERCENT', '비율 (%)'],
+                ['PRICE', '금액 (원)'],
+              ] as const
+            ).map(([value, label]) => {
+              const active = priceMode === value
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPriceMode(value)}
+                  aria-pressed={active}
+                  className={`flex-1 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-400 ease-spring ${
+                    active ? 'bg-white/[0.1] text-ink ring-1 ring-white/[0.14]' : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {plan ? (
           <div className="mt-4 rounded-xl bg-elevated p-4">
             <div className="flex items-center justify-between gap-3">
@@ -207,18 +273,7 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
                 <label htmlFor="oco-quantity" className="text-sm font-medium text-ink">
                   수량
                 </label>
-                <span className="text-xs text-muted tabular">
-                  가능 {formatQty(available)}
-                  {available > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setQuantity(toQtyInput(available))}
-                      className="ml-2 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-brand transition-colors hover:bg-white/[0.1]"
-                    >
-                      전량
-                    </button>
-                  )}
-                </span>
+                <span className="text-xs text-muted tabular">가능 {formatQty(available)}</span>
               </div>
               <input
                 id="oco-quantity"
@@ -231,8 +286,21 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
                 onChange={(e) => handleQuantityChange(e.target.value)}
                 className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15 disabled:opacity-50"
               />
+              {/* 시장가/지정가 매도 폼과 같은 퍼센트 프리셋 — SELL 은 가격이 필요 없어 held(=available)
+                  비율만으로 채운다(2026-08-19 피드백). */}
+              <QuantityPresets
+                side="SELL"
+                isCrypto
+                availableCash={null}
+                held={available}
+                unitPrice={null}
+                disabledReason={null}
+                onPick={(qty) => setQuantity(toQtyInput(qty))}
+              />
             </div>
 
+            {priceMode === 'PERCENT' ? (
+              <>
             <div>
               <label htmlFor="oco-stop-loss" className="text-sm font-medium text-loss">
                 손절 비율 (−%)
@@ -251,8 +319,8 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
                 />
                 <span className="self-center text-sm text-muted">%</span>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {STOP_LOSS_PRESETS.map((preset) => (
+              <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                {PERCENT_PRESETS.map((preset) => (
                   <button
                     key={preset}
                     type="button"
@@ -286,8 +354,8 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
                 />
                 <span className="self-center text-sm text-muted">%</span>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {TAKE_PROFIT_PRESETS.map((preset) => (
+              <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                {PERCENT_PRESETS.map((preset) => (
                   <button
                     key={preset}
                     type="button"
@@ -302,6 +370,54 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
                 <p className="mt-1.5 text-[11px] text-muted">{formatKRW(previewTakeProfitPrice)}에 도달하면 매도</p>
               )}
             </div>
+              </>
+            ) : (
+              <>
+            <div>
+              <label htmlFor="oco-stop-loss-price" className="text-sm font-medium text-loss">
+                손절가 (원)
+              </label>
+              <input
+                id="oco-stop-loss-price"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                disabled={!holding || available <= 0}
+                placeholder="0"
+                value={formatPriceInput(stopLossPrice)}
+                onChange={(e) => setStopLossPrice(cleanDecimal(e.target.value.replace(/,/g, ''), 4))}
+                className="mt-1.5 w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-loss focus:ring-4 focus:ring-loss/15 disabled:opacity-50"
+              />
+              {holding && stopLossPriceNumber > 0 && (
+                <p className="mt-1.5 text-[11px] text-muted">
+                  평균매수가 대비 {(((stopLossPriceNumber - holding.averagePrice) / holding.averagePrice) * 100).toFixed(1)}%
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="oco-take-profit-price" className="text-sm font-medium text-gain">
+                익절가 (원)
+              </label>
+              <input
+                id="oco-take-profit-price"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                disabled={!holding || available <= 0}
+                placeholder="0"
+                value={formatPriceInput(takeProfitPrice)}
+                onChange={(e) => setTakeProfitPrice(cleanDecimal(e.target.value.replace(/,/g, ''), 4))}
+                className="mt-1.5 w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-gain focus:ring-4 focus:ring-gain/15 disabled:opacity-50"
+              />
+              {holding && takeProfitPriceNumber > 0 && (
+                <p className="mt-1.5 text-[11px] text-muted">
+                  평균매수가 대비 +{(((takeProfitPriceNumber - holding.averagePrice) / holding.averagePrice) * 100).toFixed(1)}%
+                </p>
+              )}
+            </div>
+              </>
+            )}
 
             {formError && <p className="text-sm text-loss">{formError}</p>}
 

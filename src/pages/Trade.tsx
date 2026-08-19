@@ -333,8 +333,12 @@ export function Trade() {
   const [successNonce, setSuccessNonce] = useState(0)
   /** 미체결 목록을 즉시 다시 읽게 하는 신호. */
   const [pendingNonce, setPendingNonce] = useState(0)
-  /** 손절·익절 OCO 패널 토글 — 기본은 접혀 있다. */
-  const [ocoOpen, setOcoOpen] = useState(false)
+  /**
+   * 매도 탭의 세 번째 선택지 — 시장가·지정가와 나란한 탭으로 손절·익절(OCO)을 고른다. OCO 는
+   * 실제로는 주문이 아니라 holding 에 거는 예약이라 orderType 과는 별개 상태로 관리한다
+   * (2026-08-19 피드백: 지정가 아래 접이식 토글이라 "지정가 주문의 일부"처럼 보여 헷갈렸다).
+   */
+  const [sellTab, setSellTab] = useState<'ORDER' | 'OCO'>('ORDER')
   /** 미체결 지정가 주문 팝업 — 주문 탭 박스 안 버튼으로 열고, 박스 폭·높이 안에서만 뜬다. */
   const [pendingOrdersOpen, setPendingOrdersOpen] = useState(false)
   useEffect(() => {
@@ -479,6 +483,11 @@ export function Trade() {
     setAmountInput('')
     setLimitAmountInput('')
   }, [market, selectedId, side, orderType])
+
+  // 매수로 돌아오거나 시장·종목이 바뀌면 OCO 탭에 남아 있을 이유가 없다.
+  useEffect(() => {
+    setSellTab('ORDER')
+  }, [market, selectedId, side])
 
   /**
    * 지정가 진입 시(또는 종목·매매구분 전환 시) "주문 가격"에 현재가를 기본값으로 채운다 — 그 뒤엔
@@ -1141,7 +1150,7 @@ export function Trade() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="mt-3 space-y-3">
+              <div className="mt-3 space-y-3">
                 <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
                   {(['BUY', 'SELL'] as OrderSide[]).map((value) => {
                     const active = side === value
@@ -1166,21 +1175,36 @@ export function Trade() {
                 </div>
 
                 {/* 주문 유형 — 지정가는 코인 전용이라 주식 탭에서는 아예 보이지 않는다. 매수/매도 토글
-                    바로 아래로 옮겼다(2026-08-19 피드백). */}
+                    바로 아래로 옮겼다(2026-08-19 피드백). 매도는 손절·익절(OCO)이 시장가·지정가와
+                    나란한 세 번째 탭이다 — 지정가 아래 접이식 토글로 있을 땐 "지정가의 부속 기능"처럼
+                    보여 헷갈린다는 피드백으로 독립 탭으로 승격했다(2026-08-19). */}
                 {isCrypto && (
                   <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
                     {(
-                      [
-                        ['MARKET', '시장가'],
-                        ['LIMIT', '지정가'],
-                      ] as const
+                      side === 'SELL'
+                        ? ([
+                            ['MARKET', '시장가'],
+                            ['LIMIT', '지정가'],
+                            ['OCO', '손절·익절 자동 예약'],
+                          ] as const)
+                        : ([
+                            ['MARKET', '시장가'],
+                            ['LIMIT', '지정가'],
+                          ] as const)
                     ).map(([value, label]) => {
-                      const active = orderType === value
+                      const active = value === 'OCO' ? sellTab === 'OCO' : sellTab === 'ORDER' && orderType === value
                       return (
                         <button
                           key={value}
                           type="button"
-                          onClick={() => setOrderType(value)}
+                          onClick={() => {
+                            if (value === 'OCO') {
+                              setSellTab('OCO')
+                            } else {
+                              setSellTab('ORDER')
+                              setOrderType(value)
+                            }
+                          }}
                           aria-pressed={active}
                           className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
                             active ? 'bg-coin-soft text-coin ring-1 ring-coin/40' : 'text-muted hover:text-ink'
@@ -1193,6 +1217,17 @@ export function Trade() {
                   </div>
                 )}
 
+                {isCrypto && side === 'SELL' && sellTab === 'OCO' ? (
+                  <OcoExitPlanPanel
+                    holding={selectedHolding}
+                    refreshNonce={pendingNonce}
+                    onChanged={() => {
+                      // 예약 생성·취소로 reservedQuantity가 바뀌는데 응답에 실리지 않는다 — 계좌·보유를 다시 읽어야 한다.
+                      setAccountNonce((n) => n + 1)
+                    }}
+                  />
+                ) : (
+                <form onSubmit={handleSubmit} className="space-y-3">
                 {/* 코인 시장가·지정가 안내. 매수/매도 토글 바로 아래(매수는 주문가능 현금 박스 위)에 둔다.
                     지정가 매도는 별도 안내가 없어 여기서 다루지 않는다(2026-08-19 피드백). */}
                 {isCrypto && (side === 'BUY' || !isLimit) && (
@@ -1491,8 +1526,14 @@ export function Trade() {
                       ? `${selected.symbol} ${sideLabels[side]}`
                       : sideLabels[side]}
                 </Button>
-              </form>
+                </form>
+                )}
+              </div>
 
+              {/* disableReason·orderError·체결 결과는 전부 시장가/지정가 주문 폼(<form> 위)에 속한
+                  상태다 — OCO 탭에서는 그 폼 자체가 안 보이니 여기도 같이 숨긴다. */}
+              {sellTab === 'ORDER' && (
+              <>
               {/* "수량을 입력해 주세요"·"지정가를 입력해 주세요" 안내는 불필요한 잔소리라 뺐다 —
                   다른 차단 사유만 보여준다(2026-08-19 피드백). */}
               {disableReason &&
@@ -1632,41 +1673,7 @@ export function Trade() {
                   </div>
                 </div>
               )}
-
-              {/* 손절·익절 자동 예약(OCO) — 지정가 매매 바로 아래, 기본은 접힌 토글이다. 코인 holding 전용(021)이고
-                  보유 중인 걸 파는 개념이라 side 필드 자체가 없다(항상 SELL) — 매도 탭에서만 보여준다.
-                  시장가는 "지금 즉시 판다"는 의도라 "나중에 조건 닿으면 판다"는 예약형 OCO와 성격이 달라
-                  섞으면 헷갈린다는 피드백으로, 지정가 매도에서만 보여준다(2026-08-19). */}
-              {isCrypto && side === 'SELL' && isLimit && (
-                <div className="mt-4 border-t border-white/[0.08] pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setOcoOpen((v) => !v)}
-                    aria-expanded={ocoOpen}
-                    aria-controls="oco-exit-plan-panel"
-                    className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-4 py-3 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
-                  >
-                    <span className="font-medium">손절·익절 자동 예약 (OCO) {ocoOpen ? '닫기' : '설정'}</span>
-                    <span
-                      aria-hidden="true"
-                      className={`text-muted transition-transform duration-300 ${ocoOpen ? 'rotate-180' : ''}`}
-                    >
-                      ▾
-                    </span>
-                  </button>
-                  {ocoOpen && (
-                    <div id="oco-exit-plan-panel" className="mt-3">
-                      <OcoExitPlanPanel
-                        holding={selectedHolding}
-                        refreshNonce={pendingNonce}
-                        onChanged={() => {
-                          // 예약 생성·취소로 reservedQuantity가 바뀌는데 응답에 실리지 않는다 — 계좌·보유를 다시 읽어야 한다.
-                          setAccountNonce((n) => n + 1)
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
+              </>
               )}
 
               {/* 미체결 지정가 주문 — 탭 박스 안 가장 아래, 버튼을 눌러야 여는 팝업으로 뺀다(2026-08-19 피드백:
