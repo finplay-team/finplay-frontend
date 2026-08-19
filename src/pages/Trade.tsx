@@ -1396,9 +1396,7 @@ export function Trade() {
                     <span className="font-medium text-ink tabular">
                       {isAmountMode
                         ? `${formatQty(quantityNumber)} ${selected?.symbol ?? ''}`
-                        : estimatedAmount !== null
-                          ? formatKRW(estimatedAmount)
-                          : '—'}
+                        : formatKRW(estimatedAmount ?? 0)}
                     </span>
                   </div>
                   {/* 최소 주문금액은 코인 전용 — 주식은 1주 단위라 최소 금액이 곧 현재가라 보여줘도 의미가 없다(2026-08-19 피드백).
