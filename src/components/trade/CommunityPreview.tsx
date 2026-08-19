@@ -1,14 +1,13 @@
 // 선택한 종목의 최근 커뮤니티 게시글 미리보기 — 전체보기는 해당 종목으로 필터링된 커뮤니티로 이동한다
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Card } from '../ui/Card'
 import { LinkButton } from '../ui/Button'
 import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { getPosts } from '../../services/communityService'
 import type { Post } from '../../services/types'
 
-const PREVIEW_SIZE = 1
+const PREVIEW_SIZE = 3
 const EXCERPT_MAX = 60
 
 interface Props {
@@ -44,48 +43,46 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
   }, [instrumentId])
 
   return (
-    <Card>
-      <div className="p-6">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="font-display text-base font-semibold">{instrumentName} 커뮤니티</h3>
-          <LinkButton to={`/community?instrumentId=${instrumentId}`} size="sm" variant="ghost">
-            전체보기
-          </LinkButton>
-        </div>
-
-        {loadError && <p className="mt-3 text-sm text-rose-300">{loadError}</p>}
-
-        {posts === null && !loadError && (
-          <div className="mt-4">
-            <div className="skeleton h-12" />
-          </div>
-        )}
-
-        {posts !== null && posts.length === 0 && (
-          <p className="mt-4 text-sm leading-relaxed text-muted">
-            아직 이 종목에 대한 게시글이 없습니다. 가장 먼저 이야기를 남겨보세요.
-          </p>
-        )}
-
-        {posts !== null && posts.length > 0 && (
-          <ul className="mt-4 space-y-2">
-            {posts.map((post) => (
-              <li key={post.postId}>
-                <Link
-                  to={`/community/${post.postId}`}
-                  className="block rounded-xl bg-elevated p-4 transition-colors hover:bg-elevated/70"
-                >
-                  <p className="text-sm font-semibold text-ink">{post.title}</p>
-                  <p className="mt-1 text-xs text-muted">{toExcerpt(post.content)}</p>
-                  <p className="mt-1.5 text-[10px] text-muted">
-                    {post.authorNickname} · {formatDateTime(post.createdAt)}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="font-display text-base font-semibold">{instrumentName} 커뮤니티</h3>
+        <LinkButton to={`/community?instrumentId=${instrumentId}`} size="sm" variant="ghost">
+          전체보기
+        </LinkButton>
       </div>
-    </Card>
+
+      {loadError && <p className="mt-3 text-sm text-rose-300">{loadError}</p>}
+
+      {posts === null && !loadError && (
+        <div className="mt-4">
+          <div className="skeleton h-12" />
+        </div>
+      )}
+
+      {posts !== null && posts.length === 0 && (
+        <p className="mt-4 text-sm leading-relaxed text-muted">
+          아직 이 종목에 대한 게시글이 없습니다. 가장 먼저 이야기를 남겨보세요.
+        </p>
+      )}
+
+      {posts !== null && posts.length > 0 && (
+        <ul className="mt-4 space-y-2">
+          {posts.map((post) => (
+            <li key={post.postId}>
+              <Link
+                to={`/community/${post.postId}`}
+                className="block rounded-xl bg-elevated p-4 transition-colors hover:bg-elevated/70"
+              >
+                <p className="text-sm font-semibold text-ink">{post.title}</p>
+                <p className="mt-1 text-xs text-muted">{toExcerpt(post.content)}</p>
+                <p className="mt-1.5 text-[10px] text-muted">
+                  {post.authorNickname} · {formatDateTime(post.createdAt)}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

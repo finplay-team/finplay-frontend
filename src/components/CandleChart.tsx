@@ -11,8 +11,14 @@ interface ReferenceLine {
 
 interface CandleChartProps {
   candles: Candle[]
-  /** 데스크톱 기준 차트 높이(px). 좁은 폭에서는 자동으로 낮아진다. */
+  /** 데스크톱 기준 차트 높이(px). 좁은 폭에서는 자동으로 낮아진다. fillHeight 가 true 면 무시된다. */
   height?: number
+  /**
+   * true 면 height prop 대신 부모가 flex/grid 로 실제 내려준 높이를 측정해서 그만큼만 그린다 —
+   * 세로 공간이 줄어들면 차트도 스크롤 없이 그만큼 작아진다(2026-08-19 피드백). 부모가 이 요소에
+   * 실제 높이를 주는 레이아웃(예: flex-1 min-h-0)일 때만 켠다 — 안 그러면 측정값이 0 이 된다.
+   */
+  fillHeight?: boolean
   /** 꼬리에서 잘라 그릴 최대 봉 수 */
   maxBars?: number
   /** 축 라벨·툴팁 날짜 형식을 정한다. 기본 '1m' */
@@ -60,24 +66,32 @@ const WHEEL_ZOOM_STEP = 1.05
 const MAX_ZOOM_OUT_BARS = 500
 
 /**
- * 컨테이너의 실제 CSS 폭을 잰다.
+ * 컨테이너의 실제 CSS 폭(+옵션으로 높이)을 잰다.
  * viewBox 를 고정하고 CSS 로 늘리면 SVG 좌표계가 통째로 확대·축소돼
  * 좁은 화면에서 축 라벨이 4px 까지 줄어든다 → 1 유저단위 = 1 CSS 픽셀로 고정한다.
+ * 높이는 fillHeight 모드에서만 쓰므로 필요할 때만 측정한다 — 안 그러면 높이가 아직 0인
+ * 첫 렌더마다 불필요한 상태 변화가 생긴다.
  */
-function useElementWidth<T extends HTMLElement>() {
+function useElementSize<T extends HTMLElement>(measureHeight: boolean) {
   const ref = useRef<T>(null)
   const [width, setWidth] = useState(0)
+  const [height, setHeight] = useState(0)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    setWidth(el.getBoundingClientRect().width)
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    const rect = el.getBoundingClientRect()
+    setWidth(rect.width)
+    if (measureHeight) setHeight(rect.height)
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(entry.contentRect.width)
+      if (measureHeight) setHeight(entry.contentRect.height)
+    })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [measureHeight])
 
-  return { ref, width }
+  return { ref, width, height }
 }
 
 /**
@@ -129,6 +143,7 @@ const won = (v: number) => Math.round(v).toLocaleString('ko-KR')
 export function CandleChart({
   candles,
   height = 260,
+  fillHeight = false,
   maxBars = 120,
   interval = '1m',
   emptyMessage = '표시할 봉이 없습니다.',
@@ -138,7 +153,11 @@ export function CandleChart({
   describedById,
   beginnerLabels = false,
 }: CandleChartProps) {
-  const { ref, width: boxWidth } = useElementWidth<HTMLDivElement>()
+  const {
+    ref,
+    width: boxWidth,
+    height: boxHeight,
+  } = useElementSize<HTMLDivElement>(fillHeight)
   const svgRef = useRef<SVGSVGElement>(null)
   /** 호버 중인 봉의 인덱스. 터치·이탈 시 null. */
   const [hover, setHover] = useState<number | null>(null)
@@ -244,13 +263,21 @@ export function CandleChart({
   }, [boxWidth, candles.length])
 
   // 첫 페인트에는 폭을 아직 모른다. 자리만 잡아 두고 측정 후 그린다.
-  if (boxWidth === 0) {
-    return <div ref={ref} className={`w-full ${className}`} style={{ height }} />
+  if (boxWidth === 0 || (fillHeight && boxHeight === 0)) {
+    return (
+      <div
+        ref={ref}
+        className={`w-full ${fillHeight ? 'min-h-0 flex-1' : ''} ${className}`}
+        style={fillHeight ? undefined : { height }}
+      />
+    )
   }
 
   const narrow = boxWidth < NARROW_PX
   const width = Math.round(boxWidth)
-  const chartH = narrow ? Math.round(height * 0.72) : height
+  // fillHeight 는 부모가 flex/grid 로 실제 내려준 높이를 그대로 쓴다 — narrow 축소(0.72배)는
+  // height prop 이 고정값일 때 모바일 비율을 잡으려는 용도라 여기서는 적용하지 않는다.
+  const chartH = fillHeight ? Math.round(boxHeight) : narrow ? Math.round(height * 0.72) : height
   // 좁은 화면에서 120봉을 그리면 봉 하나가 2px 미만이 된다 — 기본값은 더 적게 잡는다.
   const baseBars = narrow ? Math.min(maxBars, 60) : maxBars
   // 확대·축소는 실제 받아온 봉 수 안에서만 가능하다. MIN_VISIBLE_BARS 아래로는 봉이 서로 겹친다.
@@ -278,7 +305,7 @@ export function CandleChart({
 
   if (n === 0) {
     return (
-      <div ref={ref} className={`w-full ${className}`}>
+      <div ref={ref} className={`w-full ${fillHeight ? 'min-h-0 flex-1' : ''} ${className}`}>
         <svg
           viewBox={`0 0 ${width} ${chartH}`}
           width="100%"
@@ -486,9 +513,14 @@ export function CandleChart({
   }
 
   return (
-    <div ref={ref} className={`relative w-full ${className}`}>
-      {/* 확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다. */}
-      <div className="absolute right-1 -top-10 z-10 flex items-center gap-1">
+    <div ref={ref} className={`relative w-full ${fillHeight ? 'min-h-0 flex-1' : ''} ${className}`}>
+      {/*
+        확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다.
+        세로는 봉 주기(분/일/주/월) 버튼 줄과 같은 가로 라인(-top-8). 가로는 스크린샷에 노란색으로
+        표시해 준 지점 — 가격축 라벨("274,940" 등)이 시작되는 경계선, 즉 PAD.right(58px) 만큼
+        플롯 영역 오른쪽 끝에 맞춘다(2026-08-19 피드백).
+      */}
+      <div className="absolute right-[58px] -top-8 z-10 flex items-center gap-1">
         {isModified && (
           <button
             type="button"
