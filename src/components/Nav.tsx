@@ -6,7 +6,6 @@ import { useTutorialProgress } from '../hooks/useTutorialProgress'
 import { LinkButton } from './ui/Button'
 import { Logout } from './ui/icons'
 
-const homeLink = { to: '/', label: '홈' }
 const supportLink = { to: '/support', label: '고객센터' }
 
 /**
@@ -69,7 +68,7 @@ export function Nav() {
     navigate('/')
   }
 
-  const navLinks = [homeLink, ...(isAuthenticated ? authLinks : []), supportLink]
+  const navLinks = [...(isAuthenticated ? authLinks : []), supportLink]
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex justify-center px-4">
@@ -95,8 +94,7 @@ export function Nav() {
         <div className="hidden items-center gap-3 lg:flex">
           <div className="flex items-center gap-1">
             {navLinks.map((l) => {
-              const active =
-                l.to === '/' ? location.pathname === '/' : location.pathname.startsWith(l.to)
+              const active = location.pathname.startsWith(l.to)
               const nudge = showTutorialNudge && l.to === '/tutorial'
               return (
                 <Link

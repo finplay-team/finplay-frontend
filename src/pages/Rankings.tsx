@@ -9,9 +9,9 @@ import { formatKRW, pnlTone } from '../lib/format'
 import { getMyRanking, getRankings } from '../services/rankingService'
 import type { Market, MyRanking, RankingList } from '../services/types'
 
-/** 서버 기본값과 상한이다. 클라이언트가 클램프하지 않고 이 두 값만 요청한다(51 이상은 어차피 50으로 조용히 줄어든다). */
+/** TOP_LIMIT 은 서버 기본값이다. EXPANDED_LIMIT 은 "더 보기"가 불러오는 개수로, 서버 상한(50)보다 작게 잡았다 — 랭킹을 그렇게까지 길게 스크롤할 일은 드물다. */
 const TOP_LIMIT = 10
-const EXPANDED_LIMIT = 50
+const EXPANDED_LIMIT = 20
 
 const errorOverrides = {
   VALIDATION_ERROR: '시장 값이 올바르지 않아 랭킹을 불러오지 못했습니다.',

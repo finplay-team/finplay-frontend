@@ -16,6 +16,7 @@ import { Community } from './pages/Community'
 import { CommunityPost } from './pages/CommunityPost'
 import { MyPage } from './pages/MyPage'
 import { Journal } from './pages/Journal'
+import { Trades } from './pages/Trades'
 import { Rankings } from './pages/Rankings'
 import { News } from './pages/News'
 import { Feedback } from './pages/Feedback'
@@ -104,6 +105,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Journal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trades"
+            element={
+              <ProtectedRoute>
+                <Trades />
               </ProtectedRoute>
             }
           />
