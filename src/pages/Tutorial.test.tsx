@@ -125,11 +125,10 @@ describe('Tutorial attempt entry', () => {
     await screen.findByTestId('attempt-flow')
 
     expect(screen.getByText(/한 번 사고, 팔아 보는 연습입니다/)).toBeInTheDocument()
-    expect(screen.getByText('아래에서 종목을 하나 고르는 것부터 시작하세요.')).toBeInTheDocument()
+    // 종목 목록이 왼쪽 컬럼으로 옮겨가면서 가리키는 방향도 바뀌었다.
+    expect(screen.getByText('왼쪽 목록에서 종목을 하나 고르는 것부터 시작하세요.')).toBeInTheDocument()
     // 초보자가 모르는 내부 용어는 첫 화면에서 사라져야 한다.
     expect(screen.queryByText(/영속|29\+1|사전 의도|복기/)).not.toBeInTheDocument()
-    // 새로고침·다시 시작 같은 예외 설명은 접힌 영역으로 내렸다.
-    expect(screen.getByText(/새로고침하거나 나갔다 돌아와도/).closest('details')).not.toBeNull()
   })
 
   it('never promises a sale deadline in the intro — 코인 대본에는 마감이 없다', async () => {
@@ -167,7 +166,7 @@ describe('Tutorial attempt entry', () => {
     const { unmount } = render(<Tutorial />)
     await screen.findByTestId('attempt-flow')
 
-    expect(screen.getByText('한 시장을 처음 끝내면 연습용 투자금이 한 번 지급됩니다.')).toBeInTheDocument()
+    expect(screen.getByText(/한 시장을 처음 끝내면 연습용 투자금이 한 번 지급됩니다\./)).toBeInTheDocument()
     expect(screen.queryByText(/원이 한 번 지급/)).not.toBeInTheDocument()
     unmount()
 
@@ -178,7 +177,7 @@ describe('Tutorial attempt entry', () => {
     await screen.findByTestId('attempt-flow')
 
     expect(
-      screen.getByText('한 시장을 처음 끝내면 연습용 투자금 500만원이 한 번 지급됩니다.'),
+      screen.getByText(/한 시장을 처음 끝내면 연습용 투자금 500만원이 한 번 지급됩니다\./),
     ).toBeInTheDocument()
   })
 })

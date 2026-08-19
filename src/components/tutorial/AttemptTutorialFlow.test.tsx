@@ -810,6 +810,49 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(saveHoldingReflection).toHaveBeenCalledWith(41, '값이 내려갈 때 불안했다'))
   })
 
+  it('종목 목록은 고른 뒤에도 컬럼에 남고, 다시 고를 수는 없다', async () => {
+    // 모의투자 화면처럼 목록·차트·주문이 항상 같이 보인다. 다만 attempt 는 종목 하나에 묶여 있어
+    // 이미 고른 뒤에는 목록이 읽기 전용이다.
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await flushPromises()
+
+    const row = screen.getByRole('button', { name: /연습 코인/ })
+    expect(row).toBeDisabled()
+    expect(row).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('주문 패널은 팔기 전까지 되돌아보기 탭을 잠그고, 다 팔면 그리로 넘어간다', async () => {
+    const holding = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
+    })
+    const view = renderFlow(attempt({ riskSnapshot: risk }), progress(holding))
+    await flushPromises()
+
+    expect(screen.getByRole('button', { name: '되돌아보기' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeInTheDocument()
+
+    const sold = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
+    })
+    view.rerender(
+      <MemoryRouter>
+        <AttemptTutorialFlow
+          market="CRYPTO"
+          attempt={attempt({ riskSnapshot: risk })}
+          progress={progress(sold)}
+          onAttemptChange={vi.fn()}
+          onRefresh={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
+    await flushPromises()
+
+    expect(screen.getByRole('button', { name: '되돌아보기' })).toBeEnabled()
+    expect(
+      screen.getByLabelText('오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.'),
+    ).toBeInTheDocument()
+  })
+
   it('끝낸 단계는 지우지 않고 접힌 완료 한 줄로 남기며 전체 진행도를 보여준다', async () => {
     const currentEvidence = evidence({
       buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
@@ -964,8 +1007,10 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(screen.getByRole('link', { name: '실전 거래 시작하기' })).toHaveAttribute('href', '/trade')
-    expect(screen.getByRole('button', { name: '다른 시장도 연습해 보기' })).toBeInTheDocument()
     expect(screen.getByText(/여기서 연습한 종목은 가상이라 포트폴리오와 랭킹에는/)).toBeInTheDocument()
+    // 화면 맨 위로 스크롤해 주던 "다른 시장도 연습해 보기"는 없앴다 — 모의투자 화면과 같은 고정
+    // 레이아웃이 되면서 시장 탭이 항상 화면에 떠 있어 스크롤할 곳 자체가 없다.
+    expect(screen.queryByRole('button', { name: '다른 시장도 연습해 보기' })).not.toBeInTheDocument()
   })
 
   it.each([

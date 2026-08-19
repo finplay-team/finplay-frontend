@@ -1,7 +1,6 @@
 // 사용자·시장별 영속 attempt를 진입 정본으로 사용하는 튜토리얼 페이지
 import { useCallback, useEffect, useState } from 'react'
 import { AttemptTutorialFlow } from '../components/tutorial/AttemptTutorialFlow'
-import { Eyebrow } from '../components/ui/Eyebrow'
 import { MarketTabs } from '../components/ui/MarketTabs'
 import { toUserMessage } from '../lib/errorMessages'
 import { formatManEok } from '../lib/format'
@@ -109,51 +108,54 @@ export function Tutorial() {
     null
 
   return (
-    <div className="relative min-h-[100dvh] px-4 pb-24 pt-28 md:pt-32">
+    // 껍데기는 모의투자 화면(pages/Trade.tsx)과 같다 — 화면 높이를 꽉 채우고 페이지 자체는
+    // 스크롤하지 않으며, 안쪽 컬럼이 각자 스크롤한다.
+    <div className="relative flex h-[100dvh] flex-col overflow-hidden px-8 pb-8 pt-20 md:pt-24">
       <div className="orb -top-24 right-1/4 h-72 w-72 animate-float-orb" aria-hidden />
-      <main className="relative mx-auto max-w-4xl">
-        <header>
-          <Eyebrow>튜토리얼 · 사고팔기 첫 연습</Eyebrow>
-          <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
-            가짜 돈으로 한 번 사고, 한 번 팔아 보기
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
-            가짜 돈으로 {market === 'CRYPTO' ? '코인' : '주식'}을 한 번 사고, 팔아 보는 연습입니다.
-            실제 돈은 한 푼도 들지 않습니다. 산 값을 기준으로 “여기까지 떨어지면 판다”와 “여기까지
-            오르면 판다” 두 선이 자동으로 그려지니 직접 계산할 건 없습니다.
-          </p>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-            {rewardAmount === null
-              ? '한 시장을 처음 끝내면 연습용 투자금이 한 번 지급됩니다.'
-              : `한 시장을 처음 끝내면 연습용 투자금 ${formatManEok(rewardAmount)}원이 한 번 지급됩니다.`}
-          </p>
-          <div className="mt-5 flex flex-wrap items-center gap-2">
-            {/* 주식 튜토리얼 입구를 닫은 동안에도 이미 주식을 진행 중인 사용자에겐 탭을 남긴다. */}
-            {showBothMarkets && <MarketTabs market={market} onChange={setMarket} markets={markets} />}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* 헤더 구성(가운데 정렬 · 큰 시장 탭 · 상태 배지 한 줄 · 설명 한 문단)도 모의투자 화면을 따른다. */}
+        <header className="shrink-0 pb-3 pt-3 text-center">
+          {/* 주식 튜토리얼 입구를 닫은 동안에도 이미 주식을 진행 중인 사용자에겐 탭을 남긴다. */}
+          {showBothMarkets && (
+            <MarketTabs market={market} onChange={setMarket} markets={markets} size="lg" />
+          )}
+
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             {/* 칩 순서는 MarketTabs의 탭 순서(코인 → 주식)를 따른다. 서로 뒤집혀 있으면 같은 줄에서
                 좌우가 거울처럼 어긋나 어느 칩이 어느 탭인지 눈으로 짝지을 수 없다. */}
             <StatusPill label="코인" progress={progressByMarket.CRYPTO} />
             {showBothMarkets && <StatusPill label="주식" progress={progressByMarket.STOCK} />}
           </div>
+
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+            가짜 돈으로 {market === 'CRYPTO' ? '코인' : '주식'}을 한 번 사고, 팔아 보는 연습입니다. 실제
+            돈은 한 푼도 들지 않습니다. 산 값을 기준으로 “여기까지 떨어지면 판다”와 “여기까지 오르면
+            판다” 두 선이 자동으로 그려지니 직접 계산할 건 없습니다.{' '}
+            {rewardAmount === null
+              ? '한 시장을 처음 끝내면 연습용 투자금이 한 번 지급됩니다.'
+              : `한 시장을 처음 끝내면 연습용 투자금 ${formatManEok(rewardAmount)}원이 한 번 지급됩니다.`}
+          </p>
           {showBothMarkets && (
-            <p className="mt-2 text-xs leading-relaxed text-muted">
-              주식과 코인은 서로 다른 연습입니다. 하나를 끝내도 다른 하나는 그대로 남아 있으니 따로
-              한 번씩 해 보세요.
+            <p className="mx-auto mt-2 max-w-2xl text-xs leading-relaxed text-muted">
+              주식과 코인은 서로 다른 연습입니다. 하나를 끝내도 다른 하나는 그대로 남아 있으니 따로 한
+              번씩 해 보세요.
             </p>
           )}
           {selecting && (
-            <p className="mt-4 text-sm font-medium text-ink">아래에서 종목을 하나 고르는 것부터 시작하세요.</p>
+            <p className="mt-3 text-sm font-medium text-ink">
+              왼쪽 목록에서 종목을 하나 고르는 것부터 시작하세요.
+            </p>
           )}
+          {error && attempt && progress && <p className="mt-2 text-sm text-loss">{error}</p>}
         </header>
 
-        <section className="mt-8">
-          {loadingMarket === market && (!attempt || !progress) ? (
-            <div className="space-y-4">
-              <div className="skeleton h-20" />
-              <div className="skeleton h-80" />
-              <div className="skeleton h-36" />
-            </div>
-          ) : attempt && progress ? (
+        {loadingMarket === market && (!attempt || !progress) ? (
+          <div className="mt-5 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]">
+            <div className="skeleton min-h-0" />
+            <div className="skeleton min-h-0" />
+          </div>
+        ) : attempt && progress ? (
+          <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <AttemptTutorialFlow
               key={`${attempt.attemptId}:${attempt.runNumber}`}
               market={market}
@@ -164,25 +166,13 @@ export function Tutorial() {
               }
               onRefresh={refreshCurrent}
             />
-          ) : (
-            <p className="rounded-2xl border border-loss/30 bg-loss/10 p-4 text-sm text-loss">
-              {error ?? '튜토리얼을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'}
-            </p>
-          )}
-          {error && attempt && progress && <p className="mt-4 text-sm text-loss">{error}</p>}
-        </section>
-
-        <details className="mt-8 rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/[0.08]">
-          <summary className="cursor-pointer text-sm text-ink">
-            나갔다 와도 되나요? 처음부터 다시 하려면?
-          </summary>
-          <p className="mt-3 text-sm leading-relaxed text-muted">
-            새로고침하거나 나갔다 돌아와도 하던 연습이 그대로 이어집니다. 처음부터 다시 하고 싶으면
-            화면의 “처음부터 다시 시작”을 누르세요. 한 번 더 물어본 뒤에 지금까지 넣은 주문과 산 것을
-            정리해 줍니다.
+          </div>
+        ) : (
+          <p className="mt-5 rounded-2xl border border-loss/30 bg-loss/10 p-4 text-sm text-loss">
+            {error ?? '튜토리얼을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'}
           </p>
-        </details>
-      </main>
+        )}
+      </div>
     </div>
   )
 }
