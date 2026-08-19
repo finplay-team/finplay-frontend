@@ -17,7 +17,7 @@ import { formatDateTime, formatHhMm } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import { formatKRW, formatPercent, formatPrice, pnlTone } from '../lib/format'
 import { sideLabels } from '../lib/labels'
-import { CRYPTO_QTY_DECIMALS, presetQuantity } from '../lib/quantity'
+import { CRYPTO_QTY_DECIMALS, FEE_RATE, presetQuantity } from '../lib/quantity'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { placeLimitOrder, placeOrder } from '../services/orderService'
@@ -1371,6 +1371,29 @@ export function Trade() {
                     </>
                   )}
                 </div>
+
+                {/* 주문 금액엔 매수 수수료가 포함돼 있다 — 입력한 금액 그대로 코인이 사지는 게 아니라
+                    수수료만큼 빠진 나머지로 산다. 툴팁 설명만으론 안 보고 지나치기 쉽다는 피드백으로,
+                    금액을 입력하면 실제 반영 금액·수수료를 숫자로 바로 보여준다(2026-08-19 피드백). */}
+                {isAmountMode && amountNumber > 0 && estimatedAmount !== null && (
+                  <div className="space-y-1.5 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-amber-200/80">실제 매수 금액 (수수료 제외)</span>
+                      <span className="font-medium text-ink tabular">{formatKRW(estimatedAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-amber-200/80">수수료 ({(FEE_RATE.CRYPTO * 100).toFixed(2)}%)</span>
+                      <span className="text-ink tabular">
+                        {formatKRW(estimatedAmount * FEE_RATE.CRYPTO)}
+                      </span>
+                    </div>
+                    <p className="pt-1 text-xs leading-relaxed text-amber-200/70">
+                      입력한 {formatKRW(amountNumber)} 중 수수료를 뺀 {formatKRW(estimatedAmount)}
+                      만큼만 실제 {selected?.symbol ?? '코인'} 매수에 쓰여요. 그래서 최소
+                      주문금액에 딱 맞춰 입력하면 수수료만큼 모자라 주문이 안 될 수 있어요.
+                    </p>
+                  </div>
+                )}
 
                 {/* 지정가 "주문 금액" — 주문수량과 서로 연동되는 입력창(실제 빗썸과 동일). 하나에 입력하면
                     지정가 기준으로 나머지가 자동 계산된다(2026-08-19 피드백). */}
