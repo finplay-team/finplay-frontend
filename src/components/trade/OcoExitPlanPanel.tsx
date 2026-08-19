@@ -213,7 +213,7 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
     <div className="rounded-2xl border border-line p-5">
       <div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-ink">손절·익절 자동 예약</span>
+          <span className="text-sm font-medium text-ink">예약 매도</span>
         </div>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
           {/* 새 예약을 거는 중(!plan)이고 비율 모드일 때만 "비율"로 부른다 — 이미 걸린 예약은 항상

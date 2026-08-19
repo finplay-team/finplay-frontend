@@ -1185,7 +1185,7 @@ export function Trade() {
                         ? ([
                             ['MARKET', '시장가'],
                             ['LIMIT', '지정가'],
-                            ['OCO', '손절·익절 자동 예약'],
+                            ['OCO', '예약 매도'],
                           ] as const)
                         : ([
                             ['MARKET', '시장가'],
