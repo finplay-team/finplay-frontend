@@ -128,7 +128,7 @@ describe('QuantityPresets — 설명 팝오버', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '이 버튼들 설명 보기' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('10%·25%·50%·최대를 누르면 수량이 알아서 채워져요')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('10%·25%·50%·75%·최대를 누르면 수량이 알아서 채워져요')
 
     fireEvent.click(screen.getByRole('button', { name: '이 버튼들 설명 보기' }))
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()

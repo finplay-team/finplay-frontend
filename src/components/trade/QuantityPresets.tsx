@@ -4,7 +4,7 @@ import { presetQuantity } from '../../lib/quantity'
 import type { OrderSide } from '../../services/types'
 
 /** 마지막 1 은 매수면 "최대", 매도면 "전량"이다. */
-const RATIOS = [0.1, 0.25, 0.5, 1] as const
+const RATIOS = [0.1, 0.25, 0.5, 0.75, 1] as const
 
 interface Props {
   side: OrderSide
@@ -22,7 +22,7 @@ interface Props {
 
 /** 코치마크(자동 스팟라이트) 대신 필요할 때만 눌러서 보는 설명 — 항상 같은 자리에 있어 다시 찾기 쉽다. */
 const HELP_TEXT =
-  '가진 돈(팔 때는 가진 수량)의 10%·25%·50%·최대를 누르면 수량이 알아서 채워져요. 직접 계산하지 않아도 돼요.'
+  '가진 돈(팔 때는 가진 수량)의 10%·25%·50%·75%·최대를 누르면 수량이 알아서 채워져요. 직접 계산하지 않아도 돼요.'
 
 export function QuantityPresets({
   side,

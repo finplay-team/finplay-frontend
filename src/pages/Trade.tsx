@@ -290,6 +290,8 @@ export function Trade() {
 
   const [side, setSide] = useState<OrderSide>('BUY')
   const [quantity, setQuantity] = useState('')
+  /** 코인 시장가 매수는 수량이 아니라 금액으로 산다(실제 빗썸도 그렇다) — 이 입력을 quantity 로 환산해 쓴다. */
+  const [amountInput, setAmountInput] = useState('')
   /** 지정가는 코인 전용이다 — 주식에 걸면 백엔드가 400 을 낸다. */
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET')
   const [limitPrice, setLimitPrice] = useState('')
@@ -338,6 +340,8 @@ export function Trade() {
   }, [])
 
   const isLimit = isCrypto && orderType === 'LIMIT'
+  /** 코인 시장가 매수만 금액 입력이다 — 매도는 보유 수량 기준이라 그대로 수량 입력을 쓴다. */
+  const isAmountMode = isCrypto && !isLimit && side === 'BUY'
 
   const watchlist = useWatchlist()
 
@@ -449,6 +453,7 @@ export function Trade() {
     setLimitResult(null)
     setOrderError(null)
     setQuantity('')
+    setAmountInput('')
     setLimitPrice('')
   }, [market, selectedId, side, orderType])
 
@@ -510,6 +515,27 @@ export function Trade() {
     }
     setQuantity(digits)
   }
+
+  /** 금액 입력은 원 단위 정수만 받는다. */
+  const handleAmountChange = (raw: string) => {
+    setAmountInput(raw.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, ''))
+  }
+
+  const amountNumber = amountInput === '' ? 0 : Number(amountInput)
+
+  /** 금액 입력을 실제 주문 수량으로 환산한다 — 서버 API는 quantity 만 받는다. */
+  useEffect(() => {
+    if (!isAmountMode) return
+    const qty = presetQuantity({
+      side: 'BUY',
+      isCrypto: true,
+      ratio: 1,
+      availableCash: amountNumber,
+      held,
+      unitPrice,
+    })
+    setQuantity(qty > 0 ? toQtyInput(qty) : '')
+  }, [isAmountMode, amountNumber, unitPrice, held])
 
   /**
    * 비율 버튼을 지금 누를 수 없는 이유. 주문 자체를 막는 disableReason 과 달리 "채울 수량을
@@ -1143,70 +1169,119 @@ export function Trade() {
 
                 <div>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                    <label htmlFor="order-quantity" className="text-sm font-medium text-ink">
-                      {isCrypto ? '수량 (소수점 가능)' : '수량 (주)'}
+                    <label
+                      htmlFor={isAmountMode ? 'order-amount' : 'order-quantity'}
+                      className="text-sm font-medium text-ink"
+                    >
+                      {isAmountMode ? '주문 금액' : isCrypto ? '수량 (소수점 가능)' : '수량 (주)'}
                     </label>
-                    {side === 'SELL' ? (
+                    {side === 'SELL' && (
                       // "전량"은 아래 비율 버튼 묶음이 대신한다 — 같은 버튼을 두 곳에 두지 않는다.
                       <span className="text-xs text-muted tabular">
                         보유 {formatQty(held)}
                         {isCrypto ? '' : '주'}
                       </span>
-                    ) : (
-                      // 주문가능 현금은 바로 위 "주문가능 현금" 박스와 중복이라 대신 최대 구매 가능 수량을 보여준다.
+                    )}
+                    {/* 금액 입력 모드에서는 바로 위 "주문가능 현금" 박스와 중복이라 최대 구매 가능 수량을 보여주지 않는다. */}
+                    {side === 'BUY' && !isAmountMode && (
                       <span className="text-xs text-muted tabular">
                         최대 구매 가능 {formatQty(maxBuyQty)}
                         {isCrypto ? '' : '주'}
                       </span>
                     )}
                   </div>
-                  <input
-                    id="order-quantity"
-                    // 형식을 직접 통제해야 하므로 number 대신 text + 시장별 필터를 쓴다.
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder={isCrypto ? '0.001' : '0'}
-                    value={quantity}
-                    onChange={(e) => handleQuantityChange(e.target.value)}
-                    className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15"
-                  />
-                  {/*
-                    비율 프리셋. 기준 가격은 주문금액 계산과 같은 unitPrice 를 쓴다 — 지정가일 때는
-                    현재가가 아니라 입력한 지정가다(서버가 예약하는 현금도 지정가 기준이다).
-                    수량은 handleQuantityChange 로 흘려 보내 기존 정수/소수 규칙을 그대로 태운다.
-                  */}
-                  <QuantityPresets
-                    side={side}
-                    isCrypto={isCrypto}
-                    availableCash={availableCash}
-                    held={held}
-                    unitPrice={unitPrice}
-                    disabledReason={presetDisabledReason}
-                    onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
-                  />
-                  {isCrypto && (
+                  {isAmountMode ? (
+                    <input
+                      id="order-amount"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder={
+                        selected && selected.minOrderAmount > 0
+                          ? `최소 금액 ${formatKRW(selected.minOrderAmount)}`
+                          : '100000'
+                      }
+                      value={amountInput}
+                      onChange={(e) => handleAmountChange(e.target.value)}
+                      className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15"
+                    />
+                  ) : (
+                    <input
+                      id="order-quantity"
+                      // 형식을 직접 통제해야 하므로 number 대신 text + 시장별 필터를 쓴다.
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder={isCrypto ? '0.001' : '0'}
+                      value={quantity}
+                      onChange={(e) => handleQuantityChange(e.target.value)}
+                      className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring placeholder:text-muted/60 focus:border-brand focus:ring-4 focus:ring-brand/15"
+                    />
+                  )}
+                  {isAmountMode ? (
+                    // 금액 버전 비율 프리셋 — 가진 돈 × 비율을 그대로 금액 입력에 채운다.
                     <div
                       role="group"
-                      aria-label="빠른 수량으로 더하기"
+                      aria-label="가진 돈의 비율로 금액 채우기"
                       className="mt-2 flex flex-wrap items-center gap-1.5"
                     >
-                      <span className="text-[11px] text-muted">빠른 수량</span>
-                      {['0.001', '0.01', '0.1', '1'].map((preset) => (
+                      <span className="text-[11px] text-muted">가진 돈의</span>
+                      {[0.1, 0.25, 0.5, 0.75, 1].map((ratio) => (
                         <button
-                          key={preset}
+                          key={ratio}
                           type="button"
-                          // 누를 때마다 현재 수량에 더한다 — 예: 0.001 을 두 번 누르면 0.002.
+                          disabled={availableCash === null || availableCash <= 0}
                           onClick={() => {
-                            const current = quantity === '' ? 0 : Number(quantity)
-                            handleQuantityChange(toQtyInput(current + Number(preset)))
+                            if (availableCash === null) return
+                            const amt = ratio >= 1 ? availableCash : availableCash * ratio
+                            handleAmountChange(String(Math.floor(amt)))
                           }}
-                          className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink"
+                          className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/[0.06] disabled:hover:text-muted"
                         >
-                          {preset}
+                          {ratio < 1 ? `${ratio * 100}%` : '최대'}
                         </button>
                       ))}
                     </div>
+                  ) : (
+                    <>
+                      {/*
+                        비율 프리셋. 기준 가격은 주문금액 계산과 같은 unitPrice 를 쓴다 — 지정가일 때는
+                        현재가가 아니라 입력한 지정가다(서버가 예약하는 현금도 지정가 기준이다).
+                        수량은 handleQuantityChange 로 흘려 보내 기존 정수/소수 규칙을 그대로 태운다.
+                      */}
+                      <QuantityPresets
+                        side={side}
+                        isCrypto={isCrypto}
+                        availableCash={availableCash}
+                        held={held}
+                        unitPrice={unitPrice}
+                        disabledReason={presetDisabledReason}
+                        onPick={(qty) => handleQuantityChange(toQtyInput(qty))}
+                      />
+                      {isCrypto && (
+                        <div
+                          role="group"
+                          aria-label="빠른 수량으로 더하기"
+                          className="mt-2 flex flex-wrap items-center gap-1.5"
+                        >
+                          <span className="text-[11px] text-muted">빠른 수량</span>
+                          {['0.001', '0.01', '0.1', '1'].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              // 누를 때마다 현재 수량에 더한다 — 예: 0.001 을 두 번 누르면 0.002.
+                              onClick={() => {
+                                const current = quantity === '' ? 0 : Number(quantity)
+                                handleQuantityChange(toQtyInput(current + Number(preset)))
+                              }}
+                              className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink"
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -1256,14 +1331,25 @@ export function Trade() {
                 <div className="space-y-1.5 rounded-2xl bg-elevated px-4 py-3 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-muted">
-                      {isLimit ? '예약 금액 (지정가 기준)' : '예상 주문금액 (추정)'}
+                      {isAmountMode
+                        ? '예상 매수'
+                        : isLimit
+                          ? '예약 금액 (지정가 기준)'
+                          : '예상 주문금액 (추정)'}
                     </span>
                     <span className="font-medium text-ink tabular">
-                      {estimatedAmount !== null ? formatKRW(estimatedAmount) : '—'}
+                      {isAmountMode
+                        ? quantityNumber > 0
+                          ? `${formatQty(quantityNumber)} ${selected?.symbol ?? ''}`
+                          : '—'
+                        : estimatedAmount !== null
+                          ? formatKRW(estimatedAmount)
+                          : '—'}
                     </span>
                   </div>
-                  {/* 최소 주문금액은 코인 전용 — 주식은 1주 단위라 최소 금액이 곧 현재가라 보여줘도 의미가 없다(2026-08-19 피드백). */}
-                  {isCrypto && selected && selected.minOrderAmount > 0 && (
+                  {/* 최소 주문금액은 코인 전용 — 주식은 1주 단위라 최소 금액이 곧 현재가라 보여줘도 의미가 없다(2026-08-19 피드백).
+                      금액 입력 모드에서는 입력창 placeholder("최소 금액 5,000원")가 이미 알려주므로 중복 표시하지 않는다. */}
+                  {!isAmountMode && isCrypto && selected && selected.minOrderAmount > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-muted">최소 주문금액</span>
                       <span className="text-muted tabular">
@@ -1271,10 +1357,12 @@ export function Trade() {
                       </span>
                     </div>
                   )}
-                  <p className="pt-1 text-xs leading-relaxed text-muted">
-                    {isLimit
-                      ? '지정가 × 수량으로 계산한 예약 금액입니다. 접수하면 이 금액이 예약되고, 체결가는 지정가로 고정됩니다.'
-                      : '현재가 × 수량으로 계산한 추정치예요.'}
+                  <p className="whitespace-pre-line pt-1 text-xs leading-relaxed text-muted">
+                    {isAmountMode
+                      ? '입력한 금액을 현재가로 나눠 계산한 예상 수량이에요.\n실제 체결 수량은 체결 시점 가격에 따라 조금 다를 수 있습니다.'
+                      : isLimit
+                        ? '지정가 × 수량으로 계산한 예약 금액입니다. 접수하면 이 금액이 예약되고, 체결가는 지정가로 고정됩니다.'
+                        : '현재가 × 수량으로 계산한 추정치예요.'}
                   </p>
                 </div>
 
