@@ -1429,9 +1429,9 @@ export function Trade() {
                 >
                   {submitting
                     ? '주문 처리 중'
-                    : isLimit
-                      ? `지정가 ${sideLabels[side]} 접수`
-                      : `${sideLabels[side]} 주문`}
+                    : isCrypto && selected
+                      ? `${selected.symbol} ${sideLabels[side]}`
+                      : sideLabels[side]}
                 </Button>
               </form>
 

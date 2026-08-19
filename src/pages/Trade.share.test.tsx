@@ -139,7 +139,7 @@ describe('Trade 매도 체결 결과 — 수익 인증 카드로 공유하기', 
     // 매도로 전환하고 보유 수량 전량(최대 버튼)을 채운 뒤 주문한다.
     fireEvent.click(await screen.findByRole('button', { name: '매도' }))
     fireEvent.click(await screen.findByRole('button', { name: '최대' }))
-    fireEvent.click(screen.getByRole('button', { name: '매도 주문' }))
+    fireEvent.click(screen.getByRole('button', { name: 'BTC 매도' }))
 
     await waitFor(() => expect(placeOrder).toHaveBeenCalledTimes(1))
     const shareButton = await screen.findByRole('button', { name: '수익 인증 카드로 공유하기' })
