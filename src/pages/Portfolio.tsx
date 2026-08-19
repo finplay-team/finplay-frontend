@@ -193,22 +193,34 @@ export function Portfolio() {
 
       <div className="relative mx-auto max-w-5xl">
         {/* 1. 헤더 */}
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <Eyebrow>포트폴리오</Eyebrow>
-            <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
-              {isCrypto ? '내 코인 계좌' : '내 주식 계좌'}
-            </h1>
-            <MarketTabs market={market} onChange={setMarket} className="mt-5" />
-            <p className="mt-3 text-sm text-muted">{marketLine}</p>
+        <header>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-4">
+            <div aria-hidden />
+            <div className="text-center">
+              <Eyebrow>포트폴리오</Eyebrow>
+              <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
+                {isCrypto ? '내 코인 계좌' : '내 주식 계좌'}
+              </h1>
+              <MarketTabs market={market} onChange={setMarket} className="mt-5" />
+            </div>
+            <div aria-hidden />
           </div>
-          <Button variant="ghost" onClick={() => setRefreshNonce((n) => n + 1)}>
-            새로고침
-          </Button>
+          <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+            <div aria-hidden />
+            <p className="text-center text-sm text-muted">{marketLine}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRefreshNonce((n) => n + 1)}
+              className="justify-self-end"
+            >
+              새로고침
+            </Button>
+          </div>
         </header>
 
         {/* 2. 계좌 요약 */}
-        <Card className="mt-8" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-6 md:p-8">
+        <Card className="mt-5" accent={isCrypto ? 'coin' : 'brand'} innerClassName="p-6 md:p-8">
           <h2 className="text-sm font-semibold text-ink">
             계좌 요약 · 주식과 코인 계좌는 완전히 분리됩니다
           </h2>
