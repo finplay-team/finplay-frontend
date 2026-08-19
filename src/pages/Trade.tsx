@@ -672,7 +672,7 @@ export function Trade() {
           계속 어색하다는 피드백을 받고 원래 자리(차트 컬럼 맨 위)로 되돌아가 있다 — 헤더 정렬과는
           이제 무관하다.
         */}
-        <header className="shrink-0 text-center">
+        <header className="shrink-0 pb-3 pt-3 text-center">
           {/*
             "모의투자" 라벨은 최종적으로 뺀다 — 붙였다 뗐다 하다가 없는 쪽으로 확정됐다
             (2026-08-19 피드백). 다시 붙이지 않는다.
