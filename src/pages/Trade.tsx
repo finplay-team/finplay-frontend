@@ -678,7 +678,10 @@ export function Trade() {
         */}
         <div className="flex flex-wrap items-start justify-between gap-6">
         <header className="shrink-0">
-          {/* 모의투자 배지·제목 텍스트를 뺐다 — 탭·상태 배지만으로 화면 성격이 충분히 드러난다(2026-08-19 피드백). */}
+          {/*
+            "모의투자" 라벨은 최종적으로 뺀다 — 붙였다 뗐다 하다가 없는 쪽으로 확정됐다
+            (2026-08-19 피드백). 다시 붙이지 않는다.
+          */}
           <MarketTabs market={market} onChange={setMarket} size="lg" />
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -881,7 +884,7 @@ export function Trade() {
               0으로 사라지는 예전 버그는 재발하지 않는다 — 그냥 작아질 뿐이다.
             */}
             <Card className="min-h-0 flex-1" innerClassName="flex h-full min-h-0 flex-col p-5">
-              <div className="shrink-0 flex flex-wrap items-end justify-between gap-4">
+              <div className="shrink-0 flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h2 className="font-display text-lg font-semibold text-ink">
                     {selected ? selected.name : '종목을 선택해 주세요'}
@@ -894,16 +897,19 @@ export function Trade() {
                 </div>
                 {selected && (
                   <div className="text-right">
-                    {/* 등락 텍스트를 종목명 옆이 아니라 현재가 바로 위로 옮겼다(2026-08-19 피드백) — 가격과 한 묶음으로 읽힌다. */}
+                    {/*
+                      가격을 위로, 등락 텍스트를 아래로 — 정렬도 items-start 로 바꿔서 가격이
+                      "삼성전자" 종목명과 같은 줄에 나란히 오게 했다(2026-08-19 피드백).
+                    */}
+                    <p className="text-base font-semibold text-ink tabular md:text-lg">
+                      {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
+                    </p>
                     {changePercent !== null && changeAmount !== null && (
-                      <p className={`text-xs tabular ${pnlTone(changePercent)}`}>
+                      <p className={`mt-1 text-xs tabular ${pnlTone(changePercent)}`}>
                         {isCrypto ? '차트 시작 대비' : '장 시작 대비'} {signedKRW(changeAmount)} (
                         {formatPercent(changePercent)})
                       </p>
                     )}
-                    <p className="text-base font-semibold text-ink tabular md:text-lg">
-                      {currentPrice !== null ? formatPrice(currentPrice) : '시세 없음'}
-                    </p>
                   </div>
                 )}
               </div>
