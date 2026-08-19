@@ -88,7 +88,7 @@ const REFLECTION_CHIPS = [
 ] as const
 
 /**
- * 게임식 스포트라이트 안내. 화면이 3초마다 갱신되고 매도 제한 시간도 흐르므로 한 단계를 한 호흡에
+ * 게임식 스포트라이트 안내. 화면이 3초마다 갱신되므로 한 단계를 한 호흡에
  * 읽을 수 있게 짧게 쓴다. target 값은 아래 JSX의 data-tour 속성과 1:1로 대응한다.
  *
  * SpotlightTour는 최초 마운트에서만 유예 없이 즉시 앞으로 훑는다 — 1단계(instrument)가 종목 목록
@@ -128,10 +128,15 @@ const TOUR_PENDING: SpotlightStep = {
   title: '예약해 둔 주문은 여기입니다',
   body: '정한 값이 되면 체결됩니다. 값을 고치거나 취소할 수 있어요.',
 }
+/**
+ * 본문은 마감을 약속하지 않는다. 코인 대본에는 매도 마감이 없고(saleDeadlineAt=null),
+ * 안내가 뜨는 시점은 매수 전이라 마감이 있는지조차 아직 모른다. 마감이 실제로 있는 경우에는
+ * SaleCountdown 이 따로 말해 준다.
+ */
 const TOUR_SELL: SpotlightStep = {
   target: 'sell',
   title: '판매할 때는 이 버튼입니다(매도)',
-  body: '조금 지켜본 뒤에 눌립니다. 정해진 시간 안에 파는 연습이에요.',
+  body: '조금 지켜본 뒤에 눌립니다. 언제 팔지 직접 정해 보는 연습이에요.',
 }
 const TOUR_REFLECTION: SpotlightStep = {
   target: 'reflection',

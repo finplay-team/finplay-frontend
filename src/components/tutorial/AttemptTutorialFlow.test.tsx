@@ -717,6 +717,27 @@ describe('AttemptTutorialFlow', () => {
     vi.useRealTimers()
   })
 
+  it('마감이 없는 대본(saleDeadlineAt=null)에서는 카운트다운도 재촉도 그리지 않는다', async () => {
+    // 코인 튜토리얼은 대본이 시계를 정하므로 벽시계 마감이 없다. 시장이 아니라 saleDeadlineAt 로만
+    // 판단해야 한다 — 주식은 아직 옛 방식이라 마감 값이 그대로 온다.
+    const currentEvidence = evidence({
+      buyTradeId: 31,
+      holdingId: 41,
+      observationId: 51,
+      buyQuantity: 2,
+      remainingQuantity: 2,
+      saleDeadlineAt: null,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence, 'IN_PROGRESS', 'AWAITING_SALE'))
+    await flushPromises()
+
+    expect(screen.queryByText(/안에 파는 연습입니다/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/이제 파는 게 좋습니다/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/시간이 끝나면 이번 연습은 여기서 멈춥니다/)).not.toBeInTheDocument()
+    // 만료 화면에 도달하지 않으므로 판매 버튼은 그대로 살아 있어야 한다.
+    expect(screen.getByRole('button', { name: /판매하기/ })).toBeInTheDocument()
+  })
+
   it('매도 전에는 지금 팔면 얼마인지를 산 값과 현재가로 계산해 보여준다', async () => {
     const currentEvidence = evidence({
       buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 1, remainingQuantity: 1,
