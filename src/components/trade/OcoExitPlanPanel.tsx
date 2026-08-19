@@ -213,11 +213,13 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
     <div className="rounded-2xl border border-line p-5">
       <div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-ink">손절·익절 자동 예약 (OCO)</span>
+          <span className="text-sm font-medium text-ink">손절·익절 자동 예약</span>
         </div>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
-          둘 중 하나에 가격이 닿으면 자동으로 시장가로 팔리고, 나머지 하나는 취소됩니다. 보유 종목당
-          예약은 1건만 걸 수 있습니다.
+          {/* 새 예약을 거는 중(!plan)이고 비율 모드일 때만 "비율"로 부른다 — 이미 걸린 예약은 항상
+              구체적인 가격으로 보여주므로 "가"로 고정한다(2026-08-19 피드백, B안). */}
+          {!plan && priceMode === 'PERCENT' ? '손절 비율·익절 비율' : '손절가·익절가'} 중 먼저 닿는
+          쪽으로 자동 매도되고, 나머지 하나는 자동 취소돼요. 종목당 예약은 1개까지예요.
         </p>
 
         {listError && <p className="mt-3 text-sm text-loss">{listError}</p>}
@@ -428,7 +430,7 @@ export function OcoExitPlanPanel({ holding, refreshNonce, onChanged }: Props) {
               disabled={!holding || available <= 0 || submitting || disableReason !== null}
               onClick={() => void handleSubmit()}
             >
-              {submitting ? '예약 처리 중' : 'OCO 예약 걸기'}
+              {submitting ? '예약 처리 중' : '예약 걸기'}
             </Button>
             {disableReason && !submitting && (
               <p className="text-[11px] leading-relaxed text-muted">{disableReason}</p>
