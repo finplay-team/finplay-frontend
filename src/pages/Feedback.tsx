@@ -3,13 +3,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Eyebrow } from '../components/ui/Eyebrow'
+import { MarketTabs } from '../components/ui/MarketTabs'
 import { PostSellFeedback } from '../components/feedback/PostSellFeedback'
 import { useInstruments } from '../hooks/useInstruments'
 import { formatDateTime } from '../lib/datetime'
 import { toUserMessage } from '../lib/errorMessages'
 import { formatKRW, pnlTone } from '../lib/format'
 import { getTrades } from '../services/tradeService'
-import type { Trade } from '../services/types'
+import type { Market, Trade } from '../services/types'
 
 const PAGE_SIZE = 20
 
@@ -27,24 +28,39 @@ export function Feedback() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
+  // 코인이 우선 시장이라 기본 탭도 코인이다(News·Trade 와 같은 기준).
+  const [market, setMarket] = useState<Market>('CRYPTO')
 
   /**
-   * 매도 직후 피드백은 2차에서 **주식 전용**이다(코인 체결은 400).
-   * 그래서 시장 탭을 두지 않고 STOCK 만 조회한다 — 고를 수 없는 것을 고르게 하지 않는다.
+   * **코인 매도도 대상이다.** 그전까지 이 화면은 `market: 'STOCK'` 을 고정으로 넘겼고 근거는
+   * "매도 직후 피드백은 2차에서 주식 전용(코인 체결은 400)"이었는데, 백엔드 이슈 #275 로 코인
+   * 체결도 400 이 아니라 **200** 이 된 뒤로 그 전제가 깨졌다. 서버는 코인 복기를 서술까지 만들어
+   * 두는데 이 화면이 조회조차 하지 않아 사용자가 볼 방법이 없었다.
+   *
+   * 그래서 다른 화면(뉴스·모의투자)과 같은 `MarketTabs` 로 시장을 고르게 한다. 기본값도 그 둘과
+   * 같은 코인이다 — 코인이 24시간이라 재생세션·장 시간과 무관하게 항상 볼 것이 있다.
    */
-  const load = useCallback(async (cursor?: string) => {
-    try {
-      const page = await getTrades({ market: 'STOCK', limit: PAGE_SIZE, cursor })
-      setTrades((prev) => (cursor ? [...(prev ?? []), ...page.content] : page.content))
-      setNextCursor(page.nextCursor)
-      setHasNext(page.hasNext)
-      setError(null)
-    } catch (e) {
-      setError(toUserMessage(e))
-    }
-  }, [])
+  const load = useCallback(
+    async (cursor?: string) => {
+      try {
+        const page = await getTrades({ market, limit: PAGE_SIZE, cursor })
+        setTrades((prev) => (cursor ? [...(prev ?? []), ...page.content] : page.content))
+        setNextCursor(page.nextCursor)
+        setHasNext(page.hasNext)
+        setError(null)
+      } catch (e) {
+        setError(toUserMessage(e))
+      }
+    },
+    [market],
+  )
 
+  // 시장을 바꾸면 목록·펼침·커서를 모두 초기화한다 — 남겨 두면 다른 시장의 체결이 펼쳐진 채로 남는다.
   useEffect(() => {
+    setTrades(null)
+    setSelected(null)
+    setNextCursor(null)
+    setHasNext(false)
     void load()
   }, [load])
 
@@ -65,11 +81,19 @@ export function Feedback() {
             투자일기와는 별개입니다. 언제 사서 언제 팔았는지·얼마를 벌거나 잃었는지 같은 원장 수치와,
             보유하는 동안 가격이 움직인 이유를 묶어 서버가 만든 복기입니다. 직접 적을 것은 없습니다.
           </p>
-          {/* 왜 매도만 있는지, 왜 주식만인지 미리 밝힌다 — 없는 것을 찾게 만들지 않는다. */}
+          {/*
+            왜 매도만 있는지, 왜 일부 항목이 바로 안 채워지는지 미리 밝힌다 — 없는 것을 찾게 만들지 않는다.
+            게이트 시각이 시장마다 다르다: 주식은 그 거래일 장 마감(15:30), 코인은 장이 없어 KST 자정이다.
+          */}
           <p className="mt-2 text-xs leading-relaxed text-muted">
-            매도 체결에만 생기며, 지금은 주식만 지원합니다. 매도 후 흐름과 반사실 비교는 그 체결이
-            일어난 거래일의 장 마감(15:30)이 지나야 열립니다.
+            매도 체결에만 생깁니다. 매도 후 흐름과 반사실 비교는{' '}
+            {market === 'STOCK'
+              ? '그 체결이 일어난 거래일의 장 마감(15:30)'
+              : '그 체결이 일어난 날의 자정'}
+            이 지나야 열립니다.
           </p>
+
+          <MarketTabs market={market} onChange={setMarket} className="mt-5" />
         </header>
 
         {error && <p className="mt-6 text-sm text-loss">{error}</p>}
@@ -87,7 +111,8 @@ export function Feedback() {
           {trades !== null && sells.length === 0 && (
             <Card className="mt-4" innerClassName="p-8 text-center">
               <p className="text-sm text-muted">
-                아직 주식 매도 체결이 없습니다. 주식을 매도하면 여기에서 복기를 볼 수 있습니다.
+                아직 {market === 'STOCK' ? '주식' : '코인'} 매도 체결이 없습니다.{' '}
+                {market === 'STOCK' ? '주식을' : '코인을'} 매도하면 여기에서 복기를 볼 수 있습니다.
               </p>
             </Card>
           )}
@@ -112,7 +137,9 @@ export function Feedback() {
                         </span>
                         <span className="mt-0.5 block text-xs text-muted tabular">
                           {formatDateTime(t.executedAt)} · {formatKRW(t.price)} ·{' '}
-                          {t.quantity.toLocaleString('ko-KR', { maximumFractionDigits: 8 })}주
+                          {t.quantity.toLocaleString('ko-KR', { maximumFractionDigits: 8 })}
+                          {/* 코인은 소수 수량이라 '주'가 붙으면 어색하다 — 시장별로 단위를 가른다. */}
+                          {market === 'STOCK' ? '주' : '개'}
                         </span>
                       </span>
                       <span className="flex flex-none items-baseline gap-3">

@@ -455,12 +455,13 @@ export function Portfolio() {
                           <td colSpan={9} className="bg-canvas/40 px-4 py-5">
                             <div className="space-y-4">
                               {/*
-                                매도 직후 피드백은 2차에서 주식 전용이라 코인 체결에는 부르지 않는다
-                                (부르면 400 이 온다). 매수 체결도 대상이 아니다.
+                                매도 체결이면 코인·주식 모두 부른다. 그전까지 `!isCrypto` 로 코인을
+                                빼고 있었고 근거는 "코인 체결은 400 이 온다"였는데, 백엔드 이슈 #275 로
+                                코인 체결도 200 이 된 뒤로 그 전제가 깨졌다 — 서버가 서술까지 만들어
+                                둔 복기를 화면이 부르지 않아 사용자가 볼 방법이 없었다.
+                                매수 체결은 여전히 대상이 아니다(매도 직후 피드백이므로).
                               */}
-                              {trade.side === 'SELL' && !isCrypto && (
-                                <PostSellFeedback tradeId={trade.tradeId} />
-                              )}
+                              {trade.side === 'SELL' && <PostSellFeedback tradeId={trade.tradeId} />}
 
                               {/*
                                 수익 인증 카드 — 매도 체결이면 코인·주식 모두 대상이다. 매수만 하고
