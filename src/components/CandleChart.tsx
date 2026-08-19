@@ -39,6 +39,13 @@ interface CandleChartProps {
   describedById?: string
   /** 툴팁 라벨을 투자 용어 대신 초보자용 문구로 바꾼다. 기본 false. */
   beginnerLabels?: boolean
+  /**
+   * 팬(드래그·트랙패드 좌우 스와이프)이 지금 보유한 봉 중 가장 오래된 것에 닿으면 한 번 호출된다 —
+   * 호출부가 여기서 과거 봉을 더 불러와 candles 앞에 이어 붙이면, 사용자는 계속 왼쪽으로 스크롤하며
+   * 과거를 볼 수 있다(2026-08-19 피드백: "왼쪽으로 넘기면 과거가 계속 보여야 하는데 한 지점에서 멈춘다").
+   * candles.length 가 늘어나기 전까지는 같은 경계에서 다시 호출하지 않는다.
+   */
+  onReachOldest?: () => void
 }
 
 /** right 는 가격축, bottom 은 시간축 + 거래량 영역을 담는다. */
@@ -152,6 +159,7 @@ export function CandleChart({
   showVolume = true,
   describedById,
   beginnerLabels = false,
+  onReachOldest,
 }: CandleChartProps) {
   const {
     ref,
@@ -184,6 +192,14 @@ export function CandleChart({
    * render 도중 ref를 직접 갱신한다 — 이 값 때문에 다시 그릴 필요는 없어 state로 두지 않는다.
    */
   const zoomRangeRef = useRef({ visibleBars: 0, zoomCap: 0, maxOffset: 0, barW: 0, offset: 0 })
+  /** 네이티브 리스너·핸들러가 항상 최신 콜백을 읽게 하는 창구 — props 함수가 매 렌더 새로 와도 리스너를 다시 붙이지 않는다. */
+  const onReachOldestRef = useRef(onReachOldest)
+  onReachOldestRef.current = onReachOldest
+  /** 같은 경계에서 onReachOldest 를 반복 호출하지 않게 막는다 — candles 가 늘면(과거 로드·새 폴링) 다시 열린다. */
+  const oldestEdgeFiredRef = useRef(false)
+  useEffect(() => {
+    oldestEdgeFiredRef.current = false
+  }, [candles.length])
 
   // 봉 주기(분/일/주/월)가 바뀌면 이전 확대·팬 상태가 새 주기에서는 의미가 없다 — 기본값으로 되돌린다.
   useEffect(() => {
@@ -243,7 +259,12 @@ export function CandleChart({
         if (currentBarW <= 0) return
         const deltaBars = Math.round(e.deltaX / currentBarW)
         if (deltaBars === 0) return
-        setOffset(Math.min(currentMaxOffset, Math.max(0, currentOffset - deltaBars)))
+        const desired = currentOffset - deltaBars
+        if (desired >= currentMaxOffset && currentMaxOffset > 0 && !oldestEdgeFiredRef.current) {
+          oldestEdgeFiredRef.current = true
+          onReachOldestRef.current?.()
+        }
+        setOffset(Math.min(currentMaxOffset, Math.max(0, desired)))
         return
       }
       const { visibleBars, zoomCap } = zoomRangeRef.current
@@ -448,9 +469,13 @@ export function CandleChart({
     if (dragRef.current) {
       const deltaPxX = e.clientX - dragRef.current.startX
       const deltaBars = Math.round(((deltaPxX / rect.width) * width) / barW)
-      setOffset(
-        Math.min(zoomRangeRef.current.maxOffset, Math.max(0, dragRef.current.startOffset + deltaBars)),
-      )
+      const desiredOffset = dragRef.current.startOffset + deltaBars
+      const { maxOffset: currentMaxOffset } = zoomRangeRef.current
+      if (desiredOffset >= currentMaxOffset && currentMaxOffset > 0 && !oldestEdgeFiredRef.current) {
+        oldestEdgeFiredRef.current = true
+        onReachOldestRef.current?.()
+      }
+      setOffset(Math.min(currentMaxOffset, Math.max(0, desiredOffset)))
       // 화면 세로 픽셀 → 원 단위. 드래그 시작 시점의 가격 스팬·plotH를 기준으로 고정해
       // 드래그 도중 실시간 가격 갱신으로 스팬이 흔들려도 손 움직임과 반응이 어긋나지 않게 한다.
       const deltaPxY = e.clientY - dragRef.current.startY
