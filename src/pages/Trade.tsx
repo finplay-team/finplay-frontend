@@ -127,15 +127,6 @@ function Pill({
   )
 }
 
-function Stat({ label, value, tone = 'text-ink' }: { label: string; value: string; tone?: string }) {
-  return (
-    <div>
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className={`mt-1 text-base font-semibold tabular ${tone}`}>{value}</dd>
-    </div>
-  )
-}
-
 export function Trade() {
   const navigate = useNavigate()
   // 코인이 우선 시장이라 기본 탭도 코인으로 연다(탭 순서도 MarketTabs.tsx에서 코인이 먼저다).
@@ -673,10 +664,10 @@ export function Trade() {
         {/*
           1. 헤더 + 시장 탭 + 시세 상태. 가운데 정렬을 한 번 시도했다가 다시 좌측 정렬로
           되돌렸다(2026-08-19 피드백) — 아래 3컬럼 그리드가 좌측 정렬이라 그쪽과 맞춘다.
-          좌측 정렬이라 헤더 오른쪽이 비어 보인다는 피드백을 받고, 그 자리에 계좌 요약 스트립을
-          옮겨 왔다(원래는 차트 컬럼 맨 위에 있었다) — 채우면서 동시에 차트가 그만큼 위로 당겨진다.
+          계좌 요약 스트립을 헤더 오른쪽 빈 자리로 옮겨봤다가(테두리 카드 버전, 가운데 정렬
+          버전, 테두리 없는 버전까지) 계속 어색하다는 피드백을 받고 원래 자리(차트 컬럼 맨 위)로
+          되돌렸다(2026-08-19) — 헤더 오른쪽 여백은 그냥 여백으로 둔다.
         */}
-        <div className="flex flex-wrap items-start justify-between gap-6">
         <header className="shrink-0">
           {/*
             "모의투자" 라벨은 최종적으로 뺀다 — 붙였다 뗐다 하다가 없는 쪽으로 확정됐다
@@ -753,40 +744,6 @@ export function Trade() {
             <p className="mt-2 text-sm text-loss">{toUserMessage(instrumentsError)}</p>
           )}
         </header>
-
-        {/* 2. 계좌 요약 스트립 — 헤더 오른쪽 빈 자리를 채운다. */}
-        <div className="w-full max-w-md shrink-0">
-          <Card accent={accent} innerClassName="p-4">
-            {accountError ? (
-              <p className="text-sm text-loss">{accountError}</p>
-            ) : (
-              <>
-                <dl className="grid grid-cols-2 gap-4 md:grid-cols-3">
-                  <Stat label="총 평가자산" value={account ? formatKRW(account.totalValue) : '—'} />
-                  {/* 서버는 availableCash 를 주지 않는다 — 예약분을 뺀 값이 실제 주문 가능액이다. */}
-                  <Stat
-                    label="주문가능 현금"
-                    value={availableCash !== null ? formatKRW(availableCash) : '—'}
-                  />
-                  <Stat
-                    label="평가손익"
-                    value={account ? signedKRW(account.unrealizedPnl) : '—'}
-                    tone={account ? pnlTone(account.unrealizedPnl) : 'text-ink'}
-                  />
-                </dl>
-                {/* 예약이 있을 때만 알린다 — 총 현금과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
-                {account !== null && account.reservedCash > 0 && (
-                  <p className="mt-4 text-xs leading-relaxed text-muted">
-                    현금 {formatKRW(account.cashBalance)} 중{' '}
-                    <span className="tabular text-coin">{formatKRW(account.reservedCash)}</span>이
-                    미체결 지정가 매수로 예약돼 있습니다. 주문을 취소하면 즉시 돌아옵니다.
-                  </p>
-                )}
-              </>
-            )}
-          </Card>
-        </div>
-        </div>
 
         {/*
           종목 목록(3) | 나머지(계좌 요약 2 · 차트 4 · 주문 패널 5~7) 2컬럼 그리드.
@@ -876,12 +833,12 @@ export function Trade() {
           <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
             <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
             {/*
-              4. 차트 — 계좌 요약 스트립을 헤더 옆으로 옮기면서 이 컬럼엔 차트 카드만 남았다
-              (2026-08-19 피드백). 목록·주문 박스와 같은 패턴(h-full min-h-0)으로 되돌렸다 — 이
-              박스만 창이 짧아지면 스크롤되던 걸, 다른 두 컬럼처럼 창 크기에 맞춰 그대로 줄어들게
-              해 달라는 피드백(2026-08-19 후속) 때문이다. 안에서 CandleChart 가 h-full(퍼센트)이 아닌
-              flex-1(그로우) 로 자기 몫을 채우도록 이미 고쳐 둬서, 이 박스가 아무리 작아져도 차트가
-              0으로 사라지는 예전 버그는 재발하지 않는다 — 그냥 작아질 뿐이다.
+              계좌 요약 스트립(총 평가자산·주문가능 현금·평가손익 3개)을 헤더 오른쪽으로 옮겨도
+              보고 여러 스타일로 바꿔봤지만 계속 어색하다는 피드백을 받았다. 다시 보니 이 화면은
+              "지금 매매하는" 화면이라 3개 다 필요한 게 아니라 주문가능 현금 하나만 의미가
+              있다는 판단으로, 계좌 요약 카드 자체를 여기서 없애고 주문가능 현금만 주문 탭
+              안으로 옮겼다(2026-08-19 피드백, 아래 rightPanelTab === 'order' 블록 참고). 총
+              평가자산·평가손익은 Portfolio 화면에 이미 있다.
             */}
             <Card className="min-h-0 flex-1" innerClassName="flex h-full min-h-0 flex-col p-5">
               <div className="shrink-0 flex flex-wrap items-start justify-between gap-4">
@@ -1050,17 +1007,43 @@ export function Trade() {
               <div className="p-5">
                 {rightPanelTab === 'order' && (
                   <>
-              <p className="whitespace-pre-line text-xs leading-relaxed text-muted">
+              {/*
+                계좌 요약 3개(총 평가자산·주문가능 현금·평가손익) 중 이 화면(지금 매매하는
+                화면)에 실제로 필요한 건 주문가능 현금뿐이라는 피드백으로, 헤더/차트 위에
+                떠 있던 계좌 요약 카드를 없애고 이것만 주문 탭 맨 위로 옮겼다(2026-08-19).
+              */}
+              <div className="rounded-2xl bg-elevated px-4 py-3">
+                <p className="text-xs text-muted">주문가능 현금</p>
+                {accountError ? (
+                  <p className="mt-1 text-sm text-loss">{accountError}</p>
+                ) : (
+                  <p className="mt-1 text-base font-semibold text-ink tabular">
+                    {availableCash !== null ? formatKRW(availableCash) : '—'}
+                  </p>
+                )}
+                {/* 예약이 있을 때만 알린다 — 현금 잔액과 주문가능액이 왜 다른지 설명해 줘야 한다. */}
+                {account !== null && account.reservedCash > 0 && (
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                    현금 {formatKRW(account.cashBalance)} 중{' '}
+                    <span className="tabular text-coin">{formatKRW(account.reservedCash)}</span>이
+                    미체결 지정가 매수로 예약돼 있습니다.
+                  </p>
+                )}
+              </div>
+
+              <p className="mt-4 whitespace-pre-line text-xs leading-relaxed text-muted">
                 {isLimit
                   ? '지정한 가격에 도달하면 자동으로 체결됩니다.\n그 전까지는 체결되지 않고, 주문한 만큼의 현금·수량만 미리 묶어둡니다.'
                   : isCrypto
                     ? '지금 보이는 가격 근처에서 즉시 체결됩니다.\n시세가 계속 바뀌어 주문 순간과 조금 다를 수 있습니다.'
-                    : '시장가 주문만 지원합니다. 주문하면 즉시 체결되고 수수료는 서버가 계산합니다.'}
+                    : '시장가 주문만 지원하며, 현재가에 즉시 체결됩니다.'}
               </p>
-              {/* 자동으로 한 번 뜬 설명을 나중에 다시 볼 수 있는 경로. 주식 탭에도 그대로 둔다. */}
-              <div className="mt-2">
-                <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
-              </div>
+              {/* 자동으로 한 번 뜬 설명을 나중에 다시 볼 수 있는 경로 — 시장가·지정가 구분은 코인 전용이라 주식 탭엔 안 둔다(2026-08-19 피드백). */}
+              {isCrypto && (
+                <div className="mt-2">
+                  <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
+                </div>
+              )}
 
               {/* 주문 유형 — 지정가는 코인 전용이라 주식 탭에서는 아예 보이지 않는다. */}
               {isCrypto && (
@@ -1223,7 +1206,8 @@ export function Trade() {
                       {estimatedAmount !== null ? formatKRW(estimatedAmount) : '—'}
                     </span>
                   </div>
-                  {selected && selected.minOrderAmount > 0 && (
+                  {/* 최소 주문금액은 코인 전용 — 주식은 1주 단위라 최소 금액이 곧 현재가라 보여줘도 의미가 없다(2026-08-19 피드백). */}
+                  {isCrypto && selected && selected.minOrderAmount > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-muted">최소 주문금액</span>
                       <span className="text-muted tabular">
@@ -1234,7 +1218,7 @@ export function Trade() {
                   <p className="pt-1 text-xs leading-relaxed text-muted">
                     {isLimit
                       ? '지정가 × 수량으로 계산한 예약 금액입니다. 접수하면 이 금액이 예약되고, 체결가는 지정가로 고정됩니다.'
-                      : '현재가 × 수량으로 계산한 추정치입니다. 실제 체결가와 수수료는 체결 시점에 서버가 확정합니다.'}
+                      : '현재가 × 수량으로 계산한 추정치예요.'}
                   </p>
                 </div>
 
