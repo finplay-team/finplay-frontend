@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { getTutorialRevision, subscribeTutorial } from '../lib/tutorialPulse'
+import { STOCK_TUTORIAL_ENTRY_OPEN, hasStartedPractice } from '../lib/tutorialMarkets'
 import { getPracticeProgress } from '../services/tutorialService'
 import type { InvestmentPracticeResponse } from '../services/tutorialTypes'
 
@@ -65,7 +66,15 @@ export function useTutorialProgress(): TutorialProgressState {
 
   const refresh = useCallback(() => setNonce((n) => n + 1), [])
 
-  const allCompleted = stock?.status === 'COMPLETED' && crypto?.status === 'COMPLETED'
+  /**
+   * 주식 튜토리얼 입구를 닫은 동안(lib/tutorialMarkets.ts), 시작한 적 없는 주식은 "끝내야 할 일"에서
+   * 뺀다. 그렇게 하지 않으면 코인을 끝낸 사용자가 들어갈 수도 없는 주식 때문에 내비게이션에서
+   * 영원히 "아직 안 끝냈어요"를 보게 된다. 이미 주식을 시작한 사용자는 탭이 그대로 보이므로
+   * 예전처럼 완료를 요구한다.
+   */
+  const stockCounts = STOCK_TUTORIAL_ENTRY_OPEN || hasStartedPractice(stock)
+  const allCompleted =
+    (!stockCounts || stock?.status === 'COMPLETED') && crypto?.status === 'COMPLETED'
 
   return { stock, crypto, error, loading, allCompleted, refresh }
 }

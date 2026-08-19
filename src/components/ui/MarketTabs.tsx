@@ -19,18 +19,22 @@ export function MarketTabs({
   className = '',
   /** Trade 화면은 제목 텍스트를 없애고 이 탭이 그 자리를 대신해 더 커야 한다(2026-08-19 피드백). 다른 화면은 기본(md) 그대로. */
   size = 'md',
+  /** 그릴 시장을 좁힐 때만 넘긴다. 튜토리얼은 주식 입구를 닫아 둔 동안 코인만 그린다(lib/tutorialMarkets.ts). */
+  markets,
 }: {
   market: Market
   onChange: (market: Market) => void
   className?: string
   size?: 'md' | 'lg'
+  markets?: Market[]
 }) {
   const buttonPad = size === 'lg' ? 'px-6 py-2.5 text-base' : 'px-5 py-2 text-sm'
+  const visibleItems = markets ? items.filter((item) => markets.includes(item.value)) : items
   return (
     <div
       className={`inline-flex items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08] ${className}`}
     >
-      {items.map((item) => {
+      {visibleItems.map((item) => {
         const active = item.value === market
         return (
           <button

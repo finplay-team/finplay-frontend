@@ -5,6 +5,7 @@ import { Eyebrow } from '../components/ui/Eyebrow'
 import { MarketTabs } from '../components/ui/MarketTabs'
 import { toUserMessage } from '../lib/errorMessages'
 import { formatManEok } from '../lib/format'
+import { visibleTutorialMarkets } from '../lib/tutorialMarkets'
 import { ensurePracticeAttempt, getPracticeProgress } from '../services/tutorialService'
 import type { InvestmentPracticeResponse, PracticeAttemptResponse } from '../services/tutorialTypes'
 import type { Market } from '../services/types'
@@ -42,8 +43,8 @@ const emptyAttempts: Record<Market, PracticeAttemptResponse | null> = { STOCK: n
 const emptyProgress: Record<Market, InvestmentPracticeResponse | null> = { STOCK: null, CRYPTO: null }
 
 export function Tutorial() {
-  // 기본은 주식이다 — 코인 경로에만 시장가/지정가 토글이 있어, 첫 화면에서 설명 없는 선택을 강요한다.
-  const [market, setMarket] = useState<Market>('STOCK')
+  // 기본은 코인이다 — 주식 튜토리얼 입구를 닫아 둔 동안은 코인만 열려 있다(lib/tutorialMarkets.ts).
+  const [market, setMarket] = useState<Market>('CRYPTO')
   const [attempts, setAttempts] = useState(emptyAttempts)
   const [progressByMarket, setProgressByMarket] = useState(emptyProgress)
   const [loadingMarket, setLoadingMarket] = useState<Market | null>(null)
@@ -94,6 +95,8 @@ export function Tutorial() {
 
   const attempt = attempts[market]
   const progress = progressByMarket[market]
+  const markets = visibleTutorialMarkets(market, progressByMarket.STOCK)
+  const showBothMarkets = markets.length > 1
   const selecting = attempt?.status === 'SELECTING_INSTRUMENT' && progress !== null
   /**
    * rewardAmount 는 완료 전에는 null 이라 금액을 미리 알 수 없다. 그래서 금액은 응답에 실제로 값이
@@ -117,8 +120,7 @@ export function Tutorial() {
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             가짜 돈으로 {market === 'CRYPTO' ? '코인' : '주식'}을 한 번 사고, 팔아 보는 연습입니다.
             실제 돈은 한 푼도 들지 않습니다. 산 값을 기준으로 “여기까지 떨어지면 판다”와 “여기까지
-            오르면 판다” 두 선이 자동으로 그려지니 직접 계산할 건 없습니다. 산 뒤에는 5분 안에 팔아야
-            하니 오래 붙잡고 있을 일도 없습니다.
+            오르면 판다” 두 선이 자동으로 그려지니 직접 계산할 건 없습니다.
           </p>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
             {rewardAmount === null
@@ -126,16 +128,19 @@ export function Tutorial() {
               : `한 시장을 처음 끝내면 연습용 투자금 ${formatManEok(rewardAmount)}원이 한 번 지급됩니다.`}
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <MarketTabs market={market} onChange={setMarket} />
+            {/* 주식 튜토리얼 입구를 닫은 동안에도 이미 주식을 진행 중인 사용자에겐 탭을 남긴다. */}
+            {showBothMarkets && <MarketTabs market={market} onChange={setMarket} markets={markets} />}
             {/* 칩 순서는 MarketTabs의 탭 순서(코인 → 주식)를 따른다. 서로 뒤집혀 있으면 같은 줄에서
                 좌우가 거울처럼 어긋나 어느 칩이 어느 탭인지 눈으로 짝지을 수 없다. */}
             <StatusPill label="코인" progress={progressByMarket.CRYPTO} />
-            <StatusPill label="주식" progress={progressByMarket.STOCK} />
+            {showBothMarkets && <StatusPill label="주식" progress={progressByMarket.STOCK} />}
           </div>
-          <p className="mt-2 text-xs leading-relaxed text-muted">
-            주식과 코인은 서로 다른 연습입니다. 하나를 끝내도 다른 하나는 그대로 남아 있으니 따로 한
-            번씩 해 보세요.
-          </p>
+          {showBothMarkets && (
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              주식과 코인은 서로 다른 연습입니다. 하나를 끝내도 다른 하나는 그대로 남아 있으니 따로
+              한 번씩 해 보세요.
+            </p>
+          )}
           {selecting && (
             <p className="mt-4 text-sm font-medium text-ink">아래에서 종목을 하나 고르는 것부터 시작하세요.</p>
           )}

@@ -1,6 +1,7 @@
 // 로그인·가입 직후 어디로 보낼지 정하는 유틸 — 튜토리얼을 아직 시작하지 않은 사용자만 /tutorial로 보낸다
 import { getPracticeProgress } from '../services/tutorialService'
 import type { InvestmentPracticeResponse } from '../services/tutorialTypes'
+import { hasStartedPractice } from './tutorialMarkets'
 
 /**
  * "이 시장을 실제로 시작했는가". 두 신호 중 하나면 시작한 것으로 본다 —
@@ -13,10 +14,13 @@ import type { InvestmentPracticeResponse } from '../services/tutorialTypes'
  * 떨어졌다 — 아무것도 배우지 않은 사람과 실습을 끝낸 사람이 같은 취급을 받았다.
  * 백엔드 #427 이후 "열기만 한 attempt" 가 오히려 더 확실하게 IN_PROGRESS 로 보이므로 기준을
  * attempt 의 존재가 아니라 종목 선택으로 옮긴다.
+ *
+ * 판정 자체는 lib/tutorialMarkets.ts 의 hasStartedPractice 에 있다 — 주식 입구를 가릴지
+ * 판단하는 곳과 같은 기준이어야 해서 한 군데만 둔다.
  */
 function hasStarted(result: PromiseSettledResult<InvestmentPracticeResponse>): boolean {
   if (result.status === 'rejected') return false // 조회 실패는 "시작 안 함"으로 본다(기존 동작)
-  return result.value.status === 'COMPLETED' || result.value.attempt?.instrumentId != null
+  return hasStartedPractice(result.value)
 }
 
 /**
