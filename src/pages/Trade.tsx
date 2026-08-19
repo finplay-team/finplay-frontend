@@ -16,7 +16,7 @@ import { formatDateTime, formatHhMm } from '../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../lib/errorMessages'
 import { formatKRW, formatPercent, formatPrice, pnlTone } from '../lib/format'
 import { sideLabels } from '../lib/labels'
-import { CRYPTO_QTY_DECIMALS } from '../lib/quantity'
+import { CRYPTO_QTY_DECIMALS, presetQuantity } from '../lib/quantity'
 import { getAccountSummary } from '../services/accountService'
 import { getHoldings } from '../services/holdingService'
 import { placeLimitOrder, placeOrder } from '../services/orderService'
@@ -461,6 +461,16 @@ export function Trade() {
 
   /** 서버가 availableCash 를 주지 않는다 — 예약분을 직접 빼야 실제 주문 가능 금액이다. */
   const availableCash = account ? account.cashBalance - account.reservedCash : null
+
+  /** 매수 탭 수량 입력 옆에 보여줄 최대 구매 가능 수량. */
+  const maxBuyQty = presetQuantity({
+    side: 'BUY',
+    isCrypto,
+    ratio: 1,
+    availableCash,
+    held,
+    unitPrice,
+  })
 
   /**
    * 지금 넣은 지정가가 이미 체결 조건을 만족하는가.
@@ -1123,8 +1133,10 @@ export function Trade() {
                         {isCrypto ? '' : '주'}
                       </span>
                     ) : (
+                      // 주문가능 현금은 차트 위 "주문가능 현금" 카드와 중복이라 대신 최대 구매 가능 수량을 보여준다.
                       <span className="text-xs text-muted tabular">
-                        주문가능 {availableCash !== null ? formatKRW(availableCash) : '—'}
+                        최대 구매 가능 {formatQty(maxBuyQty)}
+                        {isCrypto ? '' : '주'}
                       </span>
                     )}
                   </div>
