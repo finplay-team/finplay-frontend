@@ -212,6 +212,11 @@ export function Trade() {
   }, [market])
   // 차트 옆 세 번째 컬럼 — 주문 패널과 커뮤니티 미리보기를 쌓아 두지 않고 탭으로 전환한다.
   const [rightPanelTab, setRightPanelTab] = useState<'order' | 'community'>('order')
+  // 차트/변동 원인 탭과 같은 이유 — 커뮤니티 탭을 보던 중에 시장을 바꾸면 새 시장에서도 그
+  // 탭이 그대로 남아 주문 폼이 안 보이는 문제가 있었다(2026-08-19 피드백).
+  useEffect(() => {
+    setRightPanelTab('order')
+  }, [market])
   const {
     candles,
     loading: candlesLoading,
