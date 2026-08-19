@@ -1293,9 +1293,14 @@ export function Trade() {
                 </Button>
               </form>
 
-              {disableReason && (
-                <p className="mt-3 text-xs leading-relaxed text-muted">{disableReason}</p>
-              )}
+              {/* "수량을 입력해 주세요" 안내는 불필요한 잔소리라 뺐다 — 다른 차단 사유만 보여준다(2026-08-19 피드백). */}
+              {disableReason &&
+                disableReason !==
+                  (isCrypto
+                    ? '주문 수량을 입력해 주세요. (예: 0.001)'
+                    : '주문 수량을 1주 이상 입력해 주세요.') && (
+                  <p className="mt-3 text-xs leading-relaxed text-muted">{disableReason}</p>
+                )}
               {orderError && <p className="mt-3 text-sm text-loss">{orderError}</p>}
 
               {/* 지정가는 체결이 아니라 접수다 — 시장가 체결 카드와 문구를 분명히 구분한다. */}
