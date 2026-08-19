@@ -114,7 +114,15 @@ describe('Trade 매도 체결 결과 — 수익 인증 카드로 공유하기', 
       error: null,
       refresh: vi.fn(),
     })
-    vi.mocked(useCandles).mockReturnValue({ candles: [], loading: false, error: null, reload: vi.fn() })
+    vi.mocked(useCandles).mockReturnValue({
+      candles: [],
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+      loadOlder: vi.fn(),
+      loadingOlder: false,
+      hasMoreHistory: true,
+    })
     vi.mocked(useWatchlist).mockReturnValue({
       items: [],
       error: null,

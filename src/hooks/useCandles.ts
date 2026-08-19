@@ -4,7 +4,13 @@ import { ApiError } from '../lib/apiClient'
 import { getCandles } from '../services/instrumentService'
 import type { Candle, CandleInterval, Market } from '../services/types'
 
-const MAX_BARS = 400
+/**
+ * 실시간 폴링으로 쌓이는 봉 + 과거 스크롤로 불러온 봉을 함께 담는 상한. 1분봉 기준 20,000개면
+ * 약 14일치라 정상적인 세션에서는 사실상 안 걸린다 — 과거로 스크롤해서 불러온 봉이 다음 폴링에
+ * 바로 잘려나가는 걸 막으려고(2026-08-19 피드백) 예전의 400보다 훨씬 크게 잡았다. 객체 20,000개는
+ * 메모리상 가벼워 렌더 비용 문제는 없다(화면엔 CandleChart 가 그중 일부만 잘라 그린다).
+ */
+const MAX_BARS = 20000
 
 export interface UseCandlesResult {
   /** sourceTime 오름차순 */
@@ -13,6 +19,12 @@ export interface UseCandlesResult {
   loading: boolean
   error: ApiError | null
   reload: () => void
+  /** 지금 보유한 가장 이른 봉보다 더 과거를 불러온다(차트를 왼쪽 끝까지 팬했을 때 호출). */
+  loadOlder: () => void
+  /** loadOlder 요청이 진행 중인지 — 중복 호출을 막는 용도로도 쓴다. */
+  loadingOlder: boolean
+  /** false면 서버에 더 과거 봉이 없다는 뜻 — loadOlder 를 더 불러도 소용없다. */
+  hasMoreHistory: boolean
 }
 
 export function useCandles(params: {
@@ -31,8 +43,16 @@ export function useCandles(params: {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [reloadNonce, setReloadNonce] = useState(0)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [hasMoreHistory, setHasMoreHistory] = useState(true)
 
   const mapRef = useRef(new Map<string, Candle>())
+  const loadingOlderRef = useRef(false)
+  /** loadOlder 가 최신 candles 를 read-only 로 참조하기 위한 창구 — 매 폴링마다 콜백을 새로 만들지 않는다. */
+  const candlesRef = useRef<Candle[]>([])
+  useEffect(() => {
+    candlesRef.current = candles
+  }, [candles])
 
   const reload = useCallback(() => setReloadNonce((n) => n + 1), [])
 
@@ -41,6 +61,7 @@ export function useCandles(params: {
   useEffect(() => {
     mapRef.current = new Map()
     setCandles([])
+    setHasMoreHistory(true)
   }, [instrumentId, market, interval])
 
   useEffect(() => {
@@ -90,5 +111,37 @@ export function useCandles(params: {
     return () => controller.abort()
   }, [instrumentId, market, interval, minuteTick, pollMs, reloadNonce])
 
-  return { candles, loading, error, reload }
+  const loadOlder = useCallback(() => {
+    if (instrumentId === null || loadingOlderRef.current || !hasMoreHistory) return
+    const oldest = candlesRef.current[0]
+    if (!oldest) return
+
+    loadingOlderRef.current = true
+    setLoadingOlder(true)
+
+    void (async () => {
+      try {
+        // to 는 "그 시각까지의 최신 200개"라 이미 갖고 있는 oldest 자신이 그대로 다시 올 수 있다 —
+        // 엄격히 그보다 이른 것만 남긴다.
+        const fetched = await getCandles(instrumentId, { interval, to: oldest.sourceTime })
+        const older = fetched.filter((c) => c.sourceTime < oldest.sourceTime)
+        if (older.length === 0) {
+          setHasMoreHistory(false)
+          return
+        }
+        const m = mapRef.current
+        for (const c of older) m.set(c.sourceTime, c)
+        const sorted = [...m.values()].sort((a, b) => (a.sourceTime < b.sourceTime ? -1 : 1))
+        mapRef.current = new Map(sorted.map((c) => [c.sourceTime, c]))
+        setCandles(sorted)
+      } catch {
+        // 실패해도 화면을 막지 않는다 — hasMoreHistory 는 그대로 두어 사용자가 다시 스크롤하면 재시도된다.
+      } finally {
+        loadingOlderRef.current = false
+        setLoadingOlder(false)
+      }
+    })()
+  }, [instrumentId, interval, hasMoreHistory])
+
+  return { candles, loading, error, reload, loadOlder, loadingOlder, hasMoreHistory }
 }

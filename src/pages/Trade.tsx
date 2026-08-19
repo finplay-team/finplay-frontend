@@ -230,6 +230,7 @@ export function Trade() {
     candles,
     loading: candlesLoading,
     error: candlesError,
+    loadOlder: loadOlderCandles,
   } = useCandles({
     instrumentId: selectedId,
     market,
@@ -1085,6 +1086,7 @@ export function Trade() {
                   interval={interval}
                   emptyMessage={emptyChartMessage}
                   fillHeight
+                  onReachOldest={loadOlderCandles}
                 />
               </div>
               {candlesError && (
