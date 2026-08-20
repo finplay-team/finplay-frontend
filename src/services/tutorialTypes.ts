@@ -98,12 +98,35 @@ export interface PracticeEvidenceResponse {
 export type PracticeAttemptMode = 'ACTIVE' | 'REPLAY'
 export type PracticeAttemptStatus = 'SELECTING_INSTRUMENT' | 'IN_PROGRESS' | 'EXPIRED' | 'COMPLETED'
 
+/**
+ * 042(이슈 #477) 손절·익절 프리셋 3종. 표시 이름(조심스럽게·보통·느긋하게)은 서버가 주지 않는다 —
+ * 서버가 쓰지 않는 문구를 열거형에 두지 않기로 정했으므로 화면이 갖는다.
+ */
+export type PracticeExitPreset = 'CAUTIOUS' | 'BALANCED' | 'RELAXED'
+
+/**
+ * 고를 수 있는 프리셋 하나의 식별자와 비율. **비율은 퍼센트 수다**(3%는 `3`, `0.03`이 아니다) —
+ * `exit_plans.stop_loss_rate`와 단위를 맞춘 것이고, 100으로 다시 나누면 100배 틀린 값이 조용히 나온다.
+ * `stopLossRate`·`takeProfitRate` 모두 양수 크기이며 부호는 이름으로만 정해진다(손절은 −, 익절은 +).
+ */
+export interface PracticeExitPresetOption {
+  preset: PracticeExitPreset
+  stopLossRate: number
+  takeProfitRate: number
+}
+
 export interface PracticeRiskSnapshotResponse {
   entryPrice: Decimal
   stopLossPrice: Decimal
   takeProfitPrice: Decimal
   buyTradeId: number
   createdAt: LocalDateTimeString
+  /** 그 진입에 실제로 적용된 프리셋. 기능 도입 전 스냅샷은 서버가 기본 프리셋으로 해석해 내려보낸다. */
+  exitPreset: PracticeExitPreset
+  stopLossRate: number
+  takeProfitRate: number
+  /** 그 실행 세대의 몇 번째 진입인지(1부터). 손절 후 재매수하면 2다. */
+  entrySequence: number
 }
 
 export interface PracticeAttemptResponse {
@@ -117,6 +140,26 @@ export interface PracticeAttemptResponse {
   tutorialDate: string | null
   riskSnapshot: PracticeRiskSnapshotResponse | null
   completedAt: LocalDateTimeString | null
+  /**
+   * `PUT .../attempts/{market}`(진입)·`POST .../restart`(재시작) 응답만 그 트랜잭션의 실제 값을 채운다.
+   * 그 외 호출부(`PUT .../instrument`, `GET /api/education/practice`의 `attempt` 필드)는 계좌를 다시
+   * 조회하지 않아 세 필드 모두 `0`을 반환한다 — 화면은 이 값을 "지금 잔고"로 오해하면 안 된다.
+   */
+  tutorialCashBalance: number
+  tutorialAvailableCash: number
+  tutorialRealizedPnl: number
+  /**
+   * 현재 실행 세대의 선택값. **미선택이면 `null`이 아니라 `"BALANCED"`(기본 프리셋)로 온다** — 화면이
+   * null 분기를 갖지 않아도 되고, 보이는 값과 실제로 적용될 값이 항상 같다.
+   */
+  selectedExitPreset: PracticeExitPreset
+  /**
+   * **잠금 기준은 "최초 매수 여부"가 아니라 "지금 보유 중인가"다.** 매수 전과 포지션을 정리한 뒤(재진입
+   * 대기)에는 몇 번이든 바꿀 수 있고, 보유 중에만 막힌다.
+   */
+  exitPresetLocked: boolean
+  /** 고정 3개. 비율만 오고 표시 이름은 화면이 붙인다. */
+  availableExitPresets: PracticeExitPresetOption[]
 }
 
 /**
@@ -226,7 +269,6 @@ export interface PracticeStepResponse {
   evidence: PracticeEvidenceResponse
 }
 
-export type PracticeExitPreset = 'CAUTIOUS' | 'BALANCED' | 'RELAXED'
 export type PracticeSellCause = 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL'
 
 /**

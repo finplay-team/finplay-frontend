@@ -36,6 +36,12 @@ function attempt(market: 'STOCK' | 'CRYPTO'): PracticeAttemptResponse {
     tutorialDate: null,
     riskSnapshot: null,
     completedAt: null,
+    tutorialCashBalance: 0,
+    tutorialAvailableCash: 0,
+    tutorialRealizedPnl: 0,
+    selectedExitPreset: 'BALANCED',
+    exitPresetLocked: false,
+    availableExitPresets: [],
   }
 }
 
