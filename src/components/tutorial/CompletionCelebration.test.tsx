@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { PracticeEntryResponse } from '../../services/tutorialTypes'
 import type { Market } from '../../services/types'
 import { CompletionCelebration } from './CompletionCelebration'
 
@@ -9,6 +10,8 @@ interface Props {
   open: boolean
   market: Market
   rewardAmount: number | null
+  entries?: PracticeEntryResponse[]
+  celebrate?: boolean
   onClose: () => void
 }
 
@@ -160,5 +163,36 @@ describe('CompletionCelebration', () => {
 
     expect(screen.getByText('5,000,000원')).toBeInTheDocument()
     expect(requestFrame).not.toHaveBeenCalled()
+  })
+
+  it('진입 카드가 있으면 결과를 함께 펼치고, 다시 볼 때는 축하하지 않는다', () => {
+    const entry: PracticeEntryResponse = {
+      entrySequence: 1,
+      exitPreset: 'BALANCED',
+      buyAt: '2026-08-20T11:00:00',
+      buyPrice: 12400,
+      buyQuantity: 40,
+      stopLossPrice: 12028,
+      takeProfitPrice: 12772,
+      sellPrice: 12030,
+      sellQuantity: 40,
+      sellAt: '2026-08-20T11:12:00',
+      sellCause: 'STOP_LOSS',
+      realizedPnl: -15860,
+      unrealizedPnlIfHeld: 38200,
+    }
+    renderModal({ entries: [entry], celebrate: false })
+
+    expect(screen.getByText('1번째 진입')).toBeInTheDocument()
+    // 보상 문장 자체는 남기되 "축하합니다"는 최초 완료 순간에만 붙는다.
+    expect(screen.getByText('5,000,000원')).toBeInTheDocument()
+    expect(screen.queryByText(/축하합니다/)).not.toBeInTheDocument()
+  })
+
+  it('한 다이얼로그 안에 같은 이름의 버튼을 두지 않는다', () => {
+    renderModal()
+
+    // X 버튼이 aria-label="닫기"라, 아래 버튼까지 "닫기"면 스크린리더가 구분하지 못한다.
+    expect(screen.getAllByRole('button', { name: '닫기' })).toHaveLength(1)
   })
 })

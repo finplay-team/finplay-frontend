@@ -492,21 +492,28 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    expect(
-      screen.getByText(/지금 값이면 손절선은 약 11,970원이고, 여기까지 떨어지면 약 370원을 잃습니다/),
-    ).toBeInTheDocument()
-    expect(screen.getByText(/익절선은 약 12,957원이고, 여기까지 오르면 약 617원을 법니다/)).toBeInTheDocument()
+    // 코인은 금액으로 산다 — 금액을 적기 전에는 채울 수량이 없어 이 줄 자체가 없다.
+    fireEvent.change(screen.getByLabelText(/얼마어치 구매할까요/), { target: { value: '123400' } })
+
+    // 두 기준선 값은 수량과 무관하다 — 금액을 얼마로 적든 이 숫자여야 한다.
+    expect(screen.getByText(/지금 값이면 손절선은 약 11,970원이고/)).toBeInTheDocument()
+    expect(screen.getByText(/익절선은 약 12,957원이고/)).toBeInTheDocument()
+    // 잃고 버는 금액은 환산된 수량에 비례한다 — 금액이 붙어 나오는지만 확인한다.
+    expect(screen.getByText(/여기까지 떨어지면 약 [\d,]+원을 잃습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/여기까지 오르면 약 [\d,]+원을 법니다/)).toBeInTheDocument()
     // 서버 실현손익은 수수료가 반영된 순손익이라 나중에 숫자가 어긋나 보이면 안 된다.
     expect(screen.getByText(/수수료는 빼고 계산한 값입니다/)).toBeInTheDocument()
   })
 
-  it('수량이 비면 손익 어림 줄을 렌더하지 않는다', async () => {
+  it('금액이 비면 손익 어림 줄을 렌더하지 않는다', async () => {
     renderFlow(attempt({ riskSnapshot: null }), progress())
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
+    const amountField = screen.getByLabelText(/얼마어치 구매할까요/)
+    fireEvent.change(amountField, { target: { value: '123400' } })
     expect(screen.getByText(/지금 값이면 손절선은/)).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText(/몇 개 구매할까요/), { target: { value: '' } })
+    fireEvent.change(amountField, { target: { value: '' } })
     expect(screen.queryByText(/지금 값이면 손절선은/)).not.toBeInTheDocument()
   })
 
@@ -1090,9 +1097,10 @@ describe('AttemptTutorialFlow', () => {
     renderFlow(attempt({ riskSnapshot: null }), progress())
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
 
-    expect(screen.getByRole('heading', { name: '2. 몇 개 구매할지 정합니다 (매수)' })).toBeInTheDocument()
+    // 코인은 모의투자 화면과 같이 금액으로 산다 — 제목·입력 라벨이 함께 "얼마어치"여야 한다.
+    expect(screen.getByRole('heading', { name: '2. 얼마어치 구매할지 정합니다 (매수)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
-    expect(screen.getByText(/몇 개 구매할까요/)).toBeInTheDocument()
+    expect(screen.getByText(/얼마어치 구매할까요/)).toBeInTheDocument()
     // 모든 문장에 (매수)를 달면 읽기가 나빠진다 — 단계마다 처음 나오는 한 곳에만 병기한다.
     expect(screen.getAllByText(/\(매수\)/)).toHaveLength(1)
     expect(screen.queryByRole('button', { name: /사기|팔기/ })).not.toBeInTheDocument()

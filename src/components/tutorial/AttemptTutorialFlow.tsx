@@ -1,5 +1,5 @@
 // 영속 attempt를 정본으로 종목 선택부터 완료 replay까지 단일 차트 실습 흐름을 제공하는 컴포넌트
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { CandleChart } from '../CandleChart'
 import { Button, LinkButton } from '../ui/Button'
@@ -16,6 +16,7 @@ import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { formatDateTime, parseLocalDateTime, ratioToPercent } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { formatKRW, formatPercent, formatSignedKRW } from '../../lib/format'
+import { CRYPTO_QTY_DECIMALS, presetQuantity } from '../../lib/quantity'
 import { bumpTutorial } from '../../lib/tutorialPulse'
 import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
 import {
@@ -103,10 +104,19 @@ const TOUR_INSTRUMENT: SpotlightStep = {
   title: '먼저 종목을 고릅니다',
   body: '연습용으로 만든 가상 종목이에요. 아무거나 골라도 괜찮습니다.',
 }
-const TOUR_QUANTITY: SpotlightStep = {
-  target: 'quantity',
-  title: '몇 개 구매할지 정합니다',
-  body: '바로 아래에 얼마가 드는지 나옵니다. 연습용 가짜 돈입니다.',
+/** 코인은 금액으로, 주식은 수량으로 산다 — 같은 자리를 가리키지만 부르는 말이 다르다. */
+function tourQuantity(market: Market): SpotlightStep {
+  return market === 'CRYPTO'
+    ? {
+        target: 'quantity',
+        title: '얼마어치 구매할지 정합니다',
+        body: '바로 아래에 몇 개를 사게 되는지 나옵니다. 연습용 가짜 돈입니다.',
+      }
+    : {
+        target: 'quantity',
+        title: '몇 개 구매할지 정합니다',
+        body: '바로 아래에 얼마가 드는지 나옵니다. 연습용 가짜 돈입니다.',
+      }
 }
 /** 지정가 토글은 코인 시장에만 있다 — 주식에서는 이 단계를 배열에서 뺀다. */
 const TOUR_LIMIT: SpotlightStep = {
@@ -157,7 +167,7 @@ function buildTourSteps(market: Market, hasPendingOrder: boolean): SpotlightStep
   // 순서는 카드 안에서 눈에 보이는 순서를 따른다 — 토글이 수량 입력 위에 있다.
   const steps: SpotlightStep[] = [TOUR_INSTRUMENT]
   if (market === 'CRYPTO') steps.push(TOUR_LIMIT)
-  steps.push(TOUR_QUANTITY, TOUR_BUY, TOUR_CHART)
+  steps.push(tourQuantity(market), TOUR_BUY, TOUR_CHART)
   if (hasPendingOrder) steps.push(TOUR_PENDING)
   steps.push(TOUR_SELL, TOUR_REFLECTION)
   return steps
@@ -871,6 +881,12 @@ export function AttemptTutorialFlow({
   const [instruments, setInstruments] = useState<Instrument[]>([])
   const [busyInstrumentId, setBusyInstrumentId] = useState<number | null>(null)
   const [quantity, setQuantity] = useState(market === 'STOCK' ? '1' : '1')
+  /**
+   * 코인 시장가 매수의 "얼마어치" 입력. 모의투자 화면(pages/Trade.tsx)이 실제 빗썸처럼 금액으로 사고
+   * 튜토리얼만 수량으로 사면, 여기서 익힌 조작이 실전에서 통하지 않는다. 서버 API는 여전히 수량만
+   * 받으므로 이 값은 아래 effect에서 quantity로 환산해 넘긴다.
+   */
+  const [buyAmount, setBuyAmount] = useState('')
   const [flowError, setFlowError] = useState<FlowError | null>(null)
   const [buying, setBuying] = useState(false)
   const [buyOrderType, setBuyOrderType] = useState<TutorialOrderType>('MARKET')
@@ -911,6 +927,8 @@ export function AttemptTutorialFlow({
   /** 안내를 처음부터 다시 보여 주기 위해 SpotlightTour를 리마운트시키는 값. */
   const [tourNonce, setTourNonce] = useState(0)
   const [orderTypeGuideOpen, setOrderTypeGuideOpen] = useState(false)
+  /** 비활성 "예약 매도" 탭이 가리키는 설명 문구의 id — 스크린리더가 왜 못 누르는지 함께 읽는다. */
+  const reservedSellNoteId = useId()
   /**
    * 주문 패널 탭. 모의투자 화면(pages/Trade.tsx)의 "주문 | 커뮤니티" 자리에 튜토리얼은
    * "주문 | 되돌아보기"를 둔다.
@@ -972,11 +990,37 @@ export function AttemptTutorialFlow({
   const railTone = market === 'CRYPTO' ? 'bg-coin' : 'bg-brand'
   const rewardSentence = rewardSentenceParts(market)
 
+  /** 코인 시장가 매수만 금액 입력이다 — 지정가는 값을 직접 정하는 자리라 수량 입력을 그대로 쓴다. */
+  const amountMode = market === 'CRYPTO' && buyOrderType === 'MARKET'
+  const buyAmountNumber = buyAmount === '' ? 0 : Number(buyAmount)
+  /**
+   * 금액 입력을 실제 주문 수량으로 환산한다 — 서버 API는 수량만 받는다. **매수 수수료를 빼고
+   * 나눈다**: 현금을 가격으로만 나누면 서버가 amount + fee 만큼 깎을 때 잔고를 넘겨
+   * INSUFFICIENT_CASH가 난다(lib/quantity 주석).
+   *
+   * state를 덮어쓰지 않고 파생값으로 둔다 — setQuantity로 밀어 넣으면 금액이 빈 동안 수량 state까지
+   * 비워져서, 지정가로 바꿨을 때 사용자가 건드린 적 없는 칸이 비어 있게 된다.
+   */
+  const buyQuantityInput = amountMode
+    ? (() => {
+        const qty = presetQuantity({
+          side: 'BUY',
+          isCrypto: true,
+          ratio: 1,
+          availableCash: buyAmountNumber,
+          held: 0,
+          unitPrice: latestPrice,
+        })
+        return qty > 0 ? String(Number(qty.toFixed(CRYPTO_QTY_DECIMALS))) : ''
+      })()
+    : quantity
+  const buyQuantityNumber = Number(buyQuantityInput)
+
   const buyKey = useIdempotencyKey([
     attempt.attemptId,
     attempt.runNumber,
     'BUY',
-    quantity,
+    buyQuantityInput,
     buyOrderType,
     buyLimitPrice,
     buyNonceRef.current,
@@ -1278,13 +1322,13 @@ export function AttemptTutorialFlow({
 
   const handleBuy = useCallback(async () => {
     if (attempt.instrumentId === null) return
-    const parsed = Number(quantity)
+    const parsed = Number(buyQuantityInput)
     if (!(parsed > 0) || (market === 'STOCK' && !Number.isInteger(parsed))) {
       showError(
         'buy',
         market === 'STOCK'
           ? '주식은 1주 단위입니다. 1 이상의 정수로 적어 주세요.'
-          : '몇 개 구매할지 적어 주세요.',
+          : '얼마어치 구매할지 적어 주세요.',
       )
       return
     }
@@ -1302,7 +1346,7 @@ export function AttemptTutorialFlow({
             market: 'CRYPTO',
             instrumentId: attempt.instrumentId,
             side: 'BUY',
-            quantity,
+            quantity: buyQuantityInput,
             limitPrice: buyLimitPrice,
           },
           buyKey,
@@ -1319,7 +1363,7 @@ export function AttemptTutorialFlow({
           instrumentId: attempt.instrumentId,
           side: 'BUY',
           orderType: 'MARKET',
-          quantity,
+          quantity: buyQuantityInput,
         },
         buyKey,
       )
@@ -1331,7 +1375,17 @@ export function AttemptTutorialFlow({
     } finally {
       setBuying(false)
     }
-  }, [attempt.instrumentId, buyKey, buyLimitPrice, buyOrderType, clearError, market, onRefresh, quantity, showError])
+  }, [
+    attempt.instrumentId,
+    buyKey,
+    buyLimitPrice,
+    buyOrderType,
+    buyQuantityInput,
+    clearError,
+    market,
+    onRefresh,
+    showError,
+  ])
 
   // 매수 체결 직후 첫 관찰. 서버 evidence 체인이 아직 반영되기 전이라 첫 시도가 PRACTICE_STEP_LOCKED·
   // PRACTICE_EVIDENCE_MISSING으로 일시적으로 튕길 수 있다(실측, 2026-08-16 — 프로덕션에서 재현).
@@ -1580,7 +1634,6 @@ export function AttemptTutorialFlow({
 
   const buyUnitPrice =
     buyOrderType === 'LIMIT' && Number(buyLimitPrice) > 0 ? Number(buyLimitPrice) : latestPrice
-  const buyQuantityNumber = Number(quantity)
   const tourSteps = useMemo(() => buildTourSteps(market, pendingOrder !== null), [market, pendingOrder])
 
   /**
@@ -1690,7 +1743,9 @@ export function AttemptTutorialFlow({
 
       {orderSide === 'BUY' ? (
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-ink">2. 몇 개 구매할지 정합니다 (매수)</h2>
+          <h2 className="text-sm font-semibold text-ink">
+            {amountMode ? '2. 얼마어치 구매할지 정합니다 (매수)' : '2. 몇 개 구매할지 정합니다 (매수)'}
+          </h2>
           <CurrentPriceBox price={latestPrice} note="3초마다 새로 불러옵니다." />
           <p className="text-xs leading-relaxed text-muted">
             사는 순간의 값을 기준으로 팔 기준선 두 개(손절 {STOP_LOSS_LABEL} · 익절 {TAKE_PROFIT_LABEL})가
@@ -1741,19 +1796,39 @@ export function AttemptTutorialFlow({
               latestPrice={latestPrice}
             />
           )}
-          <div>
-            <label htmlFor="tutorial-buy-quantity" className="mb-1.5 block text-sm font-medium text-ink">
-              몇 개 구매할까요{market === 'STOCK' ? ' (1주 단위)' : ''}
-            </label>
-            <input
-              id="tutorial-buy-quantity"
-              value={quantity}
-              data-tour="quantity"
-              onChange={(event) => setQuantity(event.target.value.replace(/[^0-9.]/g, ''))}
-              inputMode="decimal"
-              className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring focus:border-brand focus:ring-4 focus:ring-brand/15"
-            />
-          </div>
+          {amountMode ? (
+            <div>
+              <label htmlFor="tutorial-buy-amount" className="mb-1.5 block text-sm font-medium text-ink">
+                얼마어치 구매할까요
+              </label>
+              <input
+                id="tutorial-buy-amount"
+                value={buyAmount}
+                data-tour="quantity"
+                onChange={(event) => setBuyAmount(event.target.value.replace(/[^0-9]/g, ''))}
+                inputMode="numeric"
+                placeholder="0"
+                className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring focus:border-brand focus:ring-4 focus:ring-brand/15"
+              />
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">
+                코인은 개수가 아니라 금액으로 삽니다. 실전 화면도 같은 방식이에요.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label htmlFor="tutorial-buy-quantity" className="mb-1.5 block text-sm font-medium text-ink">
+                몇 개 구매할까요{market === 'STOCK' ? ' (1주 단위)' : ''}
+              </label>
+              <input
+                id="tutorial-buy-quantity"
+                value={quantity}
+                data-tour="quantity"
+                onChange={(event) => setQuantity(event.target.value.replace(/[^0-9.]/g, ''))}
+                inputMode="decimal"
+                className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring focus:border-brand focus:ring-4 focus:ring-brand/15"
+              />
+            </div>
+          )}
           {buyUnitPrice !== null && buyQuantityNumber > 0 && (
             <div className="space-y-1.5 rounded-2xl bg-elevated px-4 py-3 text-sm">
               <div className="flex items-center justify-between">
@@ -1763,7 +1838,10 @@ export function AttemptTutorialFlow({
                 </span>
               </div>
               <p className="pt-1 text-xs leading-relaxed text-muted">
-                {quantity}개 × {formatKRW(buyUnitPrice)} 로 계산한 추정치예요 · 연습용 가짜 돈입니다
+                {amountMode
+                  ? `${formatKRW(buyUnitPrice)}에 ${buyQuantityInput}개를 사는 것으로 계산한 추정치예요`
+                  : `${quantity}개 × ${formatKRW(buyUnitPrice)} 로 계산한 추정치예요`}{' '}
+                · 연습용 가짜 돈입니다
               </p>
             </div>
           )}
@@ -1831,23 +1909,45 @@ export function AttemptTutorialFlow({
             </div>
           </div>
           {market === 'CRYPTO' && (
-            <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
-              {(['MARKET', 'LIMIT'] as const).map((type) => (
+            <>
+              {/*
+                모의투자 화면(pages/Trade.tsx)의 매도는 시장가·지정가·예약 매도 세 탭이다. 실전에 있는
+                탭이 여기 없으면 사용자가 실전에서 처음 마주치게 되므로 자리는 같게 만들되, 튜토리얼의
+                손절·익절선은 사용자가 거는 것이 아니라 **매수 순간 서버가 체결가에서 자동으로 만들기
+                때문에**(TUTORIAL-FLOW-008) 지금은 누를 수 없다. 어둡게만 두면 "왜 안 눌리지"에서
+                막히므로 아래에 이유 한 줄을 반드시 함께 둔다.
+              */}
+              <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
+                {(['MARKET', 'LIMIT'] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    aria-pressed={sellOrderType === type}
+                    onClick={() => setSellOrderType(type)}
+                    className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
+                      sellOrderType === type
+                        ? 'bg-coin-soft text-coin ring-1 ring-coin/40'
+                        : 'text-muted hover:text-ink'
+                    }`}
+                  >
+                    {type === 'MARKET' ? '시장가' : '지정가'}
+                  </button>
+                ))}
                 <button
-                  key={type}
                   type="button"
-                  aria-pressed={sellOrderType === type}
-                  onClick={() => setSellOrderType(type)}
-                  className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
-                    sellOrderType === type
-                      ? 'bg-coin-soft text-coin ring-1 ring-coin/40'
-                      : 'text-muted hover:text-ink'
-                  }`}
+                  disabled
+                  aria-disabled="true"
+                  aria-describedby={reservedSellNoteId}
+                  className="flex-1 cursor-default rounded-full px-4 py-2 text-sm font-medium text-muted opacity-45"
                 >
-                  {type === 'MARKET' ? '시장가' : '지정가'}
+                  예약 매도
                 </button>
-              ))}
-            </div>
+              </div>
+              <p id={reservedSellNoteId} className="text-xs leading-relaxed text-muted">
+                예약 매도는 실전에서 손절·익절 가격을 미리 걸어두는 기능입니다. 이 연습에서는 살 때
+                기준선이 자동으로 만들어지므로 따로 걸지 않습니다.
+              </p>
+            </>
           )}
           <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
           {market === 'CRYPTO' && sellOrderType === 'LIMIT' && (
