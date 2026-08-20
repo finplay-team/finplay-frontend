@@ -126,3 +126,35 @@ export const Logout = (props: IconProps) => (
     <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 12h11M17 8l4 4-4 4" />
   </svg>
 )
+
+/** 협상·논의·제휴 소식용 — 겹치는 원 두 개로 "만남·합의"를 나타낸다. */
+export const Handshake = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="9" cy="12" r="5.5" />
+    <circle cx="15" cy="12" r="5.5" />
+  </svg>
+)
+
+/** 가동 중단·공급 차질 등 경고성 소식용. */
+export const Warning = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 4 3 20h18L12 4Z" />
+    <path d="M12 10v4M12 17h.01" />
+  </svg>
+)
+
+/** 루머·소문 소식용 말풍선. */
+export const ChatBubble = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="4" y="5" width="16" height="10" rx="3" />
+    <path d="M9 15v4l4-4" />
+  </svg>
+)
+
+/** 사건 목록의 기본(범주를 알 수 없는) 아이콘. */
+export const Newspaper = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <path d="M8 9h8M8 12.5h8M8 16h5" />
+  </svg>
+)
