@@ -102,6 +102,30 @@
       background-position: -30% 0;
     }
   }
+
+  /* 새로 공개된 사건 한 줄이 들어올 때만 쓴다 — 놓치지 않을 만큼만 움직이고 판단을 재촉하지 않는
+     세기다. 축소 선호 설정은 아래 prefers-reduced-motion 블록이 전역으로 막아 준다. */
+  .event-arrive {
+    animation: event-arrive 560ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  @keyframes event-arrive {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, -0.5rem, 0);
+      border-color: rgb(94 234 212 / 0.7);
+      background-color: rgb(18 59 56 / 0.85);
+    }
+    60% {
+      opacity: 1;
+      border-color: rgb(94 234 212 / 0.7);
+      background-color: rgb(18 59 56 / 0.85);
+    }
+    100% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
 }
 
 @layer utilities {

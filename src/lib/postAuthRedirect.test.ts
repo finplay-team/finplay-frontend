@@ -24,6 +24,12 @@ function attempt(
     tutorialDate: null,
     riskSnapshot: null,
     completedAt: null,
+    tutorialCashBalance: 0,
+    tutorialAvailableCash: 0,
+    tutorialRealizedPnl: 0,
+    selectedExitPreset: 'BALANCED',
+    exitPresetLocked: false,
+    availableExitPresets: [],
     ...overrides,
   }
 }
@@ -39,6 +45,9 @@ function progress(
     steps: [],
     completedAt: null,
     rewardAmount: null,
+    entries: [],
+    priceAfterSell: null,
+    revealedEvents: [],
     attempt: attempt(market),
     ...overrides,
   }

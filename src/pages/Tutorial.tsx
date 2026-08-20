@@ -127,10 +127,14 @@ export function Tutorial() {
             {showBothMarkets && <StatusPill label="주식" progress={progressByMarket.STOCK} />}
           </div>
 
+          {/*
+            "손절선·익절선이 자동으로 그려진다"는 문장은 뺐다 — 매수 단계(2단계)의 안내 문구와
+            산 뒤에 뜨는 "내가 팔 기준선" 카드가 같은 말을 이미 하고 있어, 여기 있으면 셋이 겹친다.
+            이 자리에는 여기서만 말하는 것(실제 돈이 아니다·보상 금액)만 남긴다(2026-08-20 피드백).
+          */}
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             가짜 돈으로 {market === 'CRYPTO' ? '코인' : '주식'}을 한 번 사고, 팔아 보는 연습입니다. 실제
-            돈은 한 푼도 들지 않습니다. 산 값을 기준으로 “여기까지 떨어지면 판다”와 “여기까지 오르면
-            판다” 두 선이 자동으로 그려지니 직접 계산할 건 없습니다.{' '}
+            돈은 한 푼도 들지 않습니다.{' '}
             {rewardAmount === null
               ? '한 시장을 처음 끝내면 연습용 투자금이 한 번 지급됩니다.'
               : `한 시장을 처음 끝내면 연습용 투자금 ${formatManEok(rewardAmount)}원이 한 번 지급됩니다.`}

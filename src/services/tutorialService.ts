@@ -3,6 +3,7 @@ import { api } from '../lib/apiClient'
 import type { Market } from './types'
 import type {
   InvestmentPracticeResponse,
+  PracticeExitPreset,
   PracticeHoldingObservationResponse,
   PracticeHoldingReflectionResponse,
   PracticeAttemptResponse,
@@ -55,6 +56,19 @@ export function selectPracticeInstrument(
 ): Promise<PracticeAttemptResponse> {
   return api.put<PracticeAttemptResponse>(`/education/practice/attempts/${market}/instrument`, {
     instrumentId,
+  })
+}
+
+/**
+ * 손절·익절 프리셋 선택(042, 이슈 #477). 자연 멱등이라 `Idempotency-Key`가 필요 없다. 보유 중이면
+ * 409 `PRACTICE_STEP_LOCKED`로 거부된다 — 매수 전이거나 포지션을 정리한 뒤(재진입 대기)에만 통한다.
+ */
+export function selectExitPreset(
+  market: Market,
+  preset: PracticeExitPreset,
+): Promise<PracticeAttemptResponse> {
+  return api.put<PracticeAttemptResponse>(`/education/practice/attempts/${market}/exit-preset`, {
+    preset,
   })
 }
 

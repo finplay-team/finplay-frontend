@@ -1,9 +1,15 @@
-// 튜토리얼을 이번에 처음 완료한 순간에만 띄우는 축하 모달 — 지급된 보상 금액을 세어 올려 보여준다
+// 튜토리얼 완료 결과 모달 — 최초 완료 순간에는 축하와 함께, 이후에는 결과만 다시 보여준다
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Close } from '../ui/icons'
+import { EntryComparison } from './EntryComparison'
+import { ScenarioEventSummary } from './ScenarioEventPanel'
 import { formatKRW } from '../../lib/format'
+import type {
+  PracticeEntryResponse,
+  PracticeScenarioEventResponse,
+} from '../../services/tutorialTypes'
 import type { Market } from '../../services/types'
 
 /**
@@ -43,12 +49,23 @@ export function CompletionCelebration({
   open,
   market,
   rewardAmount,
+  entries = [],
+  revealedEvents = [],
+  celebrate = true,
   onClose,
 }: {
   open: boolean
   market: Market
   /** 서버가 이번에 지급한 금액. null이면 금액 문장 자체를 쓰지 않는다 — 없는 금액을 지어내지 않는다. */
   rewardAmount: number | null
+  /** 진입별 대조. 비어 있으면(대본 이전 실행·legacy) 결과 영역 없이 축하만 뜬다. */
+  entries?: PracticeEntryResponse[]
+  revealedEvents?: PracticeScenarioEventResponse[]
+  /**
+   * 지금이 **최초 완료 순간**인가. 축하 문구와 금액 세어 올리기는 그때만 한다 — 되돌아보기 탭의
+   * "결과 다시 보기"로 다시 연 화면에서 매번 축하하면 어색해진다(완료 카드와 같은 판단).
+   */
+  celebrate?: boolean
   onClose: () => void
 }) {
   const titleId = useId()
@@ -60,7 +77,7 @@ export function CompletionCelebration({
   // 숫자 세어 올리기. 언마운트·닫힘에는 프레임을 취소한다.
   useEffect(() => {
     if (!open || rewardAmount === null) return
-    if (reduced) {
+    if (reduced || !celebrate) {
       setAmount(rewardAmount)
       return
     }
@@ -75,7 +92,7 @@ export function CompletionCelebration({
     setAmount(0)
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [open, reduced, rewardAmount])
+  }, [celebrate, open, reduced, rewardAmount])
 
   // 등장 모션. 애니메이션 축소 선호면 처음부터 최종 상태로 그린다.
   useEffect(() => {
@@ -113,11 +130,16 @@ export function CompletionCelebration({
   const reward = rewardSentenceParts(market)
   const accentText = market === 'CRYPTO' ? 'text-coin' : 'text-brand'
   const motion = reduced ? '' : 'transition-all duration-400 ease-spring'
+  /**
+   * 진입 카드가 있으면 전체 폭으로 펼친다 — 재진입한 사용자는 카드가 두 장이라 좁은 폭에서는 나란히
+   * 놓이지 않는다. 카드가 없는 legacy 완료는 예전처럼 작은 모달로 둔다.
+   */
+  const wide = entries.length > 0
 
   return (
     <div
       // ConfirmDialog(z-[60])·SpotlightTour(z-50)보다 위다. 근거는 보고 참고.
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
@@ -128,7 +150,7 @@ export function CompletionCelebration({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`w-full max-w-md outline-none ${motion} ${entered ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}
+        className={`w-full outline-none ${wide ? 'max-w-3xl' : 'max-w-md'} ${motion} ${entered ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}
       >
         <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-6">
           <div className="flex items-start justify-between gap-3">
@@ -147,17 +169,35 @@ export function CompletionCelebration({
           </h2>
           {rewardAmount !== null && (
             <p className="mt-4 text-sm leading-relaxed text-ink">
-              {/* "축하합니다"는 지금 이 순간에만 어울린다 — 다시 볼 수 있는 완료 카드에는 넣지 않는다. */}
-              축하합니다. {reward.before}
+              {/* "축하합니다"는 지금 이 순간에만 어울린다 — 다시 열어 보는 화면에는 넣지 않는다. */}
+              {celebrate && '축하합니다. '}
+              {reward.before}
               <span className={`tabular text-xl font-semibold ${accentText}`}>{formatKRW(amount)}</span>
               {reward.after}
             </p>
           )}
+
+          {wide && (
+            <div className="mt-5">
+              <EntryComparison entries={entries} layout="wide" />
+            </div>
+          )}
+          {wide && revealedEvents.length > 0 && (
+            <div className="mt-5">
+              <ScenarioEventSummary events={revealedEvents} />
+            </div>
+          )}
+
           <div className="mt-6 flex flex-wrap gap-2">
             <LinkButton to="/trade" withIcon>
               실전 거래 시작하기
             </LinkButton>
             <Button type="button" variant="ghost" onClick={onClose}>
+              {/*
+                이 모달에는 이미 aria-label="닫기"인 X 버튼이 있다 — 여기까지 "닫기"로 부르면 한
+                다이얼로그 안에 같은 이름의 버튼이 둘이 되어 스크린리더가 구분하지 못한다.
+                닫으면 되돌아보기 탭(복기 답변·수량 기록)이 보이므로 그 자리를 이름으로 쓴다.
+              */}
               완료 기록 보기
             </Button>
           </div>

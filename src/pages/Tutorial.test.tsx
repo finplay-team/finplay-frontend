@@ -36,6 +36,12 @@ function attempt(market: 'STOCK' | 'CRYPTO'): PracticeAttemptResponse {
     tutorialDate: null,
     riskSnapshot: null,
     completedAt: null,
+    tutorialCashBalance: 0,
+    tutorialAvailableCash: 0,
+    tutorialRealizedPnl: 0,
+    selectedExitPreset: 'BALANCED',
+    exitPresetLocked: false,
+    availableExitPresets: [],
   }
 }
 
@@ -48,6 +54,9 @@ function progress(
     status: 'IN_PROGRESS',
     currentStep: 1,
     steps: [],
+    entries: [],
+    priceAfterSell: null,
+    revealedEvents: [],
     completedAt: null,
     rewardAmount: null,
     attempt: attempt(market),

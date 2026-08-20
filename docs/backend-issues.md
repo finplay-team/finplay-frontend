@@ -300,6 +300,68 @@ J-1 은 특히 나쁘다 — 우리가 "발견"했다는 `journalId` 충돌이 `
 
 </details>
 
+## education (튜토리얼)
+
+**2026-08-20 추가.** 8~9차 스코프(대본 사건·손절익절 프리셋 연결) 작업 중 로컬 검증(`finplay_verify`
+DB, 5173 dev 서버)에서 직접 관찰한 두 건이다. **이 문서 상단의 "검증 결과"에서 한 adversarial
+재검증은 이 두 항목엔 거치지 않았다** — spec 원문과 대조해 "이미 의도된 결정"인지 확인하는 절차를
+생략했다는 뜻이다. 그러니 등록 전에 백엔드에서 한 번 더 봐야 한다.
+
+### ~~E-1~~ [해결] 튜토리얼 계좌 잔액이 종목 선택 이후 화면에서 쓸 수 없다
+
+> **2026-08-20 해결.** 백엔드 이슈 #502. 종목 선택(`PUT .../instrument`)과 프리셋 선택
+> (`PUT .../exit-preset`) 응답이 이제 잔액 3필드를 실제 값으로 싣는다. 원인은 잔고가 0이어서가
+> 아니라 그 응답들이 튜토리얼 계좌를 조회하지 않았던 것이다. **`GET /api/education/practice`의
+> `attempt` 필드는 여전히 `0`이다**(폴링 경로라 계좌를 다시 읽지 않는다) — 잔액은 쓰기 응답
+> 네 곳에서 받아 들고 있어야 한다. 자세한 표는 `context-notes.md` D37.
+
+- **현상.** `PracticeAttemptResponse`의 `tutorialCashBalance`·`tutorialAvailableCash`·
+  `tutorialRealizedPnl`은 `PUT /api/education/practice/attempts/{market}`(진입)과
+  `POST .../restart`(재시작) 응답에서만 그 트랜잭션의 실제 값이 채워진다. **그 외 호출부
+  (`PUT .../instrument`, `GET /api/education/practice`의 `attempt` 필드)는 세 필드 모두
+  `0`을 반환한다** — 계약 문서(`api-contracts.md`)에 명시된 동작이라 버그가 아니라 설계다
+  (TUTORIAL-CASH-ISOL-011, 047, PR #452).
+- **결과.** 화면 흐름상 "종목을 고른다"(`PUT .../instrument`)가 "매수 폼을 보여준다"(2단계) 사이에
+  끼어 있어서, 사용자가 실제로 금액을 입력하는 시점에는 이미 잔액이 0으로 죽어 있다. 모의투자
+  화면(`pages/Trade.tsx`)처럼 "주문 가능" 잔액과 10/25/50/75/최대 퍼센트 버튼을 튜토리얼 매수
+  폼에도 만들고 싶었으나, 정확한 "최대"를 계산할 방법이 없어 보류했다(9차 스코프, 2026-08-20).
+- **요청.** `PUT .../instrument` 응답에도 그 시점 실제 잔액 3필드를 채우거나, 별도의 가벼운
+  잔액 조회 경로(예: `GET .../attempts/{market}/balance`)를 연다.
+- **프론트가 지금 하는 것.** 라벨·placeholder·"예상 매수" 문구만 모의투자 화면과 맞추고, 잔액
+  표시·퍼센트 버튼은 이 항목이 풀릴 때까지 만들지 않는다.
+
+### E-2 [P2] `practice_attempts` 잠금이 재시작·tick 동시 진행에서 데드락 난다 (관찰됨, 근본 원인 미확인)
+
+> **2026-08-20 진행 중 — 아직 안 고쳐졌다.** 백엔드 이슈 #491에 이 재현 경로를 덧붙이고 범위를
+> "진입 동시 호출"에서 "`practice_attempts` 잠금 경로 전반"으로 넓혔다. 로컬 MySQL 8.4로 잠금을
+> 실측한 결과 이슈가 추정한 메커니즘만으로는 교착이 만들어지지 않았고, 잠금 순서 전수 조사에서도
+> ABBA가 없었다. **교착 쌍을 특정하지 못해 추측으로 고치지 않았다.** 프론트 완화(재시작 요청 중
+> tick 폴링 정지 + 500 재시도 버튼)는 계속 필요하다. 자세한 것은 `context-notes.md` D38.
+
+- **현상.** 로컬 검증 세션(2026-08-20) 중 `SELECT ... FOR UPDATE`가 8회 실패했다. 실제 로그:
+
+  ```
+  org.hibernate.exception.LockAcquisitionException: JDBC exception executing SQL
+  [Deadlock found when trying to get lock; try restarting transaction]
+  [select pa1_0.id, ... from practice_attempts pa1_0
+   where pa1_0.user_id=? and pa1_0.market=? for update of pa1_0]
+  ```
+
+  이어진 세션에서 같은 패턴이 더 쌓여 누적 32회 관측됐다. 데드락이 난 요청은 로그상
+  `POST .../restart`와 `POST .../tick`(3초 주기 폴링) 구간에 몰려 있었다.
+- **결과.** 화면에 "서버에 문제가 발생했습니다. 잠시 후 다시 시도해 주세요"로 노출된다(사용자가
+  실제 화면 캡처로 확인). tick 루프가 돌고 있는 도중 재시작을 누르는, 실사용에서 충분히 나올 수
+  있는 조합이라 재현 가능성이 있어 보인다.
+- **추측(검증 안 됨) — 원인.** tick과 재시작 두 트랜잭션이 같은 `(user_id, market)` 행을
+  `FOR UPDATE`로 잠그는데, 둘의 잠금 획득 순서가 다르면 MySQL이 데드락으로 감지해 한쪽을
+  강제 롤백한다. 로그만으로는 실제 잠금 순서를 알 수 없어 **코드를 직접 봐야 확정된다.**
+- **요청.** 두 트랜잭션의 잠금 순서를 통일하거나, `LockAcquisitionException`에 대한 재시도(짧은
+  backoff 후 1회 재시도)를 추가한다.
+- **참고.** 사용자가 "백엔드 문제니 신경 쓰지 않아도 된다"고 이미 확인했다(2026-08-20) — 우선순위
+  판단은 백엔드 세션 몫이다.
+
+---
+
 ## order · journal · ranking 공통
 
 ### ~~X-1~~ [철회] `limit` 범위 밖 처리 정책이 엔드포인트마다 다르다
