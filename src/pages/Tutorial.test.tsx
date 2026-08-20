@@ -18,7 +18,7 @@ vi.mock('../components/tutorial/AttemptTutorialFlow', () => ({
     onRefresh: () => Promise<void>
   }) => (
     <div data-testid="attempt-flow">
-      {attempt.market}:{attempt.runNumber}
+      {attempt.market}:{attempt.runNumber}:{attempt.tutorialAvailableCash}
       <button type="button" onClick={() => void onRefresh()}>진행만 새로고침</button>
     </div>
   ),
@@ -60,6 +60,11 @@ function progress(
     completedAt: null,
     rewardAmount: null,
     attempt: attempt(market),
+    tutorialStageProgress: {
+      marketBuySellCompleted: false,
+      limitBuySellCompleted: false,
+      exitPresetSelected: false,
+    },
     ...overrides,
   }
 }
@@ -99,6 +104,28 @@ describe('Tutorial attempt entry', () => {
     fireEvent.click(await screen.findByRole('button', { name: '주식' }))
     await waitFor(() => expect(screen.getByTestId('attempt-flow')).toHaveTextContent('STOCK:1'))
     expect(ensurePracticeAttempt).toHaveBeenNthCalledWith(2, 'STOCK')
+  })
+
+  it('진행 조회(GET)가 잔액 세 필드를 0으로 죽여 보내도, 폴링 새로고침이 마지막으로 알려진 실제 잔액을 지우지 않는다 (이슈 #502)', async () => {
+    // 진입 응답은 실값을 싣는다 — ensurePracticeAttempt는 쓰기 경로 네 곳 중 하나다.
+    vi.mocked(ensurePracticeAttempt).mockImplementation(async (market) => ({
+      ...attempt(market),
+      tutorialAvailableCash: 1_000_000,
+    }))
+    // 하지만 진행 조회(GET)의 attempt 필드는 계좌를 다시 읽지 않아 항상 0이다(계약 명시).
+    vi.mocked(getPracticeProgress).mockImplementation(async (market) =>
+      progress(market, { attempt: { ...attempt(market), tutorialAvailableCash: 0 } }),
+    )
+    render(<Tutorial />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('attempt-flow')).toHaveTextContent('CRYPTO:1:1000000'),
+    )
+
+    // tick·매수 등으로 자식이 진행만 새로고침해도(GET만 호출) 0으로 되돌아가면 안 된다.
+    fireEvent.click(screen.getByRole('button', { name: '진행만 새로고침' }))
+    await waitFor(() => expect(vi.mocked(getPracticeProgress).mock.calls.length).toBeGreaterThan(1))
+    expect(screen.getByTestId('attempt-flow')).toHaveTextContent('CRYPTO:1:1000000')
   })
 
   it('hides the stock entrance entirely for a user who never picked a stock instrument', async () => {

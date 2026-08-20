@@ -46,6 +46,7 @@ import type {
   PracticeSellVerdict,
   PracticeTradeResultResponse,
   PracticeTutorialChartResponse,
+  TutorialStageProgress,
 } from '../../services/tutorialTypes'
 import type { Candle, Instrument, LimitOrderResponse, Market, OrderSide } from '../../services/types'
 
@@ -326,6 +327,44 @@ function DoneLine({ text }: { text: string }) {
     <p className="rounded-2xl border border-line bg-elevated/60 px-4 py-3 text-sm text-muted">
       <span className="text-gain">✓</span> {text}
     </p>
+  )
+}
+
+/**
+ * 2단계(주문 방법) 학습 체크리스트(이슈 #503). 서버가 실행 세대 단위로 판정한 값을 그대로 그린다 —
+ * **로컬로 세지 않는다.** 새로고침해도 서버가 다시 판정하므로 이 값만 그대로 받아 그리면 된다.
+ *
+ * 지정가 항목은 코인 전용이다 — `limitBuySellCompleted`는 주식(STOCK)에서 영원히 `false`라, 넣어
+ * 두면 주식 사용자에게는 평생 못 채우는 항목으로 보인다. 그래서 주식에서는 아예 뺀다.
+ */
+function StageProgressChecklist({
+  market,
+  progress,
+}: {
+  market: Market
+  progress: TutorialStageProgress
+}) {
+  const items: { key: string; label: string; done: boolean }[] = [
+    { key: 'market', label: '시장가 매매', done: progress.marketBuySellCompleted },
+  ]
+  if (market === 'CRYPTO') {
+    items.push({ key: 'limit', label: '지정가 매매', done: progress.limitBuySellCompleted })
+  }
+  items.push({ key: 'preset', label: '손절·익절 프리셋 선택', done: progress.exitPresetSelected })
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" aria-label="주문 방법 학습 체크리스트">
+      {items.map((item) => (
+        <span
+          key={item.key}
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+            item.done ? 'border-gain/40 bg-gain/10 text-gain' : 'border-line bg-elevated text-muted'
+          }`}
+        >
+          {item.done ? '✓ ' : ''}
+          {item.label}
+        </span>
+      ))}
+    </div>
   )
 }
 
@@ -1066,6 +1105,13 @@ export function AttemptTutorialFlow({
    * **이 값으로 "대본 UI 없음"을 판정한다**(계약 명시). null이면 사건 패널을 아예 그리지 않는다.
    */
   const scenarioStage = chart?.scenarioStage ?? null
+  /**
+   * 대본이 2막을 손절로 정리한 뒤 재진입을 기다리는 구간(041, D35로 유보 해제). 이 구간의 전량
+   * 매도는 "끝"이 아니라 "다음 진입 전"이라 — 되돌아보기(복기) 패널로 보내면 이야기가 3·4막을 못
+   * 보고 조기 종료된다. `riskSnapshot`은 첫 진입 것이 그대로 남아 있으므로 이 값 없이는 판단할 수
+   * 없다.
+   */
+  const awaitingReentry = scenarioStage === 'IDLE_REENTRY'
   /** 진행 조회의 사건 목록은 완료 후에도 남는다 — 차트가 없는 순간에도 결과 모달이 쓸 수 있다. */
   const revealedEvents =
     chart !== null && chart.revealedEvents.length > 0 ? chart.revealedEvents : progress.revealedEvents
@@ -1075,9 +1121,16 @@ export function AttemptTutorialFlow({
    * 이 화면이 사용자에게 보여 주는 4단계는 서버 chain의 단계 번호(progress.currentStep)와 대응하지
    * 않는다 — 서버 chain은 관심등록·매수의사까지 포함하지만 이 화면은 고르기·구매하기·지켜보기·
    * 판매하고 돌아보기로 다시 묶었다. 그래서 화면에 쓰는 번호는 attempt·evidence 상태에서 직접 만든다.
+   * 재진입을 기다리는 동안은 다시 "구매하기"라 fullySold와 무관하게 2로 되돌린다.
    */
   const uiStep =
-    attempt.status === 'SELECTING_INSTRUMENT' ? 1 : !attempt.riskSnapshot ? 2 : !fullySold ? 3 : 4
+    attempt.status === 'SELECTING_INSTRUMENT'
+      ? 1
+      : !attempt.riskSnapshot || awaitingReentry
+        ? 2
+        : !fullySold
+          ? 3
+          : 4
   const railTone = market === 'CRYPTO' ? 'bg-coin' : 'bg-brand'
   const rewardSentence = rewardSentenceParts(market)
 
@@ -1777,12 +1830,25 @@ export function AttemptTutorialFlow({
 
   /**
    * 되돌아보기는 팔고 난 뒤에야 할 일이 생긴다. 그전에는 탭을 잠그고, 전량 매도되는 순간 자동으로
-   * 넘어간다 — 안내형 흐름의 마지막 단계를 탭 뒤에 숨겨 두지 않기 위해서다.
+   * 넘어간다 — 안내형 흐름의 마지막 단계를 탭 뒤에 숨겨 두지 않기 위해서다. **재진입을 기다리는
+   * 전량 매도는 예외다** — 그 순간 복기 패널로 넘기면 되돌릴 수 없는 조기 완료를 유도하게 되므로
+   * (D35) 탭을 열지 않고 "주문" 탭에 남긴다. 거기서 orderSide가 다시 BUY로 바뀌어 재구매 폼을 보여준다.
    */
-  const reviewReady = replay || fullySold
+  const reviewReady = replay || (fullySold && !awaitingReentry)
   useEffect(() => {
-    if (reviewReady) setPanelTab('review')
-  }, [reviewReady])
+    if (reviewReady) {
+      setPanelTab('review')
+      return
+    }
+    /**
+     * 차트(scenarioStage)는 비동기로 늦게 도착한다 — 마운트 직후 한 틱 동안은 chart가 아직 null이라
+     * awaitingReentry가 일시적으로 false로 계산돼(evidence만 먼저 fullySold=true) reviewReady가
+     * 잠깐 true였다가 chart 로딩 후 false로 돌아오는 경우가 실제로 있다. 그때 위 분기가 이미
+     * "review"로 넘겨 버린 뒤라, 재진입 상태로 확정되면 명시적으로 다시 "order"로 되돌린다 —
+     * 안 그러면 잠금 풀린 적 없는 되돌아보기 탭 뒤에 사용자가 갇힌다.
+     */
+    if (awaitingReentry) setPanelTab('order')
+  }, [awaitingReentry, reviewReady])
 
   const pendingCard =
     pendingOrder === null ? null : (
@@ -1806,8 +1872,12 @@ export function AttemptTutorialFlow({
       />
     )
 
-  /** 지금 어느 쪽 주문을 하는 단계인지. 매수 전이면 매수, 산 뒤에는 매도다. */
-  const orderSide: OrderSide = attempt.riskSnapshot ? 'SELL' : 'BUY'
+  /**
+   * 지금 어느 쪽 주문을 하는 단계인지. 매수 전이면 매수, 산 뒤에는 매도다. **`riskSnapshot`은 전량
+   * 매도해도 null로 돌아가지 않는다** — 그대로 두면 재진입 순간에도 계속 매도 화면이 떠서 다시 살
+   * 방법이 없다(D35 이전까지의 실제 제약). 전량 매도된 상태(`fullySold`)에서는 다시 매수로 되돌린다.
+   */
+  const orderSide: OrderSide = attempt.riskSnapshot && !fullySold ? 'SELL' : 'BUY'
 
   const orderPanelBody = replay ? (
     <div className="space-y-3">
@@ -1836,6 +1906,21 @@ export function AttemptTutorialFlow({
     <div className="space-y-3">
       {/* 끝낸 단계를 지우지 않고 한 줄로 남긴다 — 방금 자기가 한 게 몇 번이었는지 확인시켜 준다. */}
       <DoneLine text={`1. 고르기 완료${selectedInstrument ? ` · ${selectedInstrument.name}` : ''}`} />
+
+      <StageProgressChecklist market={market} progress={progress.tutorialStageProgress} />
+
+      {/*
+        재진입을 기다리는 전량 매도(D35) — "끝"이 아니라 "다음 진입 전"이라는 걸 먼저 말해 준다.
+        지난 진입 카드를 그대로 보여주면 방금 판 게 사라진 게 아니라 정리됐을 뿐이라는 게 눈에 보인다.
+      */}
+      {awaitingReentry && progress.entries.length > 0 && (
+        <div className="rounded-2xl border border-line bg-elevated/60 p-4">
+          <p className="text-sm font-medium text-ink">직전 진입이 정리됐습니다. 다시 살 수 있어요.</p>
+          <div className="mt-3">
+            <EntryComparison entries={progress.entries} layout="narrow" />
+          </div>
+        </div>
+      )}
 
       {/*
         매수/매도 토글 — 모의투자 화면과 같은 자리·같은 모양이다. 다만 튜토리얼은 "사고 나서 판다"는
@@ -1932,12 +2017,19 @@ export function AttemptTutorialFlow({
             <div>
               {/*
                 라벨·placeholder를 모의투자 화면(pages/Trade.tsx)의 "주문 금액"과 똑같이 맞춘다.
-                "주문 가능" 잔액·퍼센트 버튼(10/25/50/75/최대)은 아직 붙이지 않는다 — 튜토리얼 계좌
-                잔액은 진입·재시작 응답에만 실제 값이 오고 종목 선택(PUT .../instrument) 이후로는
-                0으로 죽어 있어(TUTORIAL-CASH-ISOL-011), 이 시점엔 정확한 "최대"를 계산할 방법이
-                없다. 잘못된 잔액으로 버튼을 만드느니 안 만드는 게 낫다 — 백엔드에 넘긴다.
+                "주문 가능" 박스·퍼센트 버튼(10/25/50/75/최대)도 실전과 같은 자리·같은 비율이다
+                (이슈 #502로 해소, 9차 E 유보 해제). `attempt.tutorialAvailableCash`는 쓰기 응답
+                네 곳에서만 실값이 온다 — Tutorial.tsx가 그 값을 상태로 들고 있다가 이 prop으로
+                내려주므로, 여기서는 그대로 받아 쓰면 된다(로컬로 다시 조회하지 않는다).
               */}
-              <label htmlFor="tutorial-buy-amount" className="mb-1.5 block text-sm font-medium text-ink">
+              <p className="mb-1.5 text-sm font-medium text-ink">주문 가능</p>
+              <div className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] tabular">
+                <span className="text-ink">{formatKRW(attempt.tutorialAvailableCash)}</span>
+              </div>
+              <label
+                htmlFor="tutorial-buy-amount"
+                className="mb-1.5 mt-3 block text-sm font-medium text-ink"
+              >
                 주문 금액
               </label>
               <input
@@ -1951,6 +2043,27 @@ export function AttemptTutorialFlow({
                 }
                 className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring focus:border-brand focus:ring-4 focus:ring-brand/15"
               />
+              <div
+                role="group"
+                aria-label="가진 돈의 비율로 금액 채우기"
+                className="mt-2 flex flex-wrap items-center justify-end gap-1.5"
+              >
+                {[0.1, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                  <button
+                    key={ratio}
+                    type="button"
+                    disabled={attempt.tutorialAvailableCash <= 0}
+                    onClick={() => {
+                      const amt =
+                        ratio >= 1 ? attempt.tutorialAvailableCash : attempt.tutorialAvailableCash * ratio
+                      setBuyAmount(String(Math.floor(amt)))
+                    }}
+                    className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/[0.06] disabled:hover:text-muted"
+                  >
+                    {ratio < 1 ? `${ratio * 100}%` : '최대'}
+                  </button>
+                ))}
+              </div>
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
                 코인은 개수가 아니라 금액으로 삽니다. 실전 화면도 같은 방식이에요.
               </p>

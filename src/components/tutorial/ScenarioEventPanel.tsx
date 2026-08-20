@@ -18,6 +18,9 @@ const FRESH_MS = 900
  */
 function stateText(stage: ScenarioStage, progressing: boolean | null): string {
   if (stage === 'FINISHED') return '이야기가 끝났습니다'
+  // 재진입을 기다리는 구간(D35) — "진행 중"이라고만 말하면 지금 아무것도 들고 있지 않은데도 뭘
+  // 지켜봐야 하는지 알 수 없다. 다시 살 수 있다는 것을 여기서 먼저 말해 준다.
+  if (stage === 'IDLE_REENTRY') return '다시 살 수 있습니다'
   return progressing ? '이야기가 진행 중입니다' : '다음 움직임을 기다리는 중입니다'
 }
 

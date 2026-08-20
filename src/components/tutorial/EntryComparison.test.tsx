@@ -8,6 +8,7 @@ function entry(overrides: Partial<PracticeEntryResponse> = {}): PracticeEntryRes
   return {
     entrySequence: 1,
     exitPreset: 'BALANCED',
+    buyOrderType: 'MARKET',
     buyAt: '2026-08-20T11:00:00',
     buyPrice: 12400,
     buyQuantity: 40,
