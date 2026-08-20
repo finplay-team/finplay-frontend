@@ -4,6 +4,33 @@
 Claude Code 세션에 붙여넣으면 된다. 근거는 이 레포의 `checklist.md` 9차 D·`context-notes.md`
 D31·D33·D34, `docs/backend-issues.md`의 "education (튜토리얼)" 절.
 
+> ## ⚠️ 2026-08-20 정정 — 이 문서는 처리가 끝났고, 조사 항목 1번은 전제가 틀렸다
+>
+> 백엔드 세션이 이 프롬프트로 작업을 마쳤다. **이 문서를 다시 백엔드에 넘기지 마라.**
+> 최신 상태는 `checklist.md` 9차 D의 회신 블록과 `context-notes.md` D35~D38에 있다.
+>
+> **아래 "확인·구현이 필요한 것" 1번(evidence 체인이 재진입을 아는가)은 전제가 틀렸다.**
+> 세 가지가 코드로 확인됐다.
+>
+> 1. **재진입해도 두 번째 holding은 생기지 않는다** — `V10`의
+>    `uk_holdings_account_instrument UNIQUE (account_id, instrument_id)` 때문에 계좌·종목당 보유
+>    행은 하나뿐이다. "두 번째 holding이 생기면"으로 시작하는 시나리오가 성립하지 않는다.
+> 2. **샌드박스 attempt는 `MarketPracticeChainResolutionService`를 아예 타지 않는다** —
+>    `PracticeHoldingObservationService`가 `isTutorialSample()`로 먼저 갈라
+>    `createAttemptObservation` → `PracticeAttemptEvidenceService.requireCurrentRun`으로 간다.
+>    026 chain 해석은 **attempt가 없는 legacy 사용자용 폴백**이다.
+> 3. **그 경로는 `entrySequence`를 이미 안다** — 관찰 필터 기준선이 **첫 진입** snapshot
+>    (`PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE`)에 고정돼 있고, 소스 주석이 이유까지 적어 뒀다.
+>    "이 자리에 최신 진입을 쓰면 재매수 순간 이전 관찰이 사라진다."
+>
+> `PracticeScenarioFullJourneyIntegrationTest`(PR #494)가 매수 → 관찰 3건 → 손절 → 재매수 →
+> 익절 → 복기 → 완료를 실제 MySQL로 완주해 이를 검증한다. **따라서 프론트가 재진입 UI를 보류할
+> 이유는 없다.**
+>
+> 나머지 항목의 처리 결과 — 2번(진입별 주문유형)은 `entries[].buyOrderType`으로 들어왔고,
+> 3번(순서 강제)은 **판정만** 들어왔다(`tutorialStageProgress`, 거부는 아직 없다).
+> 4번(041 대본 궁합)은 제품 판단이라 그대로 남았다.
+
 ---
 
 ## 백엔드 세션에 붙여넣을 프롬프트
