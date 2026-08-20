@@ -1120,3 +1120,29 @@ D37이 "잔액은 쓰기 응답 네 곳에서 받아 상태로 들고 있어라"
 서버 판정 세 개를 칩으로 보여주기만 한다. 순서를 실제로 막는 UI(예: 프리셋을 고르기 전엔
 매수 버튼을 잠근다)를 지금 만들면, spec 049가 정할 실제 게이팅 규칙과 미리 어긋날 위험이
 있어 손대지 않았다.
+
+## D43. 손절·익절선은 실제로 자동 체결된다 — 화면 문구 두 곳이 반대로 적혀 있었다 (2026-08-20 실사용 중 발견)
+
+사용자가 "시장가에 샀는데 갑자기 알아서 팔렸다"고 보고해 백엔드 코드를 직접 확인했다.
+`PracticeOrderSettlementService.settleCurrentRun`이 041 tick마다
+`exitPlanRepository.findPendingPracticeRunExitPlanIds`로 그 실행 세대의 OCO 예약(손절·익절)을
+찾아 `exitPlanFillService.fillIfPending`으로 자동 체결한다 — 매수 순간 이 예약이 함께 생기고
+(`ExitPlanCreationService`), 이건 코인·주식 공통이다(`settleCurrentRun`은 market을 가리지 않는다).
+
+그런데 화면에는 정반대로 적혀 있었다.
+
+- 매수 전 카드: "손절선은 값이 이만큼 떨어지면 더 잃지 않도록 **팔라고 알려주는 선**" —
+  마치 사용자가 직접 눌러야 파는 것처럼 읽힌다.
+- 매수 후 카드(`RiskEducationCard`): "**이 선에 닿아도 자동으로 팔리지는 않습니다.** 팔지
+  말지는 직접 정하세요." — 실제 동작과 완전히 반대다.
+
+둘 다 "값이 이 선에 닿으면 그 순간 자동으로 팔립니다"로 고쳤다. 이 문구가 언제부터 틀렸는지는
+모른다 — 042(OCO 손절·익절)가 이 카드보다 나중에 들어왔을 가능성이 높지만 git blame으로
+확인하지는 않았다.
+
+**부수적으로 발견한 것** — `tutorialStageProgress.marketBuySellCompleted`는 "사용자가 낸"
+시장가 매도만 세고 자동 청산은 안 센다는 게 문서 §1에 이미 명시돼 있었는데(의도된 동작),
+화면 어디에도 그 이유를 설명하는 문구가 없어 "손절당했는데 왜 체크리스트가 안 넘어가나"로
+막히는 게 그대로 재현됐다. `StageProgressChecklist`에 `autoStoppedThisRun` 조건(이 실행에
+`sellCause`가 `STOP_LOSS`·`TAKE_PROFIT`인 진입이 있는가)을 추가해, 미완료 상태에서만 이유를
+한 줄 붙였다.

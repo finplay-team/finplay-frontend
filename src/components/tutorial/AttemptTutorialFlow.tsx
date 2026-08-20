@@ -340,9 +340,17 @@ function DoneLine({ text }: { text: string }) {
 function StageProgressChecklist({
   market,
   progress,
+  autoStoppedThisRun,
 }: {
   market: Market
   progress: TutorialStageProgress
+  /**
+   * 이 실행에 손절·익절로 자동 정리된 매도가 이미 있는가. `marketBuySellCompleted`는 **사용자가 낸**
+   * 시장가 매도만 센다(문서 명시, "의도된 동작") — 자동 청산은 세지 않는다. 그런데 화면에는 그 이유를
+   * 말해 주는 데가 없어서 "샀다 팔렸는데 왜 체크가 안 되지"로 막힌다(2026-08-20 실사용 중 발견).
+   * 이 조건이 true면 항목 아래에 이유를 한 줄 붙인다.
+   */
+  autoStoppedThisRun: boolean
 }) {
   const items: { key: string; label: string; done: boolean }[] = [
     { key: 'market', label: '시장가 매매', done: progress.marketBuySellCompleted },
@@ -352,18 +360,26 @@ function StageProgressChecklist({
   }
   items.push({ key: 'preset', label: '손절·익절 프리셋 선택', done: progress.exitPresetSelected })
   return (
-    <div className="flex flex-wrap items-center gap-1.5" aria-label="주문 방법 학습 체크리스트">
-      {items.map((item) => (
-        <span
-          key={item.key}
-          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-            item.done ? 'border-gain/40 bg-gain/10 text-gain' : 'border-line bg-elevated text-muted'
-          }`}
-        >
-          {item.done ? '✓ ' : ''}
-          {item.label}
-        </span>
-      ))}
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="주문 방법 학습 체크리스트">
+        {items.map((item) => (
+          <span
+            key={item.key}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+              item.done ? 'border-gain/40 bg-gain/10 text-gain' : 'border-line bg-elevated text-muted'
+            }`}
+          >
+            {item.done ? '✓ ' : ''}
+            {item.label}
+          </span>
+        ))}
+      </div>
+      {!progress.marketBuySellCompleted && autoStoppedThisRun && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+          손절·익절로 자동 정리된 매도는 "시장가 매매"로 세지 않습니다. 선에 닿기 전에 직접 매도
+          버튼을 눌러야 이 항목이 채워집니다.
+        </p>
+      )}
     </div>
   )
 }
@@ -787,7 +803,16 @@ function RiskEducationCard({
         </div>
       </dl>
       <div className="mt-4 space-y-3 text-xs leading-relaxed text-muted">
-        <p className="text-ink">이 선에 닿아도 자동으로 팔리지는 않습니다. 팔지 말지는 직접 정하세요.</p>
+        {/*
+          예전에는 "닿아도 자동으로 안 팔린다"고 적어 놨었는데, 실제로는 산 순간 손절·익절 예약(OCO)이
+          같이 걸려서 매 tick마다 서버(PracticeOrderSettlementService)가 이 선을 넘었는지 검사해 자동으로
+          체결한다 — 문구가 실제 동작과 반대였다(2026-08-20 실사용 중 발견). 그 선에 닿기 전에 직접 파는
+          것도 물론 가능하다는 걸 함께 말해 둔다.
+        */}
+        <p className="text-ink">
+          이 선에 닿으면 자동으로 팔립니다. 직접 누르지 않아도 그 순간 손절 또는 익절로 정리돼요 — 물론
+          그 전에 직접 팔아도 됩니다.
+        </p>
         <p>
           <span className="font-medium text-ink">손절선</span>은 "여기까지 내려가면 더 버티지 않고
           팔겠다"고 미리 정해두는 값입니다. 손실을 확정하는 대신 더 큰 손실을 막는 행동입니다.{' '}
@@ -1907,7 +1932,13 @@ export function AttemptTutorialFlow({
       {/* 끝낸 단계를 지우지 않고 한 줄로 남긴다 — 방금 자기가 한 게 몇 번이었는지 확인시켜 준다. */}
       <DoneLine text={`1. 고르기 완료${selectedInstrument ? ` · ${selectedInstrument.name}` : ''}`} />
 
-      <StageProgressChecklist market={market} progress={progress.tutorialStageProgress} />
+      <StageProgressChecklist
+        market={market}
+        progress={progress.tutorialStageProgress}
+        autoStoppedThisRun={progress.entries.some(
+          (entry) => entry.sellCause === 'STOP_LOSS' || entry.sellCause === 'TAKE_PROFIT',
+        )}
+      />
 
       {/*
         재진입을 기다리는 전량 매도(D35) — "끝"이 아니라 "다음 진입 전"이라는 걸 먼저 말해 준다.
@@ -1957,9 +1988,11 @@ export function AttemptTutorialFlow({
           </h2>
           <CurrentPriceBox price={latestPrice} note="3초마다 새로 불러옵니다." />
           <p className="text-xs leading-relaxed text-muted">
-            사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 손절선은 값이
-            이만큼 떨어지면 더 잃지 않도록 팔라고 알려주는 선이고, 익절선은 이만큼 오르면 이익을 챙기고
-            팔라고 알려주는 선이에요. 아래에서 그 폭을 고를 수 있습니다.
+            {/* "팔라고 알려주는 선"은 매수 후 카드(RiskEducationCard)와 같은 실수를 하고 있었다 —
+                실제로는 값이 이 선에 닿는 순간 자동으로 팔린다(2026-08-20 실사용 중 발견). */}
+            사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 값이 이 선에
+            닿으면 그 순간 자동으로 팔립니다 — 손절선은 더 잃지 않도록, 익절선은 이익을 챙기도록
+            정리해 줘요. 아래에서 그 폭을 고를 수 있습니다.
           </p>
           <ExitPresetPicker
             options={attempt.availableExitPresets}

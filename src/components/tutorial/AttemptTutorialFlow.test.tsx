@@ -660,6 +660,77 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText('✓ 손절·익절 프리셋 선택')).toBeInTheDocument()
   })
 
+  it('손절·익절로 자동 정리된 매도가 있는데도 시장가 매매가 미완료면 그 이유를 알려준다 (실사용 중 발견)', async () => {
+    renderFlow(
+      attempt({ riskSnapshot: null }),
+      {
+        ...progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: false,
+          limitBuySellCompleted: false,
+          exitPresetSelected: true,
+        }),
+        entries: [
+          {
+            entrySequence: 1,
+            exitPreset: 'BALANCED',
+            buyOrderType: 'MARKET',
+            buyAt: '2026-08-20T11:00:00',
+            buyPrice: 10000,
+            buyQuantity: 2,
+            stopLossPrice: 9700,
+            takeProfitPrice: 10500,
+            sellPrice: 9700,
+            sellQuantity: 2,
+            sellAt: '2026-08-20T11:12:00',
+            sellCause: 'STOP_LOSS',
+            realizedPnl: -600,
+            unrealizedPnlIfHeld: null,
+          },
+        ],
+      },
+    )
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(
+      screen.getByText(/손절·익절로 자동 정리된 매도는 "시장가 매매"로 세지 않습니다/),
+    ).toBeInTheDocument()
+  })
+
+  it('사용자가 직접 판 매도만 있으면(자동 정리 없음) 시장가 매매 안내를 보여주지 않는다', async () => {
+    renderFlow(
+      attempt({ riskSnapshot: null }),
+      progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+        marketBuySellCompleted: false,
+        limitBuySellCompleted: false,
+        exitPresetSelected: false,
+      }),
+    )
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.queryByText(/손절·익절로 자동 정리된 매도는/)).not.toBeInTheDocument()
+  })
+
+  it('손절·익절선은 자동으로 팔린다고 정확히 말한다 — 직접 팔아야만 정리된다고 잘못 말하지 않는다 (실사용 중 발견)', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.getByText(/값이 이 선에\s*닿으면 그 순간 자동으로 팔립니다/)).toBeInTheDocument()
+    expect(screen.queryByText(/자동으로 팔리지는 않습니다/)).not.toBeInTheDocument()
+  })
+
+  it('매수 후 카드도 손절·익절선이 자동으로 팔린다고 정확히 말한다 (실사용 중 발견)', async () => {
+    const holding = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(holding))
+    await flushPromises()
+
+    expect(screen.getByText(/이 선에 닿으면 자동으로 팔립니다\./)).toBeInTheDocument()
+  })
+
   it('주식 튜토리얼은 지정가 항목을 아예 빼고 보여준다 — 코인 전용이라 영원히 못 채운다 (이슈 #503)', async () => {
     renderFlow(
       attempt({ market: 'STOCK', instrumentId: 801, riskSnapshot: null }),
