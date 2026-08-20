@@ -75,7 +75,7 @@ function EntryCard({ entry }: { entry: PracticeEntryResponse }) {
         )}
       </p>
       <p className="mt-1 text-xs leading-relaxed text-muted tabular">
-        기준선은 손절 {formatKRW(entry.stopLossPrice)} · 익절 {formatKRW(entry.takeProfitPrice)}였습니다.
+        기준선은 손절 {formatKRW(entry.stopLossPrice)} · 익절 {formatKRW(entry.takeProfitPrice)}이었습니다.
       </p>
 
       {sold && (
