@@ -7,6 +7,8 @@ import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
+import { EntryComparison } from './EntryComparison'
+import { ScenarioEventPanel } from './ScenarioEventPanel'
 import { OrderTypeGuideButton, OrderTypeGuideDialog } from './OrderTypeGuide'
 import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
@@ -895,6 +897,11 @@ export function AttemptTutorialFlow({
    * 새로고침·재진입에는 뜨지 않고, 재완료(rewardGranted=false)에도 뜨지 않는다.
    */
   const [celebrating, setCelebrating] = useState(false)
+  /**
+   * 완료 결과를 **다시** 여는 경로. 축하 모달과 같은 모달을 쓰되 "축하합니다"와 금액 세어 올리기 없이
+   * 결과만 보여준다 — 다시 볼 때마다 축하하면 어색해진다(완료 카드와 같은 판단).
+   */
+  const [reviewingResult, setReviewingResult] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
   /** 관찰 기록이 하나도 없는 상태에서 매도를 누르면 실제 매도 API를 부르기 전에 이 확인을 먼저 띄운다. */
@@ -945,6 +952,14 @@ export function AttemptTutorialFlow({
   const chartHigh = chart && chart.candles.length > 0 ? Math.max(...chart.candles.map((c) => c.high)) : null
   const chartLow = chart && chart.candles.length > 0 ? Math.min(...chart.candles.map((c) => c.low)) : null
   const tradeResult = evidence?.tradeResult ?? null
+  /**
+   * 대본을 쓰지 않는 실행(주식 튜토리얼·완료 replay)은 서버가 scenarioStage를 null로 준다 —
+   * **이 값으로 "대본 UI 없음"을 판정한다**(계약 명시). null이면 사건 패널을 아예 그리지 않는다.
+   */
+  const scenarioStage = chart?.scenarioStage ?? null
+  /** 진행 조회의 사건 목록은 완료 후에도 남는다 — 차트가 없는 순간에도 결과 모달이 쓸 수 있다. */
+  const revealedEvents =
+    chart !== null && chart.revealedEvents.length > 0 ? chart.revealedEvents : progress.revealedEvents
   const saleDeadlineAt = evidence?.saleDeadlineAt ?? null
 
   /**
@@ -1915,6 +1930,22 @@ export function AttemptTutorialFlow({
           <TradeResultBlock result={tradeResult} />
         </div>
       )}
+      {/*
+        진입별 대조. 재진입한 사용자는 카드가 두 장이고 각각 손절·익절로 다르게 보인다 — 위의
+        TradeResultBlock은 실행 전체 합이라 첫 매도 하나만 말한다(금액은 맞고 이야기가 틀린다).
+      */}
+      {progress.entries.length > 0 && (
+        <div className="mt-4">
+          <EntryComparison entries={progress.entries} layout="narrow" />
+        </div>
+      )}
+      {progress.entries.length > 0 && (
+        <div className="mt-4">
+          <Button type="button" variant="ghost" onClick={() => setReviewingResult(true)}>
+            결과 다시 보기
+          </Button>
+        </div>
+      )}
       {savedReflection && (
         <div className="mt-4 rounded-2xl border border-line bg-elevated/60 p-4">
           <p className="text-xs text-muted">{savedReflection.prompt}</p>
@@ -2255,6 +2286,19 @@ export function AttemptTutorialFlow({
                 </div>
               )}
             </Card>
+            {/*
+              사건은 차트의 움직임을 설명하는 것이라 시선이 차트에서 아래로 이어져야 한다(D23).
+              대본이 없는 실행에서는 통째로 빠진다 — 빈 패널을 남기면 "곧 뭔가 온다"는 약속이 된다.
+            */}
+            {scenarioStage !== null && (
+              <ScenarioEventPanel
+                market={market}
+                stage={scenarioStage}
+                progressing={chart?.scenarioProgressing ?? null}
+                causeStatus={chart?.causeStatus ?? null}
+                events={chart?.revealedEvents ?? []}
+              />
+            )}
             <RiskEducationCard attempt={attempt} holdingQuantity={remainingQuantity} />
           </div>
 
@@ -2368,10 +2412,16 @@ export function AttemptTutorialFlow({
       <OrderTypeGuideDialog open={orderTypeGuideOpen} onClose={() => setOrderTypeGuideOpen(false)} />
 
       <CompletionCelebration
-        open={celebrating}
+        open={celebrating || reviewingResult}
         market={market}
         rewardAmount={progress.rewardAmount}
-        onClose={() => setCelebrating(false)}
+        entries={progress.entries}
+        revealedEvents={revealedEvents}
+        celebrate={celebrating}
+        onClose={() => {
+          setCelebrating(false)
+          setReviewingResult(false)
+        }}
       />
     </div>
   )

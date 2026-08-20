@@ -39,6 +39,9 @@ function progress(
     steps: [],
     completedAt: null,
     rewardAmount: null,
+    entries: [],
+    priceAfterSell: null,
+    revealedEvents: [],
     attempt: attempt(market),
     ...overrides,
   }

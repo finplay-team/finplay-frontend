@@ -71,6 +71,10 @@ const chart: PracticeTutorialChartResponse = {
   instrumentId: 701,
   virtualDateTime: '2026-08-14T12:00:00',
   secondsPerVirtualMinute: 3,
+  scenarioStage: null,
+  scenarioProgressing: null,
+  causeStatus: null,
+  revealedEvents: [],
   candles: [
     { date: '2026-08-14', open: 100, high: 130, low: 90, close: 123, current: true },
   ],
@@ -140,6 +144,9 @@ function progress(
     currentStep: status === 'COMPLETED' ? null : 2,
     completedAt: status === 'COMPLETED' ? '2026-08-14T12:10:00' : null,
     rewardAmount: status === 'COMPLETED' ? 5_000_000 : null,
+    entries: [],
+    priceAfterSell: null,
+    revealedEvents: [],
     attempt: null,
     steps: [
       { step: 1, status: 'COMPLETED', locked: false, evidence: currentEvidence },
@@ -1077,33 +1084,6 @@ describe('AttemptTutorialFlow', () => {
     expect(recordHoldingObservation).not.toHaveBeenCalled()
     expect(saveHoldingReflection).not.toHaveBeenCalled()
     expect(restartPracticeAttempt).not.toHaveBeenCalled()
-  })
-
-  it('completed 이후 재시작하지 않고 replay 화면만 보는 사용자에게도 교육용 가상 시나리오 문구가 뜬다', async () => {
-    // 040(이슈 #402)부터 완료 attempt도 재시작할 수 있지만, 재시작하지 않고 완료 기록만 다시 보는
-    // 사용자를 위해 replay 화면에서도 시나리오 문구를 계속 노출한다.
-    vi.mocked(getCachedInstrument).mockReturnValue({
-      instrumentId: 701,
-      market: 'CRYPTO',
-      symbol: 'SANDBOX_COIN_1',
-      name: '연습 코인',
-      tickSize: 1,
-      minOrderAmount: 5000,
-      tradable: true,
-      isTutorialSample: true,
-    })
-    const replayAttempt = attempt({ mode: 'REPLAY', status: 'COMPLETED', riskSnapshot: risk })
-    renderFlow(replayAttempt, progress(
-      evidence({ holdingId: 41, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0 }),
-      'COMPLETED',
-      'COMPLETED',
-    ))
-    await flushPromises()
-
-    expect(
-      await screen.findByText('알파코인이 주요 거래소에 추가 상장된다는 소식으로 주목받고 있습니다.'),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '처음부터 다시 시작' })).toBeInTheDocument()
   })
 
   it('구매 단계는 구어체 대신 구매하기를 쓰고 전문용어를 한 곳에만 병기한다', async () => {

@@ -193,8 +193,12 @@ export function CompletionCelebration({
               실전 거래 시작하기
             </LinkButton>
             <Button type="button" variant="ghost" onClick={onClose}>
-              {/* 결과를 이미 이 안에서 보여주므로 "완료 기록 보기"라고 부르지 않는다. */}
-              닫기
+              {/*
+                이 모달에는 이미 aria-label="닫기"인 X 버튼이 있다 — 여기까지 "닫기"로 부르면 한
+                다이얼로그 안에 같은 이름의 버튼이 둘이 되어 스크린리더가 구분하지 못한다.
+                닫으면 되돌아보기 탭(복기 답변·수량 기록)이 보이므로 그 자리를 이름으로 쓴다.
+              */}
+              완료 기록 보기
             </Button>
           </div>
         </Card>
