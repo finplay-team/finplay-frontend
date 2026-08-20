@@ -2011,8 +2011,11 @@ export function AttemptTutorialFlow({
       {/*
         재진입을 기다리는 전량 매도(D35) — "끝"이 아니라 "다음 진입 전"이라는 걸 먼저 말해 준다.
         지난 진입 카드를 그대로 보여주면 방금 판 게 사라진 게 아니라 정리됐을 뿐이라는 게 눈에 보인다.
+        **`orderSide === 'BUY'`가 반드시 있어야 한다** — 없으면 지금 한창 보유 중일 때도 "직전 진입이
+        정리됐다"는 문구가 뜬다. `progress.entries`에는 아직 안 판 진입(현재 보유)도 들어 있어서
+        `entries.length > 0`만으로는 "정리됐다"를 보장하지 못한다(2026-08-20 실사용 재확인 중 발견).
       */}
-      {awaitingReentry && progress.entries.length > 0 && (
+      {orderSide === 'BUY' && awaitingReentry && progress.entries.length > 0 && (
         <div className="rounded-2xl border border-line bg-elevated/60 p-4">
           <p className="text-sm font-medium text-ink">직전 진입이 정리됐습니다. 다시 살 수 있어요.</p>
           <div className="mt-3">

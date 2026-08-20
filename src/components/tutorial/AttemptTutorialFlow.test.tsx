@@ -1099,6 +1099,46 @@ describe('AttemptTutorialFlow', () => {
     ).toBeInTheDocument()
   })
 
+  it('지금 보유 중이면 대본이 안 끝났어도 "직전 진입이 정리됐다"는 재진입 안내를 보여주지 않는다 (실사용 재확인 중 발견)', async () => {
+    // progress.entries에는 아직 안 판 진입(지금 보유 중인 것)도 함께 온다 — entries.length > 0만으로
+    // "정리됐다"를 판단하면 지금 한창 보유 중일 때도 재진입 안내가 잘못 뜬다.
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      scenarioStage: 'ACT1',
+      scenarioProgressing: true,
+      causeStatus: 'NONE_KNOWN',
+    })
+    const holding = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holding),
+      entries: [
+        {
+          entrySequence: 1,
+          exitPreset: 'BALANCED',
+          buyOrderType: 'MARKET',
+          buyAt: '2026-08-20T11:00:00',
+          buyPrice: 10000,
+          buyQuantity: 2,
+          stopLossPrice: 9700,
+          takeProfitPrice: 10500,
+          sellPrice: null,
+          sellQuantity: null,
+          sellAt: null,
+          sellCause: null,
+          realizedPnl: null,
+          unrealizedPnlIfHeld: null,
+        },
+      ],
+    })
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeInTheDocument()
+    expect(screen.queryByText('직전 진입이 정리됐습니다. 다시 살 수 있어요.')).not.toBeInTheDocument()
+  })
+
   it('재진입을 기다리는 전량 매도(IDLE_REENTRY)는 되돌아보기로 넘기지 않고 다시 매수 폼을 보여준다 (D35)', async () => {
     vi.mocked(getPracticeAttemptChart).mockResolvedValue({
       ...chart,
