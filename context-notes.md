@@ -1146,3 +1146,34 @@ D37이 "잔액은 쓰기 응답 네 곳에서 받아 상태로 들고 있어라"
 막히는 게 그대로 재현됐다. `StageProgressChecklist`에 `autoStoppedThisRun` 조건(이 실행에
 `sellCause`가 `STOP_LOSS`·`TAKE_PROFIT`인 진입이 있는가)을 추가해, 미완료 상태에서만 이유를
 한 줄 붙였다.
+
+## D44. `awaitingReentry`를 `=== 'IDLE_REENTRY'`로만 판정한 게 진짜 버그였다 — D43 문구 수정 직후 실사용에서 확인
+
+D43에서 자동 손절이 실제 동작임을 확인한 뒤 사용자가 곧바로 재현했다 — "시장가 매도가 지 알아서
+되고 4단계까지만 되고 끝난다." 원인은 D35에서 만든 `awaitingReentry`가 `scenarioStage ===
+'IDLE_REENTRY'`로만 좁게 판정했던 것이다.
+
+`PracticeScenarioProgressService`를 다시 읽어 보니 두 가지가 겹쳐 있었다.
+
+1. **`scenarioStage`는 매도로 옮겨가지 않는다** — 주석이 명시한다("표는 세 행뿐이고 매도는
+   어느 행에도 없다. 매도해도 커서를 옮기지 않는다"). ACT는 시간으로만 흐르고 보유 여부와
+   무관하다(`scenarioProgressing` 주석 "미보유로 4막을 관전 중이어도 true").
+2. **손절이 대본 커서보다 먼저 발동할 수 있다** — 손절 예약은 매 tick 가격으로 자동 체결되므로
+   (D43), 대본이 아직 ACT1·ACT2를 도는 도중에 전량 매도 상태가 되는 게 정상 경로다.
+
+그 결과 D35가 구현한 재진입 UI는 `IDLE_REENTRY`에 도달한 뒤에만 작동했고, 그 전에 손절당하면
+`awaitingReentry`가 `false`로 계산돼 `reviewReady`가 `true`가 됐다 — 되돌아보기(복기) 탭이
+자동으로 열리고, 복기를 저장하면 그 순간 실행이 완료 확정된다(`saveHoldingReflection`이
+저장과 완료를 원자로 묶는다는 게 서비스 계약이다). **3·4막을 보지도 못하고 튜토리얼이
+조기 종료되는 실제 버그였다** — 문구 오류(D43)보다 심각하다.
+
+**고친 방법** — 판정 기준을 "지금 이 값인가"에서 "대본이 끝났는가"로 넓혔다.
+`awaitingReentry = scenarioStage !== null && scenarioStage !== 'FINISHED'`. 대본이 있는
+실행은 `FINISHED`에 닿기 전까지는 전량 매도가 몇 번이든 전부 재진입 대기로 본다. `uiStep`도
+같은 실수를 반복하지 않도록 `orderSide`·`reviewReady`와 같은 식을 그대로 인라인해서 세
+값이 서로 다른 곳에서 각자 계산되다 갈라지는 일이 없게 했다.
+
+**교훈** — "재진입 UI"를 만들면서 `IDLE_REENTRY` enum 값 하나만 보고 "재진입 대기 구간"이라고
+이름 붙인 것 자체가 틀렸다. 실제 의미는 "대본이 안 끝났다"였는데, 이름과 실제 대본 상태 전이
+규칙(시간 기반, 매도와 무관)을 대조하지 않고 넘어갔다. 다음에 `scenarioStage`의 특정 값으로
+분기할 때는 반드시 `PracticeScenarioProgressService`(또는 그 후속)의 전이 규칙을 먼저 읽는다.

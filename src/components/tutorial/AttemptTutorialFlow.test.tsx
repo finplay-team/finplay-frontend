@@ -1141,6 +1141,70 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
   })
 
+  it('IDLE_REENTRY에 닿기 전(ACT1·ACT2 도중)에 손절로 일찍 전량 매도돼도 복기로 조기 완료시키지 않는다 (D44, 실사용 중 발견)', async () => {
+    // scenarioStage는 매도로 옮겨가지 않는다(PracticeScenarioProgressService 주석) — 손절이
+    // 대본 커서보다 먼저 발동하면 아직 ACT1·ACT2 도중에 전량 매도 상태가 될 수 있다.
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      scenarioStage: 'ACT1',
+      scenarioProgressing: true,
+      causeStatus: 'NONE_KNOWN',
+    })
+    const sold = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(sold),
+      entries: [
+        {
+          entrySequence: 1,
+          exitPreset: 'BALANCED',
+          buyOrderType: 'MARKET',
+          buyAt: '2026-08-20T11:00:00',
+          buyPrice: 10000,
+          buyQuantity: 2,
+          stopLossPrice: 9700,
+          takeProfitPrice: 10500,
+          sellPrice: 9700,
+          sellQuantity: 2,
+          sellAt: '2026-08-20T11:01:00',
+          sellCause: 'STOP_LOSS',
+          realizedPnl: -600,
+          unrealizedPnlIfHeld: null,
+        },
+      ],
+    })
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    // ACT1이라 아직 IDLE_REENTRY가 아니지만, 대본이 안 끝났으면(FINISHED가 아니면) 여전히 재진입 대기다.
+    expect(screen.getByRole('button', { name: '되돌아보기' })).toBeDisabled()
+    expect(screen.getByText('직전 진입이 정리됐습니다. 다시 살 수 있어요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
+    // "몇 단계인가"도 다시 2(구매하기)로 돌아가야 한다 — 4(판매하고 돌아보기)에 멈춰 있으면 안 된다.
+    expect(screen.getByText(/2단계 · 구매하기/)).toBeInTheDocument()
+  })
+
+  it('대본이 FINISHED에 닿은 뒤의 전량 매도는 진짜 끝이라 되돌아보기로 넘긴다', async () => {
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      scenarioStage: 'FINISHED',
+      scenarioProgressing: false,
+      causeStatus: 'REVEALED',
+    })
+    const sold = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(sold))
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.getByRole('button', { name: '되돌아보기' })).toBeEnabled()
+    expect(
+      screen.getByLabelText('오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.'),
+    ).toBeInTheDocument()
+  })
+
   it('끝낸 단계는 지우지 않고 접힌 완료 한 줄로 남기며 전체 진행도를 보여준다', async () => {
     const currentEvidence = evidence({
       buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,

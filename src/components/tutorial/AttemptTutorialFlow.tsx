@@ -1131,12 +1131,17 @@ export function AttemptTutorialFlow({
    */
   const scenarioStage = chart?.scenarioStage ?? null
   /**
-   * 대본이 2막을 손절로 정리한 뒤 재진입을 기다리는 구간(041, D35로 유보 해제). 이 구간의 전량
-   * 매도는 "끝"이 아니라 "다음 진입 전"이라 — 되돌아보기(복기) 패널로 보내면 이야기가 3·4막을 못
-   * 보고 조기 종료된다. `riskSnapshot`은 첫 진입 것이 그대로 남아 있으므로 이 값 없이는 판단할 수
-   * 없다.
+   * 대본이 끝나지 않은 동안의 전량 매도는 "끝"이 아니라 "다음 진입 전"이다(041, D35로 유보 해제·
+   * D44로 범위 정정). **`scenarioStage`는 매도로 옮겨가지 않는다** — `PracticeScenarioProgressService`
+   * 주석이 명시한다("표는 세 행뿐이고 매도는 어느 행에도 없다. 매도해도 커서를 옮기지 않는다"). ACT는
+   * 보유 여부와 무관하게 시간으로만 흐르므로(`scenarioProgressing`이 "미보유로 4막을 관전 중이어도
+   * true"), 손절·익절이 대본 커서보다 먼저 발동하면 `IDLE_REENTRY`에 닿기 한참 전(ACT1·ACT2 도중)에
+   * 전량 매도 상태가 된다. **처음엔 `=== 'IDLE_REENTRY'`로만 판정했다가, 실사용에서 바로 이 이른
+   * 손절 경로로 4단계(복기)에 떨어져 복기를 저장하면서 대본을 3·4막도 못 보고 조기 완료시키는 걸
+   * 확인했다** — 그래서 "지금 이 값인가"가 아니라 "대본이 끝났는가"로 넓혔다. `FINISHED`·`null`
+   * (대본 없음)이 아니면 전부 "아직 이야기가 안 끝났다"로 본다.
    */
-  const awaitingReentry = scenarioStage === 'IDLE_REENTRY'
+  const awaitingReentry = scenarioStage !== null && scenarioStage !== 'FINISHED'
   /** 진행 조회의 사건 목록은 완료 후에도 남는다 — 차트가 없는 순간에도 결과 모달이 쓸 수 있다. */
   const revealedEvents =
     chart !== null && chart.revealedEvents.length > 0 ? chart.revealedEvents : progress.revealedEvents
@@ -1146,16 +1151,21 @@ export function AttemptTutorialFlow({
    * 이 화면이 사용자에게 보여 주는 4단계는 서버 chain의 단계 번호(progress.currentStep)와 대응하지
    * 않는다 — 서버 chain은 관심등록·매수의사까지 포함하지만 이 화면은 고르기·구매하기·지켜보기·
    * 판매하고 돌아보기로 다시 묶었다. 그래서 화면에 쓰는 번호는 attempt·evidence 상태에서 직접 만든다.
-   * 재진입을 기다리는 동안은 다시 "구매하기"라 fullySold와 무관하게 2로 되돌린다.
+   *
+   * **아래 두 조건은 orderSide·reviewReady(각각 뒤에서 정의)와 같은 판정을 미리 인라인으로 쓴 것이다**
+   * — 값을 두 곳에서 따로 계산하면 어긋날 수 있어(D44가 바로 그렇게 생겼다) 나중에 두 변수를 고치면
+   * 반드시 여기도 같이 고쳐야 한다. `replay || (fullySold && !awaitingReentry)`가 "끝"이고,
+   * `riskSnapshot && !fullySold`가 "보유 중"이다. 재진입을 기다리는 동안(끝이 아닌데 fullySold)은
+   * 다시 "구매하기"로 되돌아간다.
    */
   const uiStep =
     attempt.status === 'SELECTING_INSTRUMENT'
       ? 1
-      : !attempt.riskSnapshot || awaitingReentry
-        ? 2
-        : !fullySold
+      : replay || (fullySold && !awaitingReentry)
+        ? 4
+        : attempt.riskSnapshot && !fullySold
           ? 3
-          : 4
+          : 2
   const railTone = market === 'CRYPTO' ? 'bg-coin' : 'bg-brand'
   const rewardSentence = rewardSentenceParts(market)
 
