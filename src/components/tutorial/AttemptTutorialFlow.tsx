@@ -8,7 +8,8 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
 import { EntryComparison, PRESET_LABEL } from './EntryComparison'
-import { ScenarioEventPanel } from './ScenarioEventPanel'
+import { BreakingNewsCrawl } from './BreakingNewsCrawl'
+import { ScenarioEventFeed, ScenarioStatusLine } from './ScenarioEventPanel'
 import { OrderTypeGuideButton, OrderTypeGuideDialog } from './OrderTypeGuide'
 import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
@@ -2318,6 +2319,12 @@ export function AttemptTutorialFlow({
       />
 
       {/*
+        속보 자막 — tick(3초)마다가 아니라 revealedEvents가 실제로 늘어난 순간에만 흐른다
+        (컴포넌트 안에서 판정). 대본이 없는 실행은 events가 늘 비어 있어 자연히 뜨지 않는다.
+      */}
+      {scenarioStage !== null && <BreakingNewsCrawl market={market} events={revealedEvents} />}
+
+      {/*
         진행 표시줄 — 모의투자 화면에는 없는 튜토리얼 고유 안내 장치(단계 레일·회차·안내 다시 보기)를
         3컬럼 그리드 위 한 줄로 올린다. 그래야 아래 목록·차트·주문 컬럼은 모의투자 화면과 완전히
         같은 구조를 그대로 쓸 수 있다.
@@ -2441,6 +2448,17 @@ export function AttemptTutorialFlow({
               </ul>
             )}
             <ErrorNote error={flowError} scope="select" />
+            {/*
+              이 화면은 종목을 늘 하나만 보여주므로 목록 아래는 원래 빈 자리다(2026-08-20 피드백).
+              그 자리에 사건 피드를 둔다 — 차트 컬럼과 달리 스크롤에 밀릴 걱정이 없다.
+            */}
+            {scenarioStage !== null && (
+              <ScenarioEventFeed
+                market={market}
+                instrumentName={selectedInstrument?.name ?? null}
+                events={revealedEvents}
+              />
+            )}
           </div>
         </Card>
 
@@ -2524,18 +2542,17 @@ export function AttemptTutorialFlow({
                       takeProfitPrice={attempt.riskSnapshot?.takeProfitPrice ?? null}
                     />
                     {/*
-                      사건은 차트의 움직임을 설명하는 것이라 시선이 차트 요약에서 곧장 이어져야 한다
-                      (D23) — 접었다 펴는 캔들 설명보다 먼저 있어야 스크롤 없이 보인다(2026-08-20
-                      피드백). 대본이 없는 실행에서는 통째로 빠진다 — 빈 패널을 남기면 "곧 뭔가 온다"는
-                      약속이 된다.
+                      전체 사건 목록은 왼쪽 컬럼(ScenarioEventFeed)에 있다 — 낮은 화면에서는 차트
+                      자체가 세로 공간을 다 먹어 여기 두면 다시 스크롤 밖으로 밀린다(2026-08-20
+                      피드백). 여기는 "지금 상태 + 왼쪽을 보라"는 한 줄만 남긴다. 대본이 없는
+                      실행에서는 통째로 빠진다 — 빈 줄을 남기면 "곧 뭔가 온다"는 약속이 된다.
                     */}
                     {scenarioStage !== null && (
-                      <ScenarioEventPanel
+                      <ScenarioStatusLine
                         market={market}
                         stage={scenarioStage}
                         progressing={chart?.scenarioProgressing ?? null}
                         causeStatus={chart?.causeStatus ?? null}
-                        events={chart?.revealedEvents ?? []}
                       />
                     )}
                     <div className="mt-4">
