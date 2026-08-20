@@ -13,7 +13,7 @@ import type { SpotlightStep } from './SpotlightTour'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { formatDateTime, parseLocalDateTime, ratioToPercent } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
-import { formatKRW, formatPercent } from '../../lib/format'
+import { formatKRW, formatPercent, formatSignedKRW } from '../../lib/format'
 import { bumpTutorial } from '../../lib/tutorialPulse'
 import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
 import {
@@ -161,22 +161,6 @@ function buildTourSteps(market: Market, hasPendingOrder: boolean): SpotlightStep
   return steps
 }
 
-/**
- * 종목 선택 화면과 완료 replay 화면에서 "왜 이 종목을 살 만한지" 감을 잡도록 보여주는 교육용 가상
- * 시나리오다. 실제 뉴스가 아니다 — 샌드박스 종목은 가상 종목이라 실제 뉴스가 존재할 수 없다. symbol별로
- * 고정된 문구이며 실행(run)마다 바뀌지 않는다. 040(이슈 #402)부터 완료 attempt도 재시작할 수 있어
- * replay 화면에 머물지 않고 종목 선택부터 다시 볼 수 있지만, 재시작하지 않고 완료 기록만 다시 보는
- * 사용자를 위해 replay 화면에서도 계속 노출한다.
- */
-const INSTRUMENT_SCENARIOS: Record<string, string> = {
-  SANDBOX_STK_1: '알파전자가 차세대 반도체 부품 양산 계약을 새로 체결했다는 소식이 전해졌습니다.',
-  SANDBOX_STK_2: '베타바이오의 신약 후보물질이 임상 2상에서 긍정적인 결과를 얻었다는 소식입니다.',
-  SANDBOX_STK_3: '감마에너지가 대규모 태양광 발전 프로젝트를 수주했다는 소식이 발표됐습니다.',
-  SANDBOX_COIN_1: '알파코인이 주요 거래소에 추가 상장된다는 소식으로 주목받고 있습니다.',
-  SANDBOX_COIN_2: '베타코인 개발팀이 신규 네트워크 업그레이드 로드맵을 공개했습니다.',
-  SANDBOX_COIN_3: '감마코인이 대형 결제 플랫폼과 파트너십을 맺었다는 소식이 전해졌습니다.',
-}
-
 function latestEvidence(progress: InvestmentPracticeResponse): PracticeEvidenceResponse | null {
   return [...progress.steps]
     .reverse()
@@ -211,12 +195,6 @@ function rateLabel(rate: number): string {
 
 const STOP_LOSS_LABEL = rateLabel(STOP_LOSS_RATE)
 const TAKE_PROFIT_LABEL = rateLabel(TAKE_PROFIT_RATE)
-
-/** "+216원" / "-1,200원". 원화는 소수가 없으므로 formatKRW의 반올림을 그대로 쓴다. */
-function formatSignedKRW(value: number): string {
-  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
-  return `${sign}${formatKRW(Math.abs(value))}`
-}
 
 /**
  * 2단계 완료 한 줄. 수량이 null 이면 개수를 아예 말하지 않는다 — `?? 0` 으로 메우면
@@ -968,7 +946,6 @@ export function AttemptTutorialFlow({
   const chartLow = chart && chart.candles.length > 0 ? Math.min(...chart.candles.map((c) => c.low)) : null
   const tradeResult = evidence?.tradeResult ?? null
   const saleDeadlineAt = evidence?.saleDeadlineAt ?? null
-  const scenario = selectedInstrument ? INSTRUMENT_SCENARIOS[selectedInstrument.symbol] : undefined
 
   /**
    * 이 화면이 사용자에게 보여 주는 4단계는 서버 chain의 단계 번호(progress.currentStep)와 대응하지
@@ -2176,16 +2153,6 @@ export function AttemptTutorialFlow({
                             </span>
                           )}
                         </span>
-                        {/*
-                          시나리오는 "무엇을 고를지" 판단할 때만 목록에 필요하다. 고른 뒤에는 차트
-                          카드 아래에 같은 문구가 있으므로 여기서 빼서 같은 말이 두 번 나오지 않게 한다.
-                        */}
-                        {selectable && INSTRUMENT_SCENARIOS[instrument.symbol] && (
-                          <span className="mt-2 block text-xs leading-relaxed text-muted">
-                            <span className="font-medium text-ink/70">교육용 가상 시나리오</span>{' '}
-                            {INSTRUMENT_SCENARIOS[instrument.symbol]}
-                          </span>
-                        )}
                       </button>
                     </li>
                   )
@@ -2278,11 +2245,6 @@ export function AttemptTutorialFlow({
                     <div className="mt-4">
                       <CandleGuide />
                     </div>
-                    {scenario && (
-                      <p className="mt-3 text-xs leading-relaxed text-muted">
-                        <span className="font-medium text-ink/70">교육용 가상 시나리오</span> {scenario}
-                      </p>
-                    )}
                     <p className="mt-2 text-[11px] text-muted">
                       {replay
                         ? '끝난 연습이라 화면만 볼 수 있어요. 여기서는 사고팔 수 없고 가격도 멈춰 있습니다.'
