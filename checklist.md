@@ -2,6 +2,42 @@
 
 ---
 
+# 10차 스코프 — 사건 피드를 왼쪽 컬럼으로, 속보 자막 (2026-08-20)
+
+배경·목업은 대화에서 확정(왼쪽 컬럼 배치안·속보 자막 목업 두 차례). 결정은 `context-notes.md`
+"10차 스코프" 섹션(D35)에 있다.
+
+## A. 아이콘 (새 사실을 지어내지 않는 범위)
+- [x] `components/ui/icons.tsx` — Handshake·Warning·ChatBubble·Newspaper 추가
+- [x] 헤드라인 키워드 → 아이콘 매핑(`categoryIcon`, 헤드라인에 실제로 있는 단어만 본다)
+- [x] 종목 아바타(이름 첫 글자 + 시장 액센트색, 실제 사진 아님)
+
+## B. 컴포넌트 분리
+- [x] `ScenarioEventPanel` → `ScenarioStatusLine`(차트 컬럼용 압축 상태 줄) +
+      `ScenarioEventFeed`(왼쪽 컬럼용 전체 목록)로 분리
+- [x] `ScenarioEventSummary`(완료 모달)에도 같은 카테고리 아이콘 추가
+
+## C. 속보 자막
+- [x] `BreakingNewsCrawl.tsx` 신규 — revealedEvents가 실제로 늘어난 순간에만(3초 tick마다 아님)
+      왼쪽에서 나와 오른쪽으로 흘러가는 자막
+- [x] Web Animations API로 실제 폭을 재 속도(px/초) 고정 — 문장 길이와 무관
+- [x] prefers-reduced-motion 대응(흘리지 않고 잠깐 고정)
+- [x] jsdom Element.animate 부재 대응 — test/setup.ts에 테스트 전용 스텁(프로덕션 코드엔 없음)
+
+## D. 배치
+- [x] 왼쪽 컬럼(종목 카드 아래)에 ScenarioEventFeed — 항상 비어 있던 자리라 스크롤 문제 구조적 해결
+- [x] 차트 컬럼엔 ScenarioStatusLine만
+- [x] 화면 맨 위에 BreakingNewsCrawl
+
+## E. 검증
+- [x] `npm run test` 통과 (221/221, 신규 19개)
+- [x] `npm run build` 타입 에러 0
+- [x] 실제 백엔드로 검증 — 매수 → tick 반복 → 실제 서버 헤드라인("...논의가 진행 중...")이
+      Handshake 아이콘으로 정확히 매칭되는 것, 아바타·헤드라인·상태 줄 전부 실측
+- [ ] 속보 자막의 실제 라이브 트리거는 이 세션의 브라우저 패널이 `document.hidden=true`로
+      고정돼 앱의 자체 tick 폴링이 안 도는 제약 때문에 육안 확인은 못 했다 — 대신 단위 테스트
+      6개로 트리거 조건·표시·소멸을 직접 검증했다. 사용자가 실제 브라우저에서 확인 필요
+
 # 9차 스코프 — 브라우저 실사용 피드백 4건 (2026-08-20)
 
 배경·결정은 `context-notes.md`의 "9차 스코프" 섹션(D29·D30)에 있다.
