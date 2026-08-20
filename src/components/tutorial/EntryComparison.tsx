@@ -6,8 +6,11 @@ import type {
   PracticeSellCause,
 } from '../../services/tutorialTypes'
 
-/** 서버는 프리셋 표시 이름을 주지 않는다(계약 명시) — 화면이 정하는 말이라 여기 한 곳에만 둔다. */
-const PRESET_LABEL: Record<PracticeExitPreset, string> = {
+/**
+ * 서버는 프리셋 표시 이름을 주지 않는다(계약 명시) — 화면이 정하는 말이라 여기 한 곳에만 두고,
+ * 매수 전 프리셋 선택 UI(AttemptTutorialFlow.tsx)도 이 맵을 그대로 가져다 쓴다.
+ */
+export const PRESET_LABEL: Record<PracticeExitPreset, string> = {
   CAUTIOUS: '조심스럽게',
   BALANCED: '보통',
   RELAXED: '느긋하게',

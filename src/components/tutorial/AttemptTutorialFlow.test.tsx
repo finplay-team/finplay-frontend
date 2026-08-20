@@ -18,6 +18,7 @@ import {
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
+  selectExitPreset,
   selectPracticeInstrument,
   tickPracticeAttempt,
 } from '../../services/tutorialService'
@@ -61,6 +62,7 @@ vi.mock('../../services/tutorialService', () => ({
   recordHoldingObservation: vi.fn(),
   restartPracticeAttempt: vi.fn(),
   saveHoldingReflection: vi.fn(),
+  selectExitPreset: vi.fn(),
   selectPracticeInstrument: vi.fn(),
   tickPracticeAttempt: vi.fn(),
 }))
@@ -112,7 +114,19 @@ const risk = {
   takeProfitPrice: 10500,
   buyTradeId: 31,
   createdAt: '2026-08-14T12:00:00',
+  // 042 이전 기본값(BALANCED, -3%·+5%)과 같다 — 서버가 기능 도입 전 스냅샷을 이렇게 해석해 내려보낸다.
+  exitPreset: 'BALANCED' as const,
+  stopLossRate: 3,
+  takeProfitRate: 5,
+  entrySequence: 1,
 }
+
+/** 실제 서버 열거형(ExitPreset)과 같은 세 값 — 프리셋 픽커가 그릴 목록. */
+const exitPresetOptions = [
+  { preset: 'CAUTIOUS' as const, stopLossRate: 2, takeProfitRate: 3 },
+  { preset: 'BALANCED' as const, stopLossRate: 3, takeProfitRate: 5 },
+  { preset: 'RELAXED' as const, stopLossRate: 5, takeProfitRate: 8 },
+]
 
 function attempt(overrides: Partial<PracticeAttemptResponse> = {}): PracticeAttemptResponse {
   return {
@@ -126,6 +140,12 @@ function attempt(overrides: Partial<PracticeAttemptResponse> = {}): PracticeAtte
     tutorialDate: '2026-08-14',
     riskSnapshot: null,
     completedAt: null,
+    tutorialCashBalance: 0,
+    tutorialAvailableCash: 0,
+    tutorialRealizedPnl: 0,
+    selectedExitPreset: 'BALANCED',
+    exitPresetLocked: false,
+    availableExitPresets: exitPresetOptions,
     ...overrides,
   }
 }
@@ -161,6 +181,7 @@ function renderFlow(
   currentAttempt = attempt(),
   currentProgress = progress(),
   onRefresh = vi.fn().mockResolvedValue(undefined),
+  onAttemptChange = vi.fn(),
 ) {
   // 완료 화면의 "실전 거래 시작하기"가 react-router Link 라 라우터 컨텍스트가 필요하다.
   return render(
@@ -169,7 +190,7 @@ function renderFlow(
         market={currentAttempt.market}
         attempt={currentAttempt}
         progress={currentProgress}
-        onAttemptChange={vi.fn()}
+        onAttemptChange={onAttemptChange}
         onRefresh={onRefresh}
       />
     </MemoryRouter>,
@@ -515,6 +536,74 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText(/지금 값이면 손절선은/)).toBeInTheDocument()
     fireEvent.change(amountField, { target: { value: '' } })
     expect(screen.queryByText(/지금 값이면 손절선은/)).not.toBeInTheDocument()
+  })
+
+  it('매수 전 어림값은 고정 -3%/+5%가 아니라 지금 고른 프리셋을 따른다', async () => {
+    // RELAXED(-5%·+8%)를 골라 둔 상태다 — BALANCED 기본값과 다른 숫자가 나와야 프리셋이 실제로
+    // 반영된 것을 확인할 수 있다.
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      candles: [{ date: '2026-08-14', open: 12000, high: 12500, low: 11800, close: 12340, current: true }],
+    })
+    renderFlow(
+      attempt({ riskSnapshot: null, selectedExitPreset: 'RELAXED' }),
+      progress(),
+    )
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    fireEvent.change(screen.getByLabelText(/얼마어치 구매할까요/), { target: { value: '123400' } })
+
+    // 12,340 × 0.95 = 11,723 / 12,340 × 1.08 = 13,327.2 → 반올림 13,327.
+    expect(screen.getByText(/지금 값이면 손절선은 약 11,723원이고/)).toBeInTheDocument()
+    expect(screen.getByText(/익절선은 약 13,327원이고/)).toBeInTheDocument()
+  })
+
+  it('프리셋 세 개를 각자의 비율과 함께 보여준다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.getByRole('button', { name: /조심스럽게.*-2%.*\+3%/s })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /보통.*-3%.*\+5%/s })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /느긋하게.*-5%.*\+8%/s })).toBeInTheDocument()
+    // 기본 프리셋(BALANCED)이 눌린 상태로 시작한다.
+    expect(screen.getByRole('button', { name: /보통.*-3%.*\+5%/s })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('다른 프리셋을 고르면 선택 API를 부르고 응답으로 attempt를 갱신한다', async () => {
+    const onAttemptChange = vi.fn()
+    const updated = attempt({ riskSnapshot: null, selectedExitPreset: 'CAUTIOUS' })
+    vi.mocked(selectExitPreset).mockResolvedValue(updated)
+    renderFlow(attempt({ riskSnapshot: null }), progress(), undefined, onAttemptChange)
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: /조심스럽게.*-2%.*\+3%/s }))
+
+    await waitFor(() => expect(selectExitPreset).toHaveBeenCalledWith('CRYPTO', 'CAUTIOUS'))
+    await waitFor(() => expect(onAttemptChange).toHaveBeenCalledWith(updated))
+  })
+
+  it('지금 고른 프리셋을 다시 누르면 API를 부르지 않는다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: /보통.*-3%.*\+5%/s }))
+
+    expect(selectExitPreset).not.toHaveBeenCalled()
+  })
+
+  it('프리셋 선택이 실패하면 그 자리에 오류를 보여준다', async () => {
+    vi.mocked(selectExitPreset).mockRejectedValue(new ApiError(409, 'PRACTICE_STEP_LOCKED', null, null))
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    fireEvent.click(screen.getByRole('button', { name: /조심스럽게.*-2%.*\+3%/s }))
+
+    expect(await screen.findByText(/먼저 이전 단계를 완료해야 합니다/)).toBeInTheDocument()
   })
 
   it('매수 후에는 서버 확정 기준선으로 실제 보유 수량만큼의 손익 금액을 보여준다', async () => {

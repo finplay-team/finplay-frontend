@@ -7,7 +7,7 @@ import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
-import { EntryComparison } from './EntryComparison'
+import { EntryComparison, PRESET_LABEL } from './EntryComparison'
 import { ScenarioEventPanel } from './ScenarioEventPanel'
 import { OrderTypeGuideButton, OrderTypeGuideDialog } from './OrderTypeGuide'
 import { SpotlightTour } from './SpotlightTour'
@@ -31,6 +31,7 @@ import {
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
+  selectExitPreset,
   selectPracticeInstrument,
   tickPracticeAttempt,
 } from '../../services/tutorialService'
@@ -38,6 +39,8 @@ import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
   PracticeEvidenceResponse,
+  PracticeExitPreset,
+  PracticeExitPresetOption,
   PracticeHoldingReflectionResponse,
   PracticeSellVerdict,
   PracticeTradeResultResponse,
@@ -58,16 +61,9 @@ const REFLECTION_MAX = 2000
 const OBSERVE_EVERY_N_TICKS = 2
 /** 이 시간 이하로 남으면 카운트다운을 경고색으로 바꾼다. */
 const SALE_URGENT_MS = 60_000
-/**
- * 서버가 매수 체결가에서 손절·익절선을 만들 때 쓰는 비율. 서버 TUTORIAL-FLOW-008과 같은 값이며
- * **서버가 바뀌면 여기도 바뀌어야 한다** — 매수 전 어림 계산이 매수 후 서버 확정값과 어긋나면
- * 사용자는 화면이 거짓말을 했다고 느낀다.
- */
-const STOP_LOSS_RATE = -0.03
-const TAKE_PROFIT_RATE = 0.05
 type TutorialOrderType = 'MARKET' | 'LIMIT'
 /** 오류를 "그 오류를 낸 액션 바로 아래"에 그리기 위한 위치 표시. 페이지 맨 아래 한 곳에만 두면 아무도 못 본다. */
-type ErrorScope = 'select' | 'buy' | 'sell' | 'pending' | 'observe' | 'reflection' | 'restart'
+type ErrorScope = 'select' | 'buy' | 'sell' | 'pending' | 'observe' | 'reflection' | 'restart' | 'preset'
 interface FlowError {
   scope: ErrorScope
   message: string
@@ -199,14 +195,16 @@ function toChartCandles(chart: PracticeTutorialChartResponse | null): Candle[] {
   }))
 }
 
-/** 비율 상수를 그대로 문구용 "-3%" / "+5%" 로 만든다. 숫자를 문구에 따로 적으면 비율이 바뀔 때 어긋난다. */
-function rateLabel(rate: number): string {
-  const percent = Number((rate * 100).toFixed(2))
-  return `${percent > 0 ? '+' : ''}${percent}%`
+/**
+ * 프리셋의 손절·익절 비율(퍼센트 크기, 3%는 `3`)을 문구용 "-3%" / "+5%" 로 만든다. 서버가 부호 없는
+ * 크기만 주므로(부호는 이름으로만 정해진다 — 042 EXITPRESET-006) 여기서 손절엔 −, 익절엔 +를 붙인다.
+ */
+function presetRateLabels(option: { stopLossRate: number; takeProfitRate: number }): {
+  stopLoss: string
+  takeProfit: string
+} {
+  return { stopLoss: `-${option.stopLossRate}%`, takeProfit: `+${option.takeProfitRate}%` }
 }
-
-const STOP_LOSS_LABEL = rateLabel(STOP_LOSS_RATE)
-const TAKE_PROFIT_LABEL = rateLabel(TAKE_PROFIT_RATE)
 
 /**
  * 2단계 완료 한 줄. 수량이 null 이면 개수를 아예 말하지 않는다 — `?? 0` 으로 메우면
@@ -595,11 +593,23 @@ function TradeResultBlock({ result }: { result: PracticeTradeResultResponse }) {
  * 매수 전 미리보기. 아직 체결가가 없어 riskSnapshot이 없으므로 차트 최신가에서 뽑은 **어림값**이다 —
  * "지금 값이면"·"약"으로 확정값이 아님을 문구에 드러낸다. 실제 기준선은 체결 시점에 서버가 확정한다.
  * 수량이 비었거나 0 이하거나 현재가를 모르면 줄 자체를 렌더하지 않는다.
+ *
+ * 비율은 지금 고른 프리셋(042)에서 온다 — 프리셋마다 손절·익절 폭이 다르므로 고정값이면 어림이 틀린다.
  */
-function BuyRiskPreviewLine({ latestPrice, quantity }: { latestPrice: number | null; quantity: number }) {
+function BuyRiskPreviewLine({
+  latestPrice,
+  quantity,
+  stopLossRate,
+  takeProfitRate,
+}: {
+  latestPrice: number | null
+  quantity: number
+  stopLossRate: number
+  takeProfitRate: number
+}) {
   if (latestPrice === null || !(quantity > 0)) return null
-  const stopLossPrice = latestPrice * (1 + STOP_LOSS_RATE)
-  const takeProfitPrice = latestPrice * (1 + TAKE_PROFIT_RATE)
+  const stopLossPrice = latestPrice * (1 - stopLossRate / 100)
+  const takeProfitPrice = latestPrice * (1 + takeProfitRate / 100)
   const loss = (latestPrice - stopLossPrice) * quantity
   const gain = (takeProfitPrice - latestPrice) * quantity
   return (
@@ -634,6 +644,64 @@ function RiskAmountLine({
   )
 }
 
+/**
+ * 매수 전 손절·익절 프리셋 선택(042, 이슈 #477). 조심스럽게·보통·느긋하게 세 개를 나란히 놓고,
+ * 고른 프리셋의 실제 비율을 버튼 안에 함께 적어 "폭이 다르다"는 게 눈에 보이게 한다.
+ *
+ * 매수 전에는 서버가 늘 잠그지 않은 상태(exitPresetLocked=false)로 응답한다 — 잠금은 "지금 보유
+ * 중인가"를 기준으로 하고, 이 자리는 아직 아무것도 사지 않은 시점이기 때문이다. `locked`는 그래도
+ * 서버 값을 그대로 받아 방어적으로 반영한다.
+ */
+function ExitPresetPicker({
+  options,
+  selected,
+  locked,
+  saving,
+  activeClassName,
+  onSelect,
+}: {
+  options: PracticeExitPresetOption[]
+  selected: PracticeExitPreset
+  locked: boolean
+  saving: boolean
+  activeClassName: string
+  onSelect: (preset: PracticeExitPreset) => void
+}) {
+  if (options.length === 0) return null
+  return (
+    <div data-tour="exit-preset">
+      <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
+        {options.map((option) => {
+          const active = option.preset === selected
+          const labels = presetRateLabels(option)
+          return (
+            <button
+              key={option.preset}
+              type="button"
+              aria-pressed={active}
+              disabled={locked || saving}
+              onClick={() => onSelect(option.preset)}
+              className={`flex-1 rounded-2xl px-3 py-2 text-center text-xs font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-50 ${
+                active ? activeClassName : 'text-muted hover:text-ink'
+              }`}
+            >
+              {PRESET_LABEL[option.preset]}
+              <span className="mt-0.5 block text-[10px] tabular opacity-80">
+                {labels.stopLoss} · {labels.takeProfit}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {locked && (
+        <p className="mt-1.5 text-[11px] text-muted">
+          지금은 보유 중이라 바꿀 수 없습니다. 다 판 뒤에 다시 고르세요.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function RiskEducationCard({
   attempt,
   holdingQuantity,
@@ -643,6 +711,15 @@ function RiskEducationCard({
 }) {
   const risk = attempt.riskSnapshot
   if (!risk) return null
+  const labels = presetRateLabels(risk)
+  /**
+   * "열 번 중 몇 번만 맞아도 전체로는 손해를 보지 않는다"의 손익분기 승률. 세 프리셋(2/3·3/5·5/8) 모두
+   * 손실 쪽이 이익 쪽보다 좁아 반올림하면 공교롭게 네 번이지만, 프리셋이 바뀌어도 문구가 어긋나지
+   * 않도록 실제 스냅샷 비율로 계산한다.
+   */
+  const breakevenOutOfTen = Math.round(
+    (risk.stopLossRate / (risk.stopLossRate + risk.takeProfitRate)) * 10,
+  )
   return (
     <Card accent={attempt.market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-5">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">내가 팔 기준선</p>
@@ -652,11 +729,11 @@ function RiskEducationCard({
           <dd className="mt-1 tabular text-base text-ink">{formatKRW(risk.entryPrice)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">더 떨어지면 파는 선 (손절, {STOP_LOSS_LABEL})</dt>
+          <dt className="text-xs text-muted">더 떨어지면 파는 선 (손절, {labels.stopLoss})</dt>
           <dd className="mt-1 tabular text-base text-loss">{formatKRW(risk.stopLossPrice)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">더 오르면 파는 선 (익절, {TAKE_PROFIT_LABEL})</dt>
+          <dt className="text-xs text-muted">더 오르면 파는 선 (익절, {labels.takeProfit})</dt>
           <dd className="mt-1 tabular text-base text-gain">{formatKRW(risk.takeProfitPrice)}</dd>
         </div>
       </dl>
@@ -669,9 +746,12 @@ function RiskEducationCard({
           정해두는 값입니다.
         </p>
         <p>
-          <span className="font-medium text-ink">왜 -3%와 +5%인가요.</span> 손실 쪽을 이익 쪽보다 좁게
-          잡았습니다. 잃을 때는 작게 잃고 벌 때는 크게 번다는 뜻이고, 이렇게 하면 열 번 중 네 번만 맞아도
-          전체로는 손해를 보지 않습니다. 숫자 자체가 정답인 건 아니지만 이 원칙은 어디서나 통합니다.
+          <span className="font-medium text-ink">
+            왜 {labels.stopLoss}와 {labels.takeProfit}인가요.
+          </span>{' '}
+          손실 쪽을 이익 쪽보다 좁게 잡았습니다. 잃을 때는 작게 잃고 벌 때는 크게 번다는 뜻이고, 이렇게
+          하면 열 번 중 {breakevenOutOfTen}번만 맞아도 전체로는 손해를 보지 않습니다. 숫자 자체가 정답인
+          건 아니지만 이 원칙은 어디서나 통합니다.
         </p>
         <p>처음 산 값으로 한 번 정해진 뒤에는 가격이 움직여도 바뀌지 않습니다.</p>
       </div>
@@ -889,6 +969,7 @@ export function AttemptTutorialFlow({
   const [buyAmount, setBuyAmount] = useState('')
   const [flowError, setFlowError] = useState<FlowError | null>(null)
   const [buying, setBuying] = useState(false)
+  const [presetSaving, setPresetSaving] = useState(false)
   const [buyOrderType, setBuyOrderType] = useState<TutorialOrderType>('MARKET')
   const [buyLimitPrice, setBuyLimitPrice] = useState('')
   const [observing, setObserving] = useState(false)
@@ -1320,6 +1401,29 @@ export function AttemptTutorialFlow({
     }
   }, [clearError, market, onAttemptChange, onRefresh, showError])
 
+  /**
+   * 손절·익절 프리셋 선택(042, 이슈 #477). 서버가 "지금 보유 중인가"로 잠그므로(EXITPRESET-003)
+   * 매수 전 단계에서는 항상 통과한다 — 이 화면이 재진입 UI를 아직 갖추지 않아, 여기서는 그 경우가
+   * 실제로 일어나지 않는다. `attempt.exitPresetLocked`로 버튼 자체를 미리 막아 두는 것과는 별개로,
+   * 서버가 막으면 그 오류를 그대로 보여준다.
+   */
+  const handleSelectPreset = useCallback(
+    async (preset: PracticeExitPreset) => {
+      if (preset === attempt.selectedExitPreset || presetSaving) return
+      setPresetSaving(true)
+      clearError()
+      try {
+        const updated = await selectExitPreset(market, preset)
+        onAttemptChange(updated)
+      } catch (error) {
+        showError('preset', toUserMessage(error))
+      } finally {
+        setPresetSaving(false)
+      }
+    },
+    [attempt.selectedExitPreset, clearError, market, onAttemptChange, presetSaving, showError],
+  )
+
   const handleBuy = useCallback(async () => {
     if (attempt.instrumentId === null) return
     const parsed = Number(buyQuantityInput)
@@ -1652,6 +1756,16 @@ export function AttemptTutorialFlow({
   const activeRowText = market === 'CRYPTO' ? 'text-coin' : 'text-[#2DD4BF]'
 
   /**
+   * 매수 전 미리보기(BuyRiskPreviewLine)가 쓸, 지금 고른 프리셋의 실제 비율. 못 찾으면(응답 지연 등)
+   * 서버 기본값(BALANCED, −3%·+5%)으로 어림한다 — 프리셋 목록이 아직 안 왔다고 미리보기 자체를
+   * 지우면 화면이 매번 깜빡인다.
+   */
+  const selectedPresetOption =
+    attempt.availableExitPresets.find((option) => option.preset === attempt.selectedExitPreset) ?? null
+  const previewStopLossRate = selectedPresetOption?.stopLossRate ?? 3
+  const previewTakeProfitRate = selectedPresetOption?.takeProfitRate ?? 5
+
+  /**
    * 되돌아보기는 팔고 난 뒤에야 할 일이 생긴다. 그전에는 탭을 잠그고, 전량 매도되는 순간 자동으로
    * 넘어간다 — 안내형 흐름의 마지막 단계를 탭 뒤에 숨겨 두지 않기 위해서다.
    */
@@ -1748,11 +1862,19 @@ export function AttemptTutorialFlow({
           </h2>
           <CurrentPriceBox price={latestPrice} note="3초마다 새로 불러옵니다." />
           <p className="text-xs leading-relaxed text-muted">
-            사는 순간의 값을 기준으로 팔 기준선 두 개(손절 {STOP_LOSS_LABEL} · 익절 {TAKE_PROFIT_LABEL})가
-            자동으로 만들어집니다. 손절선은 값이 이만큼 떨어지면 더 잃지 않도록 팔라고 알려주는 선이고,
-            익절선은 이만큼 오르면 이익을 챙기고 팔라고 알려주는 선이에요. 비율을 직접 입력할 필요는
-            없습니다.
+            사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 손절선은 값이
+            이만큼 떨어지면 더 잃지 않도록 팔라고 알려주는 선이고, 익절선은 이만큼 오르면 이익을 챙기고
+            팔라고 알려주는 선이에요. 아래에서 그 폭을 고를 수 있습니다.
           </p>
+          <ExitPresetPicker
+            options={attempt.availableExitPresets}
+            selected={attempt.selectedExitPreset}
+            locked={attempt.exitPresetLocked}
+            saving={presetSaving}
+            activeClassName={`${activeRowTone} ${activeRowText}`}
+            onSelect={(preset) => void handleSelectPreset(preset)}
+          />
+          <ErrorNote error={flowError} scope="preset" />
           {market === 'CRYPTO' && (
             <>
               <div
@@ -1845,7 +1967,12 @@ export function AttemptTutorialFlow({
               </p>
             </div>
           )}
-          <BuyRiskPreviewLine latestPrice={latestPrice} quantity={buyQuantityNumber} />
+          <BuyRiskPreviewLine
+            latestPrice={latestPrice}
+            quantity={buyQuantityNumber}
+            stopLossRate={previewStopLossRate}
+            takeProfitRate={previewTakeProfitRate}
+          />
           <Button
             type="button"
             data-tour="buy"
@@ -2192,12 +2319,19 @@ export function AttemptTutorialFlow({
           <div className="flex flex-wrap items-center gap-2">
             {/*
               끝난 연습(replay)에는 안내가 가리킬 대상이 하나도 없다 — 눌러도 아무 일이 없는
-              버튼이라 아예 숨긴다.
+              버튼이라 아예 숨긴다. 재시작만큼 자주 쓰는 동작이 아니라서(도움말성 보조 기능) 글자
+              버튼 대신 물음표 아이콘으로 줄였다 — 재시작과 무게가 같아 보이면 진행을 되돌리는
+              동작이 가벼워 보인다(2026-08-20 피드백).
             */}
             {!replay && (
-              <Button type="button" size="sm" variant="ghost" onClick={handleReplayTour}>
-                안내 다시 보기
-              </Button>
+              <button
+                type="button"
+                aria-label="안내 다시 보기"
+                onClick={handleReplayTour}
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-line text-xs text-muted transition-colors hover:border-ink/40 hover:text-ink"
+              >
+                ?
+              </button>
             )}
             <Button
               type="button"
@@ -2351,12 +2485,12 @@ export function AttemptTutorialFlow({
                               {
                                 value: attempt.riskSnapshot.stopLossPrice,
                                 tone: 'loss',
-                                label: `손절 ${STOP_LOSS_LABEL}`,
+                                label: `손절 ${presetRateLabels(attempt.riskSnapshot).stopLoss}`,
                               },
                               {
                                 value: attempt.riskSnapshot.takeProfitPrice,
                                 tone: 'gain',
-                                label: `익절 ${TAKE_PROFIT_LABEL}`,
+                                label: `익절 ${presetRateLabels(attempt.riskSnapshot).takeProfit}`,
                               },
                             ]
                           : undefined
@@ -2373,6 +2507,21 @@ export function AttemptTutorialFlow({
                       stopLossPrice={attempt.riskSnapshot?.stopLossPrice ?? null}
                       takeProfitPrice={attempt.riskSnapshot?.takeProfitPrice ?? null}
                     />
+                    {/*
+                      사건은 차트의 움직임을 설명하는 것이라 시선이 차트 요약에서 곧장 이어져야 한다
+                      (D23) — 접었다 펴는 캔들 설명보다 먼저 있어야 스크롤 없이 보인다(2026-08-20
+                      피드백). 대본이 없는 실행에서는 통째로 빠진다 — 빈 패널을 남기면 "곧 뭔가 온다"는
+                      약속이 된다.
+                    */}
+                    {scenarioStage !== null && (
+                      <ScenarioEventPanel
+                        market={market}
+                        stage={scenarioStage}
+                        progressing={chart?.scenarioProgressing ?? null}
+                        causeStatus={chart?.causeStatus ?? null}
+                        events={chart?.revealedEvents ?? []}
+                      />
+                    )}
                     <div className="mt-4">
                       <CandleGuide />
                     </div>
@@ -2386,19 +2535,6 @@ export function AttemptTutorialFlow({
                 </div>
               )}
             </Card>
-            {/*
-              사건은 차트의 움직임을 설명하는 것이라 시선이 차트에서 아래로 이어져야 한다(D23).
-              대본이 없는 실행에서는 통째로 빠진다 — 빈 패널을 남기면 "곧 뭔가 온다"는 약속이 된다.
-            */}
-            {scenarioStage !== null && (
-              <ScenarioEventPanel
-                market={market}
-                stage={scenarioStage}
-                progressing={chart?.scenarioProgressing ?? null}
-                causeStatus={chart?.causeStatus ?? null}
-                events={chart?.revealedEvents ?? []}
-              />
-            )}
             <RiskEducationCard attempt={attempt} holdingQuantity={remainingQuantity} />
           </div>
 

@@ -1,6 +1,5 @@
-// 대본이 공개한 가상 사건과 지금 이야기가 진행 중인지를 차트 아래에 그리는 패널
+// 대본이 공개한 가상 사건과 지금 이야기가 진행 중인지를 차트 요약 바로 아래에 그리는 패널
 import { useEffect, useRef, useState } from 'react'
-import { Card } from '../ui/Card'
 import type {
   PracticeScenarioEventResponse,
   ScenarioCauseStatus,
@@ -79,7 +78,9 @@ export function ScenarioEventPanel({
   const newestFirst = [...events].reverse()
 
   return (
-    <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-5">
+    // 차트 카드 안, 요약 줄 바로 아래에 얹는다 — 캔들 설명 아코디언보다 먼저 눈에 들어와야 스크롤
+    // 없이 보인다(2026-08-20 피드백). 카드를 새로 두르지 않고 위 구분선만으로 절을 가른다.
+    <div className="mt-4 border-t border-line pt-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-ink">지금 무슨 일이</h3>
         {/*
@@ -126,7 +127,7 @@ export function ScenarioEventPanel({
           })}
         </ul>
       )}
-    </Card>
+    </div>
   )
 }
 
