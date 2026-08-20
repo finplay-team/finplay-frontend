@@ -2,6 +2,52 @@
 
 ---
 
+# 8차 스코프 — 튜토리얼 대본 사건·진입별 대조 + 모의투자 화면 정합 (2026-08-20, 백엔드 #494·#478)
+
+배경·결정은 `context-notes.md`의 "8차 스코프" 섹션(D23~D28)에 있다. 먼저 읽는다.
+백엔드 PR #494는 2026-08-20 dev에 머지됐다(확인함). 배치안 와이어프레임은 대화에서 확정.
+
+## A. 준비
+- [x] 백엔드 dev 최신화 + PR #494 MERGED 확인
+- [x] `main`에서 `feat/tutorial-scenario-events` 브랜치 생성
+- [x] 백엔드 `docs/api-contracts.md`의 "036 튜토리얼 attempt"·"실습 진행 조회" 절 정독
+- [x] 배치안 확정 — 사건 패널은 차트 아래(A안), 완료 결과는 전체 폭 모달(기존 축하 모달 확장)
+
+## B. 타입·서비스
+- [ ] `services/tutorialTypes.ts` — `ScenarioStage`·`ScenarioCauseStatus`·`ScenarioEventResponse`·`PracticeEntryResponse`
+- [ ] `PracticeTutorialChartResponse`에 4필드(`scenarioStage`·`scenarioProgressing`·`causeStatus`·`revealedEvents`)
+- [ ] `InvestmentPracticeResponse`에 3필드(`entries`·`priceAfterSell`·`revealedEvents`)
+
+## C. 사건 패널 (차트 아래)
+- [ ] `components/tutorial/ScenarioEventPanel.tsx` 신규 — 상태 줄 + 사건 목록(최신이 위)
+- [ ] 새 사건 진입 애니메이션 (`prefers-reduced-motion` 준수)
+- [ ] `causeStatus === 'NONE_KNOWN'`은 "알려진 원인 없음" 한 문구로만
+- [ ] `AttemptTutorialFlow.tsx` 차트 카드 아래 배치
+- [ ] **#478** — `INSTRUMENT_SCENARIOS` 상수와 사용처 2곳 제거
+
+## D. 완료 결과 모달
+- [ ] `components/tutorial/EntryComparison.tsx` 신규 — 진입 카드(넓게/좁게 두 모양)
+- [ ] `CompletionCelebration.tsx` 확장 — 전체 폭, 진입 카드 + 공개된 사건 요약
+- [ ] 축하 문구는 최초 완료에만, 다시 열 때는 결과만
+- [ ] 되돌아보기 탭에 세로 카드 + "결과 다시 보기" 버튼
+- [ ] `scenarioStage === 'FINISHED'` 안내 (보상 판정과 분리)
+
+## E. 모의투자 화면 정합
+- [ ] 매도 주문유형에 "예약 매도" 탭 추가 — 비활성 + 이유 문구
+- [ ] 코인 시장가 매수를 금액 입력으로 (실전과 같은 조작)
+- [ ] 주문가능 현금 박스 — **보류**, 백엔드가 진입·재시작 응답에만 실제 값을 채운다(D28)
+
+## F. 검증
+- [ ] `npm run test` 통과
+- [ ] `npm run build` 타입 에러 0
+- [ ] 로컬 백엔드 기동 후 브라우저 실동작 확인 (사용자가 직접 볼 수 있게 띄우기)
+
+## G. 백엔드에 넘길 것
+- [ ] 튜토리얼 주문가능 현금이 진행 중 갱신되지 않는 문제 이슈 등록
+- [ ] 손절·익절 프리셋(#477) 프론트 미연결 — 별도 이슈
+
+---
+
 # 7차 스코프 — 카카오·네이버 OAuth 로그인 연동 (2026-08-12, 이슈 #11, 진행 중)
 
 배경·결정 근거는 `context-notes.md`의 "7차 스코프" 섹션(D21·D22)에 있다. 먼저 읽는다.
