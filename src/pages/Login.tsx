@@ -91,6 +91,11 @@ export function Login() {
           onChange={update('password')}
           autoComplete="current-password"
         />
+        <div className="text-right text-sm">
+          <Link to="/forgot-password" className="text-muted transition-colors hover:text-ink">
+            비밀번호를 잊으셨나요?
+          </Link>
+        </div>
         <Button type="submit" size="lg" withIcon disabled={loading} className="w-full">
           {loading ? '로그인 중…' : '로그인'}
         </Button>

@@ -124,3 +124,24 @@ export function confirmEmailChange(newEmail: string, code: string): Promise<Memb
 export function changePassword(req: PasswordChangeRequest): Promise<TokenResponse> {
   return api.patch<TokenResponse>('/auth/me/password', req)
 }
+
+/** 비밀번호 찾기 1단계 — 재설정 코드 발송 요청. 202. 미가입 이메일은 404, 소셜 전용 회원은 409. */
+export function requestPasswordReset(email: string): Promise<void> {
+  return api.post<void>('/auth/password-resets', { email }, { auth: false })
+}
+
+/**
+ * 비밀번호 찾기 2단계 — 6자리 코드와 새 비밀번호로 재설정 확정. 204, 본문 없음(토큰 미발급).
+ * 재설정은 항상 전 기기 로그아웃이라 호출부는 세션을 저장하지 말고 로그인 화면으로 보내야 한다.
+ */
+export function confirmPasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  return api.post<void>(
+    '/auth/password-resets/confirm',
+    { email, code, newPassword },
+    { auth: false },
+  )
+}

@@ -112,6 +112,21 @@ export interface EmailChangeConfirmRequest {
   code: string
 }
 
+/** POST /api/auth/password-resets — 202, 본문 없음. 비인증 공개 경로. */
+export interface PasswordResetRequest {
+  email: string
+}
+/**
+ * POST /api/auth/password-resets/confirm — 204, 본문 없음. 회원가입과 달리 토큰이 오지 않는다 —
+ * 재설정은 항상 전 기기 로그아웃이라 성공 후 로그인 화면으로 보내야 한다. code 는 정확히 6자리 숫자,
+ * newPassword 는 8~100자.
+ */
+export interface PasswordResetConfirmRequest {
+  email: string
+  code: string
+  newPassword: string
+}
+
 /* ---------- 종목·시세 ---------- */
 
 /**
