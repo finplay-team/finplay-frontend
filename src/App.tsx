@@ -7,6 +7,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { Landing } from './pages/Landing'
 import { Signup } from './pages/Signup'
 import { Login } from './pages/Login'
+import { ForgotPassword } from './pages/ForgotPassword'
 import { OAuthCallback } from './pages/OAuthCallback'
 import { OAuthLoginCallback } from './pages/OAuthLoginCallback'
 import { OAuthReauthCallback } from './pages/OAuthReauthCallback'
@@ -40,6 +41,7 @@ export default function App() {
   const hideChrome =
     location.pathname === '/login' ||
     location.pathname === '/signup' ||
+    location.pathname === '/forgot-password' ||
     location.pathname.startsWith('/oauth/') ||
     location.pathname === '/trade' ||
     location.pathname === '/tutorial'
@@ -52,6 +54,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/oauth/:provider/callback" element={<OAuthCallback />} />
           {/* finplay-api PR #385 — LOGIN 콜백이 이 경로로 1회용 교환 코드를 실어 리다이렉트한다.
               위 /oauth/:provider/callback(OAuthCallback)은 그 이전 설계의 잔존 라우트다. */}
