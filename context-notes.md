@@ -1070,3 +1070,53 @@ D38 원문은 지우지 않는다. 그때 실측으로 내린 판단이고, **�
 상시 대비책이 아니다.
 
 근거: 백엔드 PR #521, 이슈 #491.
+
+# 백엔드 PR #505 반영 — 잔액·2단계 판정·재진입 (2026-08-20, docs/handoff-from-backend-505.md)
+
+## D39. `GET .../practice`의 죽은 잔액이 폴링 한 번에 실제 잔액을 지우는 실제 버그를 잡았다
+
+D37이 "잔액은 쓰기 응답 네 곳에서 받아 상태로 들고 있어라"고 경고했는데, `Tutorial.tsx`를 다시
+읽어 보니 **그 경고가 이미 뚫려 있었다.** `loadMarket`은 `progress.attempt ?? ensured`로 진행
+조회(GET) 쪽을 우선했고, `refreshMarket`(자식의 tick·매수 새로고침이 매번 부르는 경로)은
+`progress.attempt`를 조건 없이 그대로 `attempts` 상태에 덮어썼다 — 즉 **종목 선택·프리셋
+선택으로 잔액이 한 번 실값이 돼도, 다음 tick(3초 뒤) 폴링에서 바로 0으로 돌아갔을 것이다.**
+9차 E가 "잔액을 아직 못 붙인다"고 유보했을 때는 문제가 안 됐지만, 이번에 퍼센트 버튼을 실제로
+붙이면서 이 경로를 처음 타 보니 바로 드러났다.
+
+고친 방법 — 잔액 세 필드만 별도 상태(`balances`, market별)로 떼어, **쓰기 응답 네 곳
+(`ensurePracticeAttempt`·`restartPracticeAttempt`·`selectPracticeInstrument`·`selectExitPreset`)
+에서만 갱신한다.** `refreshMarket`은 `useRef`로 최신 `balances`를 읽어 `progress.attempt`의
+다른 필드(status·riskSnapshot 등, 이건 GET도 최신값을 준다)에 덮어씌운다 — 관찰 tick의
+`observeStateRef`와 같은 패턴이다. `Tutorial.test.tsx`에 회귀 테스트를 추가했다 — GET이 잔액을
+0으로 내려줘도 자식이 "진행만 새로고침"을 눌렀을 때 마지막으로 안 실제 잔액이 유지되는지 확인한다.
+
+## D40. `panelTab` 자동 전환에 경쟁 상태가 있었다 — 재진입 테스트가 잡았다
+
+재진입 UI를 "차트가 IDLE_REENTRY면 되돌아보기로 넘기지 않는다"로만 구현했더니 새 테스트가
+바로 깨졌다. 원인 — `scenarioStage`는 `chart` state(비동기로 늦게 옴)에서 나오는데, **마운트
+직후 첫 렌더는 `chart === null`이라 `awaitingReentry`가 잠깐 `false`로 계산된다.** evidence는
+이미 `fullySold=true`라, 그 찰나에 `reviewReady`가 `true`로 잡혀 `useEffect`가 곧바로
+`setPanelTab('review')`를 불러 버린다. 그 뒤 차트가 도착해 `awaitingReentry`가 `true`로
+바뀌어도, 기존 effect는 `reviewReady`가 `true`일 때만 반응해 **`review`에서 되돌리는 코드가
+없었다** — 되돌아보기 탭 버튼은 다시 잠기는데(disabled) 내용은 이미 복기 폼으로 넘어간 채
+갇힌다.
+
+고친 방법 — effect를 양방향으로 만들었다: `reviewReady`면 `review`로, 아니면서
+`awaitingReentry`면 명시적으로 `order`로 되돌린다. **테스트를 먼저 쓰고 실행해서 잡은 버그다**
+— 코드만 보고는 "이 정도는 괜찮겠지"로 넘어갔을 자리였다.
+
+## D41. 백엔드 회신 3건 — 답은 `docs/frontend-reply-505.md`
+
+문서 §2가 요구한 세 결정(2단계 게이팅 범위·전환 호출 주체·`ORDER_BASICS` 표시)에 대한 답을
+별도 문서로 정리했다 — 다음에 이 세션을 이어받을 백엔드 세션에 그 파일 경로만 넘기면 된다.
+결정 근거는 전부 **이 코드베이스에 이미 있는 관례**에서 뽑았다(예약 매도 탭을 숨기지 않고
+비활성+이유로 두는 관례, 되돌릴 수 없는 동작은 항상 사용자 버튼을 거치는 관례) — 새 규칙을
+지어내지 않았다.
+
+## D42. `tutorialStageProgress` 체크리스트는 지금은 정보용이다 — 강제는 spec 049 몫
+
+문서 §3이 "순서 강제(409)는 아직 없다"고 명시했고, 그 판단은 spec 049(2단계 분리) 몫으로
+남아 있다. 그래서 이번 체크리스트(`StageProgressChecklist`)는 **아무것도 잠그지 않는다** —
+서버 판정 세 개를 칩으로 보여주기만 한다. 순서를 실제로 막는 UI(예: 프리셋을 고르기 전엔
+매수 버튼을 잠근다)를 지금 만들면, spec 049가 정할 실제 게이팅 규칙과 미리 어긋날 위험이
+있어 손대지 않았다.

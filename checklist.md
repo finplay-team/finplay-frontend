@@ -640,3 +640,13 @@ Chrome 확장이 여전히 안 붙어서 **별도 Chrome 을 CDP(9333)로 띄워
 - [x] 챗봇: 종목 추천 질문 → 거절 응답 + 면책 문구
 - [x] /portfolio 보유 종목 실시간 평가 렌더
 - [x] /support 렌더 (FAQ 아코디언·문의 폼)
+
+## 11. 백엔드 PR #505 반영 — 잔액·2단계 판정·재진입 (2026-08-20, docs/handoff-from-backend-505.md)
+- [x] tutorialTypes.ts: `TutorialStageProgress`, `PracticeEntryResponse.buyOrderType` 추가
+- [x] Tutorial.tsx: 잔액 세 필드를 진행 조회(GET)의 죽은 0으로 덮어쓰지 않도록 별도 상태로 분리 (이슈 #502 — 문서가 지적한 함정을 실제로 재현·수정, D39)
+- [x] 주문 가능 잔액 표시 + 10/25/50/75/최대 퍼센트 버튼 (코인 시장가 매수, 9차 E 유보 해제)
+- [x] `tutorialStageProgress`로 2-1/2-2/3 학습 체크리스트 표시 (StageProgressChecklist, 주식은 지정가 항목 제외)
+- [x] 재진입 UI: `orderSide`·`reviewReady`가 `awaitingReentry`(scenarioStage IDLE_REENTRY)를 반영해 전량 매도 뒤 매수 폼으로 되돌아간다 (D35 유보 해제) — 구현 중 panelTab 경쟁 상태 버그 발견·수정 (D40)
+- [x] 완료 화면 진입 카드에 `buyOrderType` 칩 표시 (EntryComparison)
+- [x] 백엔드 회신 3건 결정 — docs/frontend-reply-505.md (D41)
+- [x] 신규/수정 테스트 10건 + 전체 스위트 228개 통과, `npm run build` 통과
