@@ -38,6 +38,16 @@ export function formatPercent(value: number): string {
   return `${sign}${Math.abs(value).toFixed(1)}%`
 }
 
+/**
+ * "+216원" / "-1,200원". 원화는 소수가 없으므로 formatKRW 의 반올림을 그대로 쓴다.
+ * 만원 단위로 줄이는 formatPnl 과 달리 금액을 그대로 보여준다 — 튜토리얼처럼 몇백 원 차이가
+ * 의미를 갖는 화면에서는 축약하면 두 금액이 같아 보인다.
+ */
+export function formatSignedKRW(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
+  return `${sign}${formatKRW(Math.abs(value))}`
+}
+
 /** 손익 부호에 따른 색상 유틸 클래스 (다크 배경용 gain/loss 토큰) */
 export function pnlTone(value: number): string {
   if (value > 0) return 'text-gain'
