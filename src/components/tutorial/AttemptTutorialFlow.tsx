@@ -1920,8 +1920,15 @@ export function AttemptTutorialFlow({
           )}
           {amountMode ? (
             <div>
+              {/*
+                라벨·placeholder를 모의투자 화면(pages/Trade.tsx)의 "주문 금액"과 똑같이 맞춘다.
+                "주문 가능" 잔액·퍼센트 버튼(10/25/50/75/최대)은 아직 붙이지 않는다 — 튜토리얼 계좌
+                잔액은 진입·재시작 응답에만 실제 값이 오고 종목 선택(PUT .../instrument) 이후로는
+                0으로 죽어 있어(TUTORIAL-CASH-ISOL-011), 이 시점엔 정확한 "최대"를 계산할 방법이
+                없다. 잘못된 잔액으로 버튼을 만드느니 안 만드는 게 낫다 — 백엔드에 넘긴다.
+              */}
               <label htmlFor="tutorial-buy-amount" className="mb-1.5 block text-sm font-medium text-ink">
-                얼마어치 구매할까요
+                주문 금액
               </label>
               <input
                 id="tutorial-buy-amount"
@@ -1929,7 +1936,9 @@ export function AttemptTutorialFlow({
                 data-tour="quantity"
                 onChange={(event) => setBuyAmount(event.target.value.replace(/[^0-9]/g, ''))}
                 inputMode="numeric"
-                placeholder="0"
+                placeholder={
+                  selectedInstrument ? `최소 금액 ${formatKRW(selectedInstrument.minOrderAmount)}` : '0'
+                }
                 className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring focus:border-brand focus:ring-4 focus:ring-brand/15"
               />
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
@@ -1954,14 +1963,21 @@ export function AttemptTutorialFlow({
           {buyUnitPrice !== null && buyQuantityNumber > 0 && (
             <div className="space-y-1.5 rounded-2xl bg-elevated px-4 py-3 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-muted">예상 주문금액 (추정)</span>
+                {/*
+                  실전 화면은 금액 입력 모드에서 KRW 총액이 아니라 살 수량("0.05 BTC")을 보여준다 —
+                  이미 입력한 금액을 그대로 되읽어 주는 대신, 그 금액으로 몇 개를 살 수 있는지가
+                  사용자가 실제로 궁금한 값이기 때문이다. 라벨·값 모양을 그대로 맞춘다.
+                */}
+                <span className="text-muted">{amountMode ? '예상 매수' : '예상 주문금액 (추정)'}</span>
                 <span className="font-medium text-ink tabular">
-                  {formatKRW(buyUnitPrice * buyQuantityNumber)}
+                  {amountMode
+                    ? `${buyQuantityInput} ${selectedInstrument?.symbol ?? ''}`
+                    : formatKRW(buyUnitPrice * buyQuantityNumber)}
                 </span>
               </div>
               <p className="pt-1 text-xs leading-relaxed text-muted">
                 {amountMode
-                  ? `${formatKRW(buyUnitPrice)}에 ${buyQuantityInput}개를 사는 것으로 계산한 추정치예요`
+                  ? '현재가 기준 예상 수량이며, 체결 시점 가격에 따라 실제와 다를 수 있어요'
                   : `${quantity}개 × ${formatKRW(buyUnitPrice)} 로 계산한 추정치예요`}{' '}
                 · 연습용 가짜 돈입니다
               </p>

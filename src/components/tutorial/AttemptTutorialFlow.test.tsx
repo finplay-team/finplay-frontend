@@ -514,7 +514,7 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     // 코인은 금액으로 산다 — 금액을 적기 전에는 채울 수량이 없어 이 줄 자체가 없다.
-    fireEvent.change(screen.getByLabelText(/얼마어치 구매할까요/), { target: { value: '123400' } })
+    fireEvent.change(screen.getByLabelText('주문 금액'), { target: { value: '123400' } })
 
     // 두 기준선 값은 수량과 무관하다 — 금액을 얼마로 적든 이 숫자여야 한다.
     expect(screen.getByText(/지금 값이면 손절선은 약 11,970원이고/)).toBeInTheDocument()
@@ -531,7 +531,7 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    const amountField = screen.getByLabelText(/얼마어치 구매할까요/)
+    const amountField = screen.getByLabelText('주문 금액')
     fireEvent.change(amountField, { target: { value: '123400' } })
     expect(screen.getByText(/지금 값이면 손절선은/)).toBeInTheDocument()
     fireEvent.change(amountField, { target: { value: '' } })
@@ -552,7 +552,7 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    fireEvent.change(screen.getByLabelText(/얼마어치 구매할까요/), { target: { value: '123400' } })
+    fireEvent.change(screen.getByLabelText('주문 금액'), { target: { value: '123400' } })
 
     // 12,340 × 0.95 = 11,723 / 12,340 × 1.08 = 13,327.2 → 반올림 13,327.
     expect(screen.getByText(/지금 값이면 손절선은 약 11,723원이고/)).toBeInTheDocument()
@@ -1189,7 +1189,7 @@ describe('AttemptTutorialFlow', () => {
     // 코인은 모의투자 화면과 같이 금액으로 산다 — 제목·입력 라벨이 함께 "얼마어치"여야 한다.
     expect(screen.getByRole('heading', { name: '2. 얼마어치 구매할지 정합니다 (매수)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
-    expect(screen.getByText(/얼마어치 구매할까요/)).toBeInTheDocument()
+    expect(screen.getByText('주문 금액')).toBeInTheDocument()
     // 모든 문장에 (매수)를 달면 읽기가 나빠진다 — 단계마다 처음 나오는 한 곳에만 병기한다.
     expect(screen.getAllByText(/\(매수\)/)).toHaveLength(1)
     expect(screen.queryByRole('button', { name: /사기|팔기/ })).not.toBeInTheDocument()
