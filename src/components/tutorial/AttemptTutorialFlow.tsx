@@ -15,7 +15,7 @@ import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { formatDateTime, parseLocalDateTime, ratioToPercent } from '../../lib/datetime'
-import { toUserMessage } from '../../lib/errorMessages'
+import { isApiErrorCode, toUserMessage } from '../../lib/errorMessages'
 import { formatKRW, formatPercent, formatSignedKRW } from '../../lib/format'
 import { CRYPTO_QTY_DECIMALS, presetQuantity } from '../../lib/quantity'
 import { bumpTutorial } from '../../lib/tutorialPulse'
@@ -861,6 +861,28 @@ function pendingOutcomeText(outcome: PendingOutcome): string {
     return '예약을 취소했습니다. 체결되지 않았습니다.'
   }
   return '예약이 대기 목록에서 사라졌습니다. 체결됐는지 취소됐는지는 확인하지 못했습니다.'
+}
+
+/**
+ * 취소·정정하려던 주문이 그 사이 tick으로 이미 체결·취소돼 있으면 409(`ORDER_ALREADY_FILLED`·
+ * `ORDER_ALREADY_CANCELLED`)나 404(`NOT_FOUND`)가 온다 — 오류가 아니라 "결말이 이미 났다"는
+ * 뜻이다(실전 화면 `PendingOrders.tsx`의 `handleGone`과 같은 판단). 그런데 이 화면의 세 취소·정정
+ * 경로(취소·즉시체결·정정)는 전부 이 경우를 일반 오류로만 보여주고 `pendingOrder`를 지우지
+ * 않았다 — 카드가 "정한 값이 되기를 기다리는 중"에 영원히 멈춰, 다시 눌러도 같은 409만 반복됐다
+ * (2026-08-20 실사용 중 발견). 체결가는 지정가로 고정되므로 `ORDER_ALREADY_FILLED`는 결말을
+ * `FILLED`로 단정해도 된다.
+ */
+function pendingOrderGoneOutcome(error: unknown, pending: LimitOrderResponse): PendingOutcome | null {
+  if (isApiErrorCode(error, 'ORDER_ALREADY_FILLED')) {
+    return { status: 'FILLED', side: pending.side, quantity: pending.quantity, limitPrice: pending.limitPrice }
+  }
+  if (isApiErrorCode(error, 'ORDER_ALREADY_CANCELLED')) {
+    return { status: 'CANCELLED', side: pending.side, quantity: pending.quantity, limitPrice: pending.limitPrice }
+  }
+  if (isApiErrorCode(error, 'NOT_FOUND')) {
+    return { status: 'UNKNOWN', side: pending.side, quantity: pending.quantity, limitPrice: pending.limitPrice }
+  }
+  return null
 }
 
 /** 지금 값과 걸어둔 값의 관계로 "언제 체결되는지"를 말한다. 방향이 뒤집힌 경우를 지어내지 않는다. */
@@ -1709,20 +1731,30 @@ export function AttemptTutorialFlow({
 
   const handleCancelPending = useCallback(async () => {
     if (!pendingOrder || cancellingPending) return
+    const pending = pendingOrder
     setCancellingPending(true)
     clearError()
     try {
-      await cancelLimitOrder(pendingOrder.orderId)
+      await cancelLimitOrder(pending.orderId)
       setPendingOutcome({
         status: 'CANCELLED',
-        side: pendingOrder.side,
-        quantity: pendingOrder.quantity,
-        limitPrice: pendingOrder.limitPrice,
+        side: pending.side,
+        quantity: pending.quantity,
+        limitPrice: pending.limitPrice,
       })
       setPendingOrder(null)
       setAmendOpen(false)
       await onRefresh()
     } catch (error) {
+      const gone = pendingOrderGoneOutcome(error, pending)
+      if (gone) {
+        // 취소하려는 사이에 이미 결말이 났다 — 오류가 아니다. 카드를 그 결말로 바꾸고 다시 읽는다.
+        setPendingOutcome(gone)
+        setPendingOrder(null)
+        setAmendOpen(false)
+        await onRefresh()
+        return
+      }
       showError('pending', toUserMessage(error))
     } finally {
       setCancellingPending(false)
@@ -1744,6 +1776,7 @@ export function AttemptTutorialFlow({
    */
   const handleAmendPending = useCallback(async () => {
     if (!pendingOrder || amending) return
+    const pending = pendingOrder
     const parsedPrice = Number(amendPrice)
     const parsedQuantity = Number(amendQuantity)
     if (!(parsedPrice > 0) || !(parsedQuantity > 0)) {
@@ -1753,7 +1786,7 @@ export function AttemptTutorialFlow({
     setAmending(true)
     clearError()
     try {
-      const updated = await amendLimitOrder(pendingOrder.orderId, {
+      const updated = await amendLimitOrder(pending.orderId, {
         limitPrice: amendPrice,
         quantity: amendQuantity,
       })
@@ -1761,13 +1794,17 @@ export function AttemptTutorialFlow({
       setAmendOpen(false)
       await onRefresh()
     } catch (error) {
-      showError(
-        'pending',
-        toUserMessage(error, {
-          ORDER_ALREADY_FILLED: '이미 체결된 주문이라 고칠 수 없습니다.',
-          ORDER_ALREADY_CANCELLED: '이미 취소된 주문이라 고칠 수 없습니다.',
-        }),
-      )
+      const gone = pendingOrderGoneOutcome(error, pending)
+      if (gone) {
+        // 고치려는 사이에 이미 결말이 났다 — 예전에는 메시지만 이름표를 달리 붙이고 카드를 그대로
+        // "기다리는 중"에 남겨 뒀다. 그러면 다시 눌러도 같은 409만 반복된다(2026-08-20 실사용 중 발견).
+        setPendingOutcome(gone)
+        setPendingOrder(null)
+        setAmendOpen(false)
+        await onRefresh()
+        return
+      }
+      showError('pending', toUserMessage(error))
     } finally {
       setAmending(false)
     }
@@ -1779,12 +1816,13 @@ export function AttemptTutorialFlow({
    */
   const handleFillPendingNow = useCallback(async () => {
     if (!pendingOrder || cancellingPending || attempt.instrumentId === null) return
-    const side = pendingOrder.side
-    const orderQuantity = String(pendingOrder.quantity)
+    const pending = pendingOrder
+    const side = pending.side
+    const orderQuantity = String(pending.quantity)
     setCancellingPending(true)
     clearError()
     try {
-      await cancelLimitOrder(pendingOrder.orderId)
+      await cancelLimitOrder(pending.orderId)
       setPendingOrder(null)
       setAmendOpen(false)
       await placeOrder(
@@ -1801,6 +1839,26 @@ export function AttemptTutorialFlow({
       bumpTutorial()
       await onRefresh()
     } catch (error) {
+      /**
+       * "지금 값에 바로 체결" 버튼은 정한 값에 영영 안 닿아 지친 사용자를 위한 탈출로다 — 그런데
+       * 취소를 부르는 그 사이에 진짜로 값이 닿아 서버가 먼저 체결시켜 버리면(정확히 그 버튼을
+       * 누르고 싶어지는 순간과 같은 순간이다) `ORDER_ALREADY_FILLED` 409가 온다. 이미 산 걸 또
+       * 사면 안 되므로 시장가 주문을 새로 넣지 않고, 이미 원하던 결과(체결)가 났다고 그대로 알린다
+       * (2026-08-20 실사용 중 발견 — 지정가 매수 뒤 이 버튼을 눌렀는데 화면이 "기다리는 중"에
+       * 멈춘 채 끝난 것으로 재현했다).
+       */
+      const gone = pendingOrderGoneOutcome(error, pending)
+      if (gone) {
+        setPendingOutcome(gone)
+        setPendingOrder(null)
+        setAmendOpen(false)
+        if (gone.status === 'FILLED') {
+          if (side === 'BUY') setBuyOrderType('MARKET')
+          else setSellOrderType('MARKET')
+        }
+        await onRefresh()
+        return
+      }
       showError('pending', toUserMessage(error))
     } finally {
       setCancellingPending(false)

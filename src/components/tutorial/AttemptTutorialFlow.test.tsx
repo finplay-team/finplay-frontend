@@ -1564,6 +1564,49 @@ describe('AttemptTutorialFlow', () => {
     expect(amendLimitOrder).not.toHaveBeenCalled()
   })
 
+  it('취소하려는 사이에 이미 체결돼 409가 와도 카드에 갇히지 않고 체결로 결말을 바꾼다 (실사용 중 발견)', async () => {
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83 })])
+    vi.mocked(cancelLimitOrder).mockRejectedValue(new ApiError(409, 'ORDER_ALREADY_FILLED', null, null))
+    renderFlow()
+
+    fireEvent.click(await screen.findByRole('button', { name: '지정가 주문 취소' }))
+    await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(83))
+
+    // "요청을 처리할 수 없습니다" 같은 일반 오류로 카드가 멈추지 않는다 — 체결 결말로 바뀐다.
+    expect(await screen.findByText(/예약한 값에 체결됐습니다/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '지정가 주문 취소' })).not.toBeInTheDocument()
+    expect(screen.queryByText('요청을 처리할 수 없습니다.')).not.toBeInTheDocument()
+  })
+
+  it('고치려는 사이에 이미 취소돼 409가 와도 카드에 갇히지 않고 취소로 결말을 바꾼다 (실사용 중 발견)', async () => {
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83 })])
+    vi.mocked(amendLimitOrder).mockRejectedValue(new ApiError(409, 'ORDER_ALREADY_CANCELLED', null, null))
+    renderFlow()
+
+    fireEvent.click(await screen.findByRole('button', { name: '예약 값 고치기' }))
+    fireEvent.change(screen.getByLabelText('바꿀 지정가'), { target: { value: '130' } })
+    fireEvent.change(screen.getByLabelText('바꿀 개수'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: '이 값으로 고치기' }))
+
+    await waitFor(() => expect(amendLimitOrder).toHaveBeenCalled())
+    expect(await screen.findByText('예약을 취소했습니다. 체결되지 않았습니다.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '예약 값 고치기' })).not.toBeInTheDocument()
+  })
+
+  it('"지금 값에 바로 체결"을 눌렀는데 그 사이 이미 체결됐으면 중복 주문 없이 체결 결말만 알린다 (실사용 중 발견)', async () => {
+    vi.mocked(getPracticeAttemptOrders).mockResolvedValue([practiceOrder({ orderId: 83, side: 'BUY' })])
+    vi.mocked(cancelLimitOrder).mockRejectedValue(new ApiError(409, 'ORDER_ALREADY_FILLED', null, null))
+    renderFlow()
+
+    fireEvent.click(await screen.findByRole('button', { name: '기다리지 않고 지금 값에 구매하기' }))
+    await waitFor(() => expect(cancelLimitOrder).toHaveBeenCalledWith(83))
+
+    // 이미 산 걸 또 사면 안 된다 — 새 시장가 주문을 넣지 않는다.
+    expect(placeOrder).not.toHaveBeenCalled()
+    expect(await screen.findByText(/예약한 값에 체결됐습니다/)).toBeInTheDocument()
+    expect(screen.queryByText('요청을 처리할 수 없습니다.')).not.toBeInTheDocument()
+  })
+
   it('tick마다 튜토리얼 주문 조회로 예약 상태를 확인해 체결되면 카드를 결말로 바꾼다', async () => {
     // 체결 알림이 없어 폴링이 유일한 감지 수단이다 — 카드를 조용히 지우면 팔렸는지 알 수 없다.
     // 435: 이 엔드포인트는 상태 무관 전부 오므로, 첫 호출(마운트 복원)은 PENDING을, 이후 tick
