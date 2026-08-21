@@ -699,3 +699,36 @@ Chrome 확장이 여전히 안 붙어서 **별도 Chrome 을 CDP(9333)로 띄워
 - [x] 완료 화면 진입 카드의 프리셋 이름 칩 → 진입별 실제 비율 표기(`손절 −3% · 익절 +5%`)로 교체,
       `exitPreset`은 화면에서 완전히 제거(타입도 nullable로 정정), 비율 필드가 없으면 기준선
       가격에서 역산하는 폴백 — 테스트 2건 추가, 전체 265개 통과
+
+## 14. 예약 매도 수동화 — 손절·익절을 "겪는 자리"를 실전 순서로 되돌림 (2026-08-21, 제품 오너 지적)
+- [x] 매수 폼에서 손절·익절 입력을 완전히 제거(`ExitRateFields` 호출·설명 문단·`BuyRiskPreviewLine`)
+      — 3단계 매수는 시장가·지정가만 고른다(실전 매수 폼과 동일)
+- [x] 매도 화면 "예약 매도" 탭 활성화 — `TutorialExitPlanPanel`(실전 `OcoExitPlanPanel`을 재사용하지
+      않고 같은 모양으로 감싼다. 이유는 그 파일 상단 주석)
+- [x] `createPracticeExitPlan` 서비스 (`POST .../exit-plan`, 손절도 양수 퍼센트 수) · 취소는 실전과
+      같은 `DELETE /api/exit-plans/{id}`(`cancelExitPlan`) 재사용
+- [x] `ExitRateFields`를 제어 컴포넌트로 리팩터 — 디바운스 자동 저장 제거, 기준가를 현재가가 아니라
+      **평균 매수가**로 교체(예약은 산 값 기준으로 걸린다). 범위·의미 문구·예상 금액은 그대로 이동
+- [x] 학습 흐름 안내 `ExitJourneyGuide` — 사기 → 예약 걸기 → 기다리기 진행 레일 + 국면별 문구 +
+      "손절 겪기·익절 겪기" 진행 칩(상시 노출). 잠그지 않고 안내만 한다(강도 b)
+- [x] 차트 참고선이 예약을 따라간다 — 예약 있으면 확정선, 보유+미예약이면 입력값 기준 예상선,
+      매수 전에는 아무 선도 안 그림. `RiskEducationCard`·`ChartSummary` 기준선도 예약이 있을 때만
+- [x] 엣지 케이스 — 예약 없이 매도(버튼 아래 "지금 팔면 못 겪는다" 안내, 잠그지 않음) · 예약 취소
+      (다시 걸라는 안내 + 취소 사실 명시) · 손절만 겪고 재매수 안 함("이제 익절 차례" + 나가도 됨)
+- [x] 2단계(ORDER_BASICS)에서는 예약 탭 잠금 + 이유, 학습 안내 자체를 그리지 않음
+- [x] 주식(STOCK)에는 예약 탭·학습 안내 없음 — 걸 방법이 없는 화면에서 권하지 않는다
+- [x] `exitPresetSelected` 체크리스트 항목을 예약 생성·경험으로도 채움 — **백엔드가 서버 판정을
+      "이 실행에 예약이 하나라도 있으면 참(상태 무관)"으로 넓혔다**(2026-08-21). 서버 판정이 화면
+      판정보다 좁아지는 경우가 없으므로, 화면 OR는 배포 때까지만 남기는 폴백이다
+- [x] 테스트 21건 신규/개편(상태 전이 검증) · 전체 277개 통과 · `tsc -b --noEmit` · `npm run build`
+- [x] 진행 조회 계약 확정 반영 — `pendingExitPlan`(이름·null 규칙 그대로, 필드 3개 추가) ·
+      겪음 두 boolean은 `exitExperience` 객체 안으로 · `exitPlanCreatable` 신설
+- [x] **예약은 진입당 한 번(write-once)** — 취소해도 그 진입에서는 다시 못 건다. `exitPlanCreatable`을
+      정본으로 국면을 하나 더 만들고(`HOLDING_PLAN_SPENT`), 공용 `EXIT_PLAN_ALREADY_EXISTS` 문구
+      ("취소한 뒤 다시")를 이 화면에서만 덮었다
+- [x] BigDecimal이 문자열로 올 수 있어 `readPendingExitPlan()`에서 숫자로 강제 + 회귀 테스트
+- [ ] **배포 확인 후 제거** — `StageProgressChecklist`의 `exitPlanned` prop과 그 인자(서버
+      `exitPresetSelected`만 그리면 된다) · `readExitExperience`의 `entries[].sellCause` 폴백 ·
+      `readExitPlanCreatable`의 어림 폴백 · `estimateExitPlan`과 `localExitPlan` 상태.
+      §13의 폴백 세 개와 함께 한 번에 뗀다
+- [ ] 실제 백엔드로 검증 — 로컬 8080이 인증 앞단에서 401을 돌려줘 라우트 존재 여부조차 확인 불가

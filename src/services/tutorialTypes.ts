@@ -444,4 +444,59 @@ export interface InvestmentPracticeResponse {
    * `FALLBACK_EXIT_RATE_BOUNDS`도 배포 확인 뒤에는 두 rate·진입별 비율과 **함께** 뗄 수 있다.
    */
   exitRateBounds?: ExitRateBounds
+  /**
+   * 지금 걸려 있는 PENDING 예약 매도(2026-08-21 수동 예약 재설계, 백엔드 확정). **예약이 없으면
+   * 필드 자체가 `null`이다** — 빈 껍데기 객체가 오지 않는다. 판정 범위는 현재 실행 세대라,
+   * 재시작하면 `null`로 돌아간다.
+   *
+   * 화면은 이 필드를 직접 읽지 않고 `services/tutorialExitPlan.ts`의 `readPendingExitPlan()`만
+   * 쓴다 — 배포 전 서버(필드 없음)를 그 한 곳에서 흡수하기 위해서다.
+   */
+  pendingExitPlan?: PracticeExitPlanSummary | null
+  /**
+   * 지금 새 예약을 걸 수 있는가(백엔드 확정, 항상 boolean). `POST .../exit-plan`이 201을 줄 조건과
+   * 같은 산출식이다.
+   *
+   * ⚠️ **"보유 중이고 예약이 없다"와 같지 않다.** 예약은 **한 진입에 한 번만** 걸 수 있어
+   * (write-once), 걸었다가 취소한 진입에서는 보유 중이고 예약도 없는데 이 값이 `false`다.
+   * 그 상태에서 다시 걸면 409 `EXIT_PLAN_ALREADY_EXISTS`다 — 화면이 이 값을 안 보고 "다시 걸어
+   * 주세요"라고 말하면 누를 때마다 실패하는 안내가 된다.
+   */
+  exitPlanCreatable?: boolean
+  /**
+   * 이번 실행 세대에서 손절/익절을 실제로 겪었는가(백엔드 확정, 항상 non-null 객체).
+   * 읽는 자리는 `readExitExperience()` 한 곳뿐이고, 이 필드가 없는 서버에서는 그 함수가
+   * `entries[].sellCause`로 같은 판정을 만들어 낸다 — 그래서 배포 전에도 화면이 동작한다.
+   */
+  exitExperience?: PracticeExitExperienceResponse
+}
+
+/**
+ * 사용자가 직접 건 예약 매도 한 건(2026-08-21 재설계, 백엔드 확정). 실전 `ExitPlanResponse`의
+ * 부분집합이며, 취소는 실전과 같은 `DELETE /api/exit-plans/{exitPlanId}`를 쓴다.
+ */
+export interface PracticeExitPlanSummary {
+  /**
+   * 취소 경로 변수. **서버 응답에서는 항상 non-null**이고, `null`은 화면이 배포 전 서버에서
+   * 스스로 만들어 든 어림 예약(`estimateExitPlan`)일 때뿐이다 — 그때는 취소 버튼을 숨긴다.
+   */
+  exitPlanId: number | null
+  /** 퍼센트 수이고 둘 다 양수다(손절도 `3`) — `exit-rates`와 완전히 같은 규칙이다. */
+  stopLossRate: number
+  takeProfitRate: number
+  stopLossPrice: Decimal
+  takeProfitPrice: Decimal
+  /** 그 진입의 체결가 — 예약선이 이 값에서 만들어진다. 화면의 "기준가(평균 매수가)"가 이것이다. */
+  entryPrice?: Decimal
+  /** 예약된 수량과 예약 시각. 지금 화면은 "가진 수량 전부"라고만 말해서 읽지 않는다. */
+  quantity?: Decimal
+  reservedAt?: LocalDateTimeString
+}
+
+/** `recommendedNext`는 `entries[].sellCause`와 같은 어휘다(백엔드 확정) — 먼저 겪은 쪽의 반대. */
+export interface PracticeExitExperienceResponse {
+  stopLossExperienced: boolean
+  takeProfitExperienced: boolean
+  bothExperienced: boolean
+  recommendedNext: 'STOP_LOSS' | 'TAKE_PROFIT' | null
 }

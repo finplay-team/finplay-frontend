@@ -77,12 +77,46 @@ export function selectPracticeInstrument(
  * 미완료 409 `PRACTICE_STAGE_LOCKED`(이 판정이 앞선다), 완료된 attempt 409
  * `PRACTICE_ALREADY_COMPLETED`, 범위 밖·소수 둘째 자리·키 누락 400 `VALIDATION_ERROR`.
  */
+/**
+ * ⚠️ **2026-08-21 재설계 이후 매수 폼에서는 이 경로를 부르지 않는다.** 손절·익절은 매수할 때 미리
+ * 정하는 값이 아니라 **매수한 뒤 예약 매도로 직접 거는 것**이 되었고(제품 오너 지적: "매수는 지정가·
+ * 시장가로 하고 매도할 때 예약매도로 손절·익절을 겪는 것"), 화면의 입력은
+ * `createPracticeExitPlan`으로 옮겼다. 이 함수를 지우지 않는 이유는 **서버에 그대로 살아 있고**
+ * "매수 전에 기준을 미리 정해 둔다"는 용도로는 여전히 유효한 계약이기 때문이다.
+ */
 export function updateExitRates(
   market: Market,
   stopLossRate: number,
   takeProfitRate: number,
 ): Promise<PracticeAttemptResponse> {
   return api.put<PracticeAttemptResponse>(`/education/practice/attempts/${market}/exit-rates`, {
+    stopLossRate,
+    takeProfitRate,
+  })
+}
+
+/**
+ * 지금 보유 중인 튜토리얼 종목에 **사용자가 직접** 손절·익절 예약을 건다(2026-08-21 재설계).
+ * 매수 순간 서버가 자동으로 걸어 주던 것을 걷어내고 실전과 같은 순서 — 사고, 그다음 예약을 건다 —
+ * 로 되돌린 것이 이 엔드포인트의 존재 이유다.
+ *
+ * ⚠️ **비율 규칙은 `updateExitRates`와 완전히 같다** — 퍼센트 수, 손절도 양수, 서버가 소수 자릿수를
+ * 표기된 scale로 판정하므로 `toFixed` 계열로 문자열을 만들지 않는다. 범위는 화면이 하드코딩하지 않고
+ * 진행 조회의 `exitRateBounds`에서 읽는다.
+ *
+ * 거부 — 보유가 없거나 이미 PENDING 예약이 있으면 거부된다(errorCode는 백엔드 확인 대기 중이라
+ * 화면은 서버 메시지를 그대로 보여준다). 취소는 실전과 같은 `DELETE /api/exit-plans/{exitPlanId}`
+ * (`exitPlanService.cancelExitPlan`)를 쓴다.
+ *
+ * 응답 본문을 **일부러 쓰지 않는다**(`void`) — 예약의 정본은 진행 조회이고, 성공 뒤 그쪽을 다시 읽어
+ * 그린다. 본문 모양을 여기서 추측해 타입으로 굳히면 백엔드가 확정할 때 두 곳이 어긋난다.
+ */
+export function createPracticeExitPlan(
+  market: Market,
+  stopLossRate: number,
+  takeProfitRate: number,
+): Promise<void> {
+  return api.post<void>(`/education/practice/attempts/${market}/exit-plan`, {
     stopLossRate,
     takeProfitRate,
   })

@@ -9,7 +9,9 @@ import { Close } from '../ui/icons'
 import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
 import { EntryComparison } from './EntryComparison'
-import { ExitRateFields, FALLBACK_EXIT_RATES, FALLBACK_EXIT_RATE_BOUNDS } from './ExitRateFields'
+import { ExitJourneyGuide } from './ExitJourneyGuide'
+import { FALLBACK_EXIT_RATES, FALLBACK_EXIT_RATE_BOUNDS, rateError, toRateInput } from './ExitRateFields'
+import { TutorialExitPlanPanel } from './TutorialExitPlanPanel'
 import { BreakingNewsCrawl } from './BreakingNewsCrawl'
 import { OrderBasicsStatusLine, ScenarioEventFeed, ScenarioStatusLine } from './ScenarioEventPanel'
 import { OrderTypeGuideButton, OrderTypeGuideDialog } from './OrderTypeGuide'
@@ -28,21 +30,29 @@ import {
   placeLimitOrder,
   placeOrder,
 } from '../../services/orderService'
+import { cancelExitPlan } from '../../services/exitPlanService'
 import {
   advancePracticeAttemptScript,
+  createPracticeExitPlan,
   getPracticeAttemptChart,
   getPracticeAttemptOrders,
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
-  updateExitRates,
   selectPracticeInstrument,
   tickPracticeAttempt,
 } from '../../services/tutorialService'
+import {
+  estimateExitPlan,
+  readExitExperience,
+  readExitPlanCreatable,
+  readPendingExitPlan,
+} from '../../services/tutorialExitPlan'
 import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
   PracticeEvidenceResponse,
+  PracticeExitPlanSummary,
   PracticeHoldingReflectionResponse,
   PracticeSellVerdict,
   PracticeTradeResultResponse,
@@ -83,7 +93,7 @@ type ErrorScope =
   | 'observe'
   | 'reflection'
   | 'restart'
-  | 'preset'
+  | 'exitPlan'
   | 'advance'
 interface FlowError {
   scope: ErrorScope
@@ -365,10 +375,23 @@ function DoneLine({ text }: { text: string }) {
 function StageProgressChecklist({
   market,
   progress,
+  exitPlanned,
   autoStoppedThisRun,
 }: {
   market: Market
   progress: TutorialStageProgress
+  /**
+   * 이 실행에서 손절·익절 기준을 실제로 세워 봤는가 — 예약을 걸었거나 이미 겪었으면 참이다.
+   *
+   * ⚠️ **배포 후 뗄 폴백이다.** 서버의 `exitPresetSelected`는 원래 `PUT .../exit-rates`로만 참이 되는데
+   * 2026-08-21 재설계로 화면이 그 경로를 안 부르게 되면서 영영 안 채워지는 항목이 됐었다. 백엔드가
+   * **판정을 "이 실행 세대에 예약이 하나라도 있으면 참"으로 넓혔다**(2026-08-21 확인) — 상태 무관이라
+   * 체결·취소된 예약도 세고, 취소해도 false로 돌아가지 않는다. **서버 판정이 이 화면 판정보다 좁아지는
+   * 경우는 없다** — "겪었다"는 그 예약이 체결됐다는 뜻이라 서버 쪽이 항상 함께 참이다. 아직 머지·배포
+   * 전이라 그때까지만 이 OR를 남긴다. 배포되면 이 prop과 인자를 지우고
+   * `progress.exitPresetSelected`만 그린다 — 판정 소스는 하나가 낫다.
+   */
+  exitPlanned: boolean
   /**
    * 이 실행에 손절·익절로 자동 정리된 매도가 이미 있는가. `marketBuySellCompleted`는 **사용자가 낸**
    * 시장가 매도만 센다(문서 명시, "의도된 동작") — 자동 청산은 세지 않는다. 그런데 화면에는 그 이유를
@@ -383,7 +406,11 @@ function StageProgressChecklist({
   if (market === 'CRYPTO') {
     items.push({ key: 'limit', label: '지정가 매매', done: progress.limitBuySellCompleted })
   }
-  items.push({ key: 'preset', label: '손절·익절 기준 정하기', done: progress.exitPresetSelected })
+  items.push({
+    key: 'preset',
+    label: '손절·익절 기준 정하기',
+    done: progress.exitPresetSelected || exitPlanned,
+  })
   return (
     <div>
       <div className="flex flex-wrap items-center gap-1.5" aria-label="주문 방법 학습 체크리스트">
@@ -768,52 +795,22 @@ function TradeResultBlock({ result }: { result: PracticeTradeResultResponse }) {
 }
 
 /**
- * 매수 전 미리보기. 아직 체결가가 없어 riskSnapshot이 없으므로 차트 최신가에서 뽑은 **어림값**이다 —
- * "지금 값이면"·"약"으로 확정값이 아님을 문구에 드러낸다. 실제 기준선은 체결 시점에 서버가 확정한다.
- * 수량이 비었거나 0 이하거나 현재가를 모르면 줄 자체를 렌더하지 않는다.
- *
- * 비율은 지금 고른 프리셋(042)에서 온다 — 프리셋마다 손절·익절 폭이 다르므로 고정값이면 어림이 틀린다.
- */
-function BuyRiskPreviewLine({
-  latestPrice,
-  quantity,
-  stopLossRate,
-  takeProfitRate,
-}: {
-  latestPrice: number | null
-  quantity: number
-  stopLossRate: number
-  takeProfitRate: number
-}) {
-  if (latestPrice === null || !(quantity > 0)) return null
-  const stopLossPrice = latestPrice * (1 - stopLossRate / 100)
-  const takeProfitPrice = latestPrice * (1 + takeProfitRate / 100)
-  const loss = (latestPrice - stopLossPrice) * quantity
-  const gain = (takeProfitPrice - latestPrice) * quantity
-  return (
-    <p className="mt-1 text-sm text-muted">
-      지금 값이면 손절선은 약 {formatKRW(stopLossPrice)}이고, 여기까지 떨어지면 약 {formatKRW(loss)}을 잃습니다.
-      익절선은 약 {formatKRW(takeProfitPrice)}이고, 여기까지 오르면 약 {formatKRW(gain)}을 법니다. 수수료는 빼고
-      계산한 값입니다.
-    </p>
-  )
-}
-
-/**
  * 지금 들고 있는 수량 기준으로 두 기준선에 닿았을 때의 금액. -3%가 자기 돈으로 얼마인지 감이 없는
- * 초보자를 위한 것이라, 여기서는 riskSnapshot의 서버 확정가를 그대로 써서 어림이 아니다.
+ * 초보자를 위한 것이라, 여기서는 **실제로 걸린 예약의 가격**을 그대로 써서 어림이 아니다.
  * 수량을 모르면(재시작 계정에서 실제로 null이 온다) 문장을 통째로 생략한다.
  */
 function RiskAmountLine({
-  risk,
+  entryPrice,
+  plan,
   holdingQuantity,
 }: {
-  risk: NonNullable<PracticeAttemptResponse['riskSnapshot']>
+  entryPrice: number
+  plan: PracticeExitPlanSummary
   holdingQuantity: number | null
 }) {
   if (holdingQuantity === null || holdingQuantity <= 0) return null
-  const loss = (risk.entryPrice - risk.stopLossPrice) * holdingQuantity
-  const gain = (risk.takeProfitPrice - risk.entryPrice) * holdingQuantity
+  const loss = (entryPrice - plan.stopLossPrice) * holdingQuantity
+  const gain = (plan.takeProfitPrice - entryPrice) * holdingQuantity
   return (
     <p className="mt-4 text-sm leading-relaxed text-ink">
       지금 {holdingQuantity}개를 갖고 있으니, 손절선에 닿으면 약 {formatKRW(loss)}을 잃고 익절선에 닿으면 약{' '}
@@ -822,31 +819,40 @@ function RiskAmountLine({
   )
 }
 
+/**
+ * **예약을 실제로 건 뒤에만 그린다.** 2026-08-21 재설계로 매수 순간 서버가 자동으로 예약을 걸어 주던
+ * 동작이 사라졌으므로, 예약 없이 이 카드를 그리면 "이 선에 닿으면 자동으로 팔립니다"가 거짓말이 된다
+ * — 보유 중인데 예약이 없는 상태에서 화면이 해야 할 말은 이 카드가 아니라 `ExitJourneyGuide`의
+ * "지금 예약을 걸어야 손절·익절을 겪습니다"다.
+ */
 function RiskEducationCard({
-  attempt,
+  market,
+  entryPrice,
+  plan,
   holdingQuantity,
 }: {
-  attempt: PracticeAttemptResponse
+  market: Market
+  entryPrice: number | null
+  plan: PracticeExitPlanSummary | null
   holdingQuantity: number | null
 }) {
-  const risk = attempt.riskSnapshot
-  if (!risk) return null
+  if (plan === null || entryPrice === null) return null
+  const risk = plan
   const labels = presetRateLabels(risk)
   /**
-   * "열 번 중 몇 번만 맞아도 전체로는 손해를 보지 않는다"의 손익분기 승률. 세 프리셋(2/3·3/5·5/8) 모두
-   * 손실 쪽이 이익 쪽보다 좁아 반올림하면 공교롭게 네 번이지만, 프리셋이 바뀌어도 문구가 어긋나지
-   * 않도록 실제 스냅샷 비율로 계산한다.
+   * "열 번 중 몇 번만 맞아도 전체로는 손해를 보지 않는다"의 손익분기 승률. 사용자가 직접 정한 비율로
+   * 계산하므로 손절을 익절보다 넓게 잡은 조합에서도 문구가 어긋나지 않는다.
    */
   const breakevenOutOfTen = Math.round(
     (risk.stopLossRate / (risk.stopLossRate + risk.takeProfitRate)) * 10,
   )
   return (
-    <Card accent={attempt.market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">내가 팔 기준선</p>
+    <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'} innerClassName="p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">내가 건 예약</p>
       <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         <div>
           <dt className="text-xs text-muted">내가 산 값</dt>
-          <dd className="mt-1 tabular text-base text-ink">{formatKRW(risk.entryPrice)}</dd>
+          <dd className="mt-1 tabular text-base text-ink">{formatKRW(entryPrice)}</dd>
         </div>
         <div>
           <dt className="text-xs text-muted">더 떨어지면 파는 선 (손절, {labels.stopLoss})</dt>
@@ -859,14 +865,13 @@ function RiskEducationCard({
       </dl>
       <div className="mt-4 space-y-3 text-xs leading-relaxed text-muted">
         {/*
-          예전에는 "닿아도 자동으로 안 팔린다"고 적어 놨었는데, 실제로는 산 순간 손절·익절 예약(OCO)이
-          같이 걸려서 매 tick마다 서버(PracticeOrderSettlementService)가 이 선을 넘었는지 검사해 자동으로
-          체결한다 — 문구가 실제 동작과 반대였다(2026-08-20 실사용 중 발견). 그 선에 닿기 전에 직접 파는
-          것도 물론 가능하다는 걸 함께 말해 둔다.
+          "자동으로 팔린다"는 말은 **예약을 건 지금만** 참이다. 예전에는 매수 순간 서버가 예약을 대신
+          걸어 줘서 항상 참이었지만(2026-08-20 문구 수정), 2026-08-21 재설계로 예약은 사용자가 직접
+          거는 것이 되었다 — 그래서 이 카드 자체가 예약이 있을 때만 렌더된다(위 가드).
         */}
         <p className="text-ink">
-          이 선에 닿으면 자동으로 팔립니다. 직접 누르지 않아도 그 순간 손절 또는 익절로 정리돼요 — 물론
-          그 전에 직접 팔아도 됩니다.
+          직접 걸어 둔 예약이라 이 선에 닿으면 자동으로 팔립니다. 그 순간 손절 또는 익절로 정리돼요 —
+          물론 그 전에 직접 팔아도 되고, 예약을 취소할 수도 있습니다.
         </p>
         <p>
           <span className="font-medium text-ink">손절선</span>은 "여기까지 내려가면 더 버티지 않고
@@ -874,17 +879,27 @@ function RiskEducationCard({
           <span className="font-medium text-ink">익절선</span>은 "여기까지 오르면 욕심내지 않고 팔겠다"고
           정해두는 값입니다.
         </p>
+        {/*
+          폭의 뜻은 **사용자가 고른 조합**에 따라 달라진다. 예전에는 프리셋 셋 다 손절이 익절보다
+          좁아서 "손실 쪽을 좁게 잡았습니다"를 무조건 적을 수 있었지만, 자유 입력에서는 손절 5·익절 3
+          같은 조합도 그대로 저장되므로 그 문장이 거짓이 될 수 있다. 어느 쪽이든 손익분기 승률은
+          실제 비율로 계산되니 그 숫자는 그대로 쓴다.
+        */}
         <p>
           <span className="font-medium text-ink">
             왜 {labels.stopLoss}와 {labels.takeProfit}인가요.
           </span>{' '}
-          손실 쪽을 이익 쪽보다 좁게 잡았습니다. 잃을 때는 작게 잃고 벌 때는 크게 번다는 뜻이고, 이렇게
-          하면 열 번 중 {breakevenOutOfTen}번만 맞아도 전체로는 손해를 보지 않습니다. 숫자 자체가 정답인
-          건 아니지만 이 원칙은 어디서나 통합니다.
+          {risk.stopLossRate < risk.takeProfitRate
+            ? '손실 쪽을 이익 쪽보다 좁게 잡으셨습니다. 잃을 때는 작게 잃고 벌 때는 크게 번다는 뜻입니다.'
+            : risk.stopLossRate > risk.takeProfitRate
+              ? '이익 쪽을 손실 쪽보다 좁게 잡으셨습니다. 자주 이익을 챙기는 대신, 한 번 손절할 때 그만큼 크게 잃는다는 뜻입니다.'
+              : '두 폭을 같게 잡으셨습니다. 잃을 때와 벌 때의 크기가 같다는 뜻입니다.'}{' '}
+          이 조합이면 열 번 중 {breakevenOutOfTen}번만 맞아도 전체로는 손해를 보지 않습니다. 숫자 자체가
+          정답인 건 아니지만 이 원칙은 어디서나 통합니다.
         </p>
-        <p>처음 산 값으로 한 번 정해진 뒤에는 가격이 움직여도 바뀌지 않습니다.</p>
+        <p>예약을 건 시점의 산 값으로 정해진 뒤에는 가격이 움직여도 바뀌지 않습니다.</p>
       </div>
-      <RiskAmountLine risk={risk} holdingQuantity={holdingQuantity} />
+      <RiskAmountLine entryPrice={entryPrice} plan={risk} holdingQuantity={holdingQuantity} />
     </Card>
   )
 }
@@ -1120,9 +1135,27 @@ export function AttemptTutorialFlow({
   const [buyAmount, setBuyAmount] = useState('')
   const [flowError, setFlowError] = useState<FlowError | null>(null)
   const [buying, setBuying] = useState(false)
-  const [exitRatesSaving, setExitRatesSaving] = useState(false)
-  /** 손절·익절 비율 저장 요청의 순번 — 늦게 도착한 옛 응답이 새 값을 덮어쓰지 못하게 한다. */
-  const exitRatesSeqRef = useRef(0)
+  const [creatingExitPlan, setCreatingExitPlan] = useState(false)
+  const [cancellingExitPlan, setCancellingExitPlan] = useState(false)
+  /**
+   * 예약 폼에 지금 적혀 있는 두 비율. **입력 상태를 이 컴포넌트가 들고 있는 이유는 차트 때문이다** —
+   * 아직 걸지 않은 값도 차트에 점선으로 그려 줘야 "이 폭이면 금방 닿겠다"를 눈으로 판단할 수 있고,
+   * 그 판단이 이 튜토리얼이 가르치려는 것이다. 초깃값은 서버가 들고 있는 비율(미선택이면 기본값 3·5)이다.
+   */
+  const [stopLossInput, setStopLossInput] = useState(() =>
+    toRateInput(attempt.exitStopLossRate ?? FALLBACK_EXIT_RATES.stopLossRate),
+  )
+  const [takeProfitInput, setTakeProfitInput] = useState(() =>
+    toRateInput(attempt.exitTakeProfitRate ?? FALLBACK_EXIT_RATES.takeProfitRate),
+  )
+  /**
+   * 방금 건 예약을 서버 응답이 오기 전까지 화면이 대신 들고 있는 자리(`estimateExitPlan`). 진행 조회가
+   * 아직 예약 정보를 안 내려주는 배포 전 상태에서도 "걸었다"가 화면에 남아야 하기 때문이다.
+   * 서버가 값을 주면 언제나 서버가 이기고, 보유가 사라지면(체결·매도) 비운다.
+   */
+  const [localExitPlan, setLocalExitPlan] = useState<PracticeExitPlanSummary | null>(null)
+  /** 이번 보유에서 예약을 걸었다가 취소한 적이 있는가. 취소가 조용히 끝나지 않게 하려는 표시다. */
+  const [exitPlanCancelled, setExitPlanCancelled] = useState(false)
   const [advancingScript, setAdvancingScript] = useState(false)
   const [buyOrderType, setBuyOrderType] = useState<TutorialOrderType>('MARKET')
   const [buyLimitPrice, setBuyLimitPrice] = useState('')
@@ -1131,6 +1164,12 @@ export function AttemptTutorialFlow({
   const [observeRetryNonce, setObserveRetryNonce] = useState(0)
   const [selling, setSelling] = useState(false)
   const [sellOrderType, setSellOrderType] = useState<TutorialOrderType>('MARKET')
+  /**
+   * 매도 탭이 "예약 매도"에 가 있는가. **`sellOrderType`에 세 번째 값을 넣지 않은 이유**는 그 상태가
+   * 실제 매도 주문의 유형(시장가·지정가)이고 단계 잠금 effect 네 개가 그 값을 서로 밀어 주기 때문이다 —
+   * 거기에 주문이 아닌 값을 섞으면 그 effect들이 예약 탭을 임의로 닫아 버린다.
+   */
+  const [reservedSellTabOpen, setReservedSellTabOpen] = useState(false)
   const [sellLimitPrice, setSellLimitPrice] = useState('')
   const [pendingOrder, setPendingOrder] = useState<LimitOrderResponse | null>(null)
   const [cancellingPending, setCancellingPending] = useState(false)
@@ -1185,6 +1224,48 @@ export function AttemptTutorialFlow({
     evidence.buyQuantity > 0 &&
     remainingQuantity !== null &&
     remainingQuantity <= 0
+  /** 지금 보유 중인가. 예약을 걸 수 있는지·학습 안내가 어느 칸에 서는지가 모두 이 값에서 갈린다. */
+  const holdingNow = remainingQuantity !== null && remainingQuantity > 0
+  /**
+   * 샀는데 **수량을 모르는** 상태(재시작한 계정에서 서버가 실제로 이렇게 준다 — `buyDoneText` 주석).
+   * 이때 학습 안내를 그리면 "먼저 삽니다"처럼 이미 지난 단계를 가리키게 되므로 통째로 생략한다.
+   * 그 자리는 매도 버튼 아래의 "수량을 불러오지 못했습니다" 안내가 이미 맡고 있다.
+   */
+  const holdingQuantityUnknown = attempt.riskSnapshot !== null && remainingQuantity === null
+  /**
+   * 예약의 기준가(= 평균 매수가). **아직 안 판 진입의 체결가를 먼저 본다** — `riskSnapshot`은 전량
+   * 매도해도 null로 돌아가지 않아서(위 orderSide 주석과 같은 이유) 그것만 보면 재진입 뒤에도 옛 값이
+   * 남는다. 둘 다 없으면 null이고, 그때 화면은 가격·금액 줄을 통째로 생략한다.
+   */
+  const entryPrice =
+    [...progress.entries].reverse().find((entry) => entry.sellAt === null)?.buyPrice ??
+    attempt.riskSnapshot?.entryPrice ??
+    null
+  /**
+   * 지금 걸려 있는 예약. 서버 값이 언제나 이기고, 서버가 아직 안 내려주는 동안만 방금 건 값을 쓴다
+   * (`localExitPlan` 주석 참고).
+   */
+  const serverExitPlan = readPendingExitPlan(progress)
+  const exitPlan = serverExitPlan ?? localExitPlan
+  /** 이번 실행에서 손절·익절을 실제로 겪었는가(서버 판정 우선, 없으면 진입 기록의 매도 원인). */
+  const exitExperience = readExitExperience(progress)
+  /**
+   * 지금 새 예약을 걸 수 있는가. **"보유 중이고 예약이 없다"로 대신 계산하지 않는다** — 예약은 한
+   * 진입에 한 번뿐이라(백엔드 확정, write-once) 걸었다 취소한 진입은 그 조건을 만족하면서도 서버가
+   * 409 `EXIT_PLAN_ALREADY_EXISTS`로 거부한다. 서버 판정이 없을 때만 어림한다.
+   */
+  const exitPlanCreatable = readExitPlanCreatable(progress, holdingNow && exitPlan === null)
+  /**
+   * 화면이 대신 들고 있던 예약을 비우는 두 조건. (1) 보유가 사라졌다 — 예약이 체결됐거나 직접 팔았다.
+   * (2) 서버가 예약을 내려주기 시작했다 — 그때부터는 서버가 정본이다. 취소 표시도 보유가 끝나면
+   * 함께 지운다(다음 진입은 새 이야기다).
+   */
+  useEffect(() => {
+    if (!holdingNow || serverExitPlan !== null) setLocalExitPlan(null)
+  }, [holdingNow, serverExitPlan])
+  useEffect(() => {
+    if (!holdingNow) setExitPlanCancelled(false)
+  }, [holdingNow])
   const observed = progress.steps.some((step) => step.evidence.observationId !== null)
   const expired = progress.steps.find((step) => step.step === 4)?.status === 'EXPIRED'
   /**
@@ -1231,14 +1312,17 @@ export function AttemptTutorialFlow({
    */
   const storyUiActive = scenarioStage !== null && scenarioStage !== 'ORDER_BASICS'
   /**
-   * 프리셋 선택 잠금(049 ORDERBASICS-015, `frontend-reply-505.md` 결정 1) — 두 조건 중 하나만
+   * 예약 매도 잠금(049 ORDERBASICS-015, `frontend-reply-505.md` 결정 1) — 두 조건 중 하나만
    * 맞아도 잠근다. **`ORDER_BASICS`는 왕복을 다 마쳤어도 무조건 잠근다** — 이건 서버 조건이 아니라
-   * 화면의 결정이다. 2단계는 "주문 방법만 배우는 자리"라 프리셋이 여기서 뜨면 3단계에서 처음 배울
+   * 화면의 결정이다. 2단계는 "주문 방법만 배우는 자리"라 손절·익절이 여기서 뜨면 3단계에서 처음 배울
    * 개념이 미리 등장해 버린다. **나머지(대본을 쓰는 실행에서 왕복 미완료)는 서버가 실제로 같은
    * 조건에서 409 `PRACTICE_STAGE_LOCKED`로 거부하는 방어선**이다 — 화면이 먼저 잠그지 않으면 눌러도
-   * 저장 안 되는 버튼이 된다. STOCK은 대본이 없어(scenarioStage 항상 null) 둘 다 적용되지 않는다.
+   * 통하지 않는 버튼이 된다. STOCK은 대본이 없어(scenarioStage 항상 null) 둘 다 적용되지 않는다.
+   *
+   * (이름은 옛 프리셋 시절의 `exitPresetStageLocked`에서 바꿨다 — 잠그는 대상이 프리셋 픽커가 아니라
+   * 예약 매도 탭이 되었기 때문이다. 판정 자체는 그대로다.)
    */
-  const exitPresetStageLocked =
+  const exitPlanStageLocked =
     scenarioStage === 'ORDER_BASICS' ||
     (scenarioStage !== null &&
       !(progress.tutorialStageProgress.marketBuySellCompleted && progress.tutorialStageProgress.limitBuySellCompleted))
@@ -1277,6 +1361,14 @@ export function AttemptTutorialFlow({
   useEffect(() => {
     if (marketOrderStageLocked && sellOrderType === 'MARKET') setSellOrderType('LIMIT')
   }, [marketOrderStageLocked, sellOrderType])
+  /**
+   * 예약 탭을 닫아야 하는 두 경우. 2단계로 돌아갔거나(재시작), 보유가 사라졌거나 — 둘 다 그 탭에서
+   * 할 수 있는 일이 없다. 보유가 사라지면 화면은 어차피 매수 쪽으로 돌아가지만, 탭 상태를 켜 둔 채로
+   * 두면 다시 사자마자 예약 탭이 열린 채로 나타나 매수 직후 화면이 낯설어진다.
+   */
+  useEffect(() => {
+    if (exitPlanStageLocked || !holdingNow) setReservedSellTabOpen(false)
+  }, [exitPlanStageLocked, holdingNow])
   /**
    * 2단계(ORDER_BASICS)의 "지금 할 일" 안내는 상시 카드로 두지 않는다 — 화면에 계속 붙어 있으면
    * 위 진행 로드맵(1~4단계)과 아래 체크리스트·주문 폼까지 겹쳐 "2단계 정보가 여러 곳에 흩어져
@@ -1652,37 +1744,73 @@ export function AttemptTutorialFlow({
   }, [clearError, market, onAttemptChange, onRefresh, showError])
 
   /**
-   * 손절·익절 비율 저장(2026-08-21 재설계, 프리셋 선택을 대체한다). 서버가 "지금 보유 중인가"로
-   * 잠그므로 매수 전과 재진입 대기(D35) 양쪽 모두 통과한다. 입력창을 `holdingLocked`·`stageLocked`로
-   * 미리 막아 두는 것과는 별개로, 서버가 막으면(보유 중이거나 049 단계 미충족) 그 오류를 그대로
-   * 보여준다.
+   * 예약 매도 걸기(2026-08-21 재설계). **매수 폼에서 미리 정하던 비율을 여기로 옮긴 것이 이번 변경의
+   * 핵심이다** — 실전과 같은 순서(산다 → 예약을 건다)를 되찾기 위해서다. 서버가 보유 없음·중복 예약을
+   * 거부하므로 화면도 같은 조건에서 버튼을 먼저 잠그되, 거부가 오면 서버 메시지를 그대로 보여준다.
    *
    * ⚠️ **두 값을 그대로 보낸다** — 손절도 양수 퍼센트 수다(3%는 `3`). 여기서 `-`를 붙이거나 100으로
    * 나누면 부호 반전·100배 오차가 조용히 난다.
    */
-  const handleExitRatesCommit = useCallback(
+  const handleCreateExitPlan = useCallback(
     async (nextStopLossRate: number, nextTakeProfitRate: number) => {
-      /**
-       * 저장 중이라고 새 요청을 버리지 않는다 — 앞선 저장이 느릴 때 그 사이에 고친 값을 버리면
-       * **화면에는 5%가 적혀 있는데 서버에는 4%가 저장된** 조용한 어긋남이 남는다. 대신 마지막
-       * 요청의 응답만 반영한다(먼저 보낸 요청이 늦게 도착해 새 값을 덮어쓰는 것을 막는다).
-       */
-      const seq = exitRatesSeqRef.current + 1
-      exitRatesSeqRef.current = seq
-      setExitRatesSaving(true)
+      if (creatingExitPlan) return
+      setCreatingExitPlan(true)
       clearError()
       try {
-        const updated = await updateExitRates(market, nextStopLossRate, nextTakeProfitRate)
-        if (seq !== exitRatesSeqRef.current) return
-        onAttemptChange(updated)
+        await createPracticeExitPlan(market, nextStopLossRate, nextTakeProfitRate)
+        /**
+         * 진행 조회가 정본이지만, 그 응답에 예약 정보가 실려 오는 백엔드가 아직 배포 전이다.
+         * 그동안은 방금 건 값을 화면이 들고 있는다 — 안 그러면 예약을 건 직후에도 "지금 예약을
+         * 걸어야 합니다"가 계속 떠서 사용자가 두 번 건다(그리고 서버가 중복으로 거부한다).
+         */
+        if (entryPrice !== null) {
+          setLocalExitPlan(estimateExitPlan(entryPrice, nextStopLossRate, nextTakeProfitRate))
+        }
+        setExitPlanCancelled(false)
+        bumpTutorial()
+        await onRefresh()
       } catch (error) {
-        if (seq !== exitRatesSeqRef.current) return
-        showError('preset', toUserMessage(error))
+        /**
+         * `EXIT_PLAN_ALREADY_EXISTS`의 공용 문구는 "취소한 뒤 다시 시도해 주세요"인데, **튜토리얼에서는
+         * 그게 거짓말이다** — 예약은 한 진입에 한 번뿐이라(백엔드 확정) 취소해도 같은 진입에서는 다시
+         * 걸리지 않는다. 공용 문구는 실거래 OCO에서 맞는 말이므로 그쪽은 두고 여기서만 덮는다.
+         */
+        showError(
+          'exitPlan',
+          toUserMessage(error, {
+            EXIT_PLAN_ALREADY_EXISTS:
+              '이 진입에는 이미 예약을 걸었습니다. 취소한 예약도 같은 진입에서는 다시 걸 수 없어요 — 지금 가진 것을 팔고 다시 사면 새로 걸 수 있습니다.',
+          }),
+        )
       } finally {
-        if (seq === exitRatesSeqRef.current) setExitRatesSaving(false)
+        setCreatingExitPlan(false)
       }
     },
-    [clearError, market, onAttemptChange, showError],
+    [clearError, creatingExitPlan, entryPrice, market, onRefresh, showError],
+  )
+
+  /**
+   * 예약 취소는 **실전과 같은 경로**(`DELETE /api/exit-plans/{id}`)를 쓴다 — 튜토리얼 전용 취소
+   * 엔드포인트가 따로 없고, 만들 이유도 없다(예약 자체는 실전과 같은 레코드다).
+   */
+  const handleCancelExitPlan = useCallback(
+    async (exitPlanId: number) => {
+      if (cancellingExitPlan) return
+      setCancellingExitPlan(true)
+      clearError()
+      try {
+        await cancelExitPlan(exitPlanId)
+        setLocalExitPlan(null)
+        setExitPlanCancelled(true)
+        bumpTutorial()
+        await onRefresh()
+      } catch (error) {
+        showError('exitPlan', toUserMessage(error))
+      } finally {
+        setCancellingExitPlan(false)
+      }
+    },
+    [cancellingExitPlan, clearError, onRefresh, showError],
   )
 
   /**
@@ -2077,51 +2205,65 @@ export function AttemptTutorialFlow({
   const activeRowText = market === 'CRYPTO' ? 'text-coin' : 'text-[#2DD4BF]'
 
   /**
-   * 지금 정해 둔 손절·익절 비율. 매수 전 미리보기(BuyRiskPreviewLine)와 차트 어림 기준선, 입력창의
-   * 초깃값이 모두 이 값을 쓴다. 서버가 아직 이 필드를 안 내려주면(배포 전) 폴백으로 어림한다 —
-   * 값이 안 왔다고 미리보기 자체를 지우면 화면이 매번 깜빡인다.
+   * 예약 입력창에 **처음 제안할** 비율(placeholder). 서버가 들고 있는 값이고, 아직 안 내려주면
+   * 폴백으로 어림한다 — 미선택이면 서버 기본값 3·5가 온다.
    */
   const exitStopLossRate = attempt.exitStopLossRate ?? FALLBACK_EXIT_RATES.stopLossRate
   const exitTakeProfitRate = attempt.exitTakeProfitRate ?? FALLBACK_EXIT_RATES.takeProfitRate
   /** 입력 범위. 서버가 안 내려주는 동안만 폴백을 쓴다(FALLBACK_EXIT_RATE_BOUNDS 주석 참고). */
   const exitRateBounds = progress.exitRateBounds ?? FALLBACK_EXIT_RATE_BOUNDS
+  /**
+   * 예약 폼에 지금 적혀 있는 값 중 **유효한 것만** 숫자로. 차트의 예상선이 이 값을 따라간다 —
+   * 범위를 벗어난 값으로 선을 그리면 걸 수도 없는 약속을 그리는 셈이 된다.
+   */
+  const draftStopLossRate =
+    rateError(stopLossInput, exitRateBounds.stopLossMin, exitRateBounds.stopLossMax, '손절') === null
+      ? Number(stopLossInput)
+      : null
+  const draftTakeProfitRate =
+    rateError(takeProfitInput, exitRateBounds.takeProfitMin, exitRateBounds.takeProfitMax, '익절') === null
+      ? Number(takeProfitInput)
+      : null
 
   /**
-   * 차트에 얹는 손절·익절선. **매수 전에도 그린다** — 비율을 정하는 동안 그 선이 지금 값·최근 변동폭
-   * 대비 어디에 놓이는지 눈으로 보여야 "이 폭이면 금방 닿겠다 / 여간해선 안 닿겠다"를 스스로 판단할 수
-   * 있고, 이 튜토리얼이 가르치려는 판단이 정확히 그것이다(숫자만으로는 감이 오지 않는다).
+   * 차트에 얹는 손절·익절선. **선은 예약을 따라간다** — 2026-08-21 재설계로 매수 순간 자동 예약이
+   * 사라졌으므로, 예약이 없는데 선을 그리면 아무도 지키지 않을 약속을 그리는 것이 된다.
    *
-   * 매수 전 선은 아직 진입가가 없어 **현재가로 잡은 어림선**이다 — 라벨에 "예상"을 붙여 확정선이 아님을
-   * 드러낸다. 체결 후에는 서버가 확정한 `stopLossPrice`·`takeProfitPrice`로 바꿔 그린다.
+   * 세 경우뿐이다. (1) 예약이 걸려 있으면 그 확정선. (2) 보유 중인데 아직 안 걸었으면 **지금 예약
+   * 폼에 적힌 값으로 잡은 예상선** — 걸기 전에 그 폭이 최근 변동폭 대비 어디에 놓이는지 눈으로 보고
+   * 판단하라는 자리이고, 이 튜토리얼이 가르치려는 판단이 정확히 그것이다. (3) 그 밖에는 안 그린다.
    *
-   * 2단계(ORDER_BASICS)에는 아예 그리지 않는다 — 그 단계는 자동 청산 예약 자체를 만들지 않으므로
-   * (049 ORDERBASICS-022) 선을 그리면 없는 약속을 하는 것이 된다. 손절·익절 입력 카드를 그 단계에서
-   * 안 그리는 것과 같은 이유다.
+   * 2단계(ORDER_BASICS)에는 아예 그리지 않는다 — 그 단계는 예약 자체를 다루지 않으므로
+   * (049 ORDERBASICS-022) 선을 그리면 없는 약속을 하는 것이 된다.
    */
   const chartReferenceLines = useMemo((): { value: number; tone: 'gain' | 'loss'; label: string }[] | undefined => {
     if (scenarioStage === 'ORDER_BASICS') return undefined
-    if (attempt.riskSnapshot) {
-      const labels = presetRateLabels(attempt.riskSnapshot)
+    if (exitPlan) {
+      const labels = presetRateLabels(exitPlan)
       return [
-        { value: attempt.riskSnapshot.stopLossPrice, tone: 'loss', label: `손절 ${labels.stopLoss}` },
-        { value: attempt.riskSnapshot.takeProfitPrice, tone: 'gain', label: `익절 ${labels.takeProfit}` },
+        { value: exitPlan.stopLossPrice, tone: 'loss', label: `손절 ${labels.stopLoss}` },
+        { value: exitPlan.takeProfitPrice, tone: 'gain', label: `익절 ${labels.takeProfit}` },
       ]
     }
-    if (latestPrice === null) return undefined
-    const labels = presetRateLabels({ stopLossRate: exitStopLossRate, takeProfitRate: exitTakeProfitRate })
+    if (!holdingNow || entryPrice === null) return undefined
+    if (draftStopLossRate === null || draftTakeProfitRate === null) return undefined
+    const labels = presetRateLabels({
+      stopLossRate: draftStopLossRate,
+      takeProfitRate: draftTakeProfitRate,
+    })
     return [
       {
-        value: latestPrice * (1 - exitStopLossRate / 100),
+        value: entryPrice * (1 - draftStopLossRate / 100),
         tone: 'loss',
         label: `예상 손절 ${labels.stopLoss}`,
       },
       {
-        value: latestPrice * (1 + exitTakeProfitRate / 100),
+        value: entryPrice * (1 + draftTakeProfitRate / 100),
         tone: 'gain',
         label: `예상 익절 ${labels.takeProfit}`,
       },
     ]
-  }, [attempt.riskSnapshot, exitStopLossRate, exitTakeProfitRate, latestPrice, scenarioStage])
+  }, [draftStopLossRate, draftTakeProfitRate, entryPrice, exitPlan, holdingNow, scenarioStage])
 
   /**
    * 되돌아보기는 팔고 난 뒤에야 할 일이 생긴다. 그전에는 탭을 잠그고, 전량 매도되는 순간 자동으로
@@ -2205,10 +2347,32 @@ export function AttemptTutorialFlow({
       <StageProgressChecklist
         market={market}
         progress={progress.tutorialStageProgress}
+        exitPlanned={exitPlan !== null || exitExperience.stopLoss || exitExperience.takeProfit}
         autoStoppedThisRun={progress.entries.some(
           (entry) => entry.sellCause === 'STOP_LOSS' || entry.sellCause === 'TAKE_PROFIT',
         )}
       />
+
+      {/*
+        손절·익절 학습 흐름 안내 — 매수 폼이든 매도 폼이든 **항상 같은 자리에** 둔다. 지금 어느 칸에
+        서 있는지(사기 → 예약 걸기 → 기다리기)와 이번 실행에서 무엇을 겪었는지가 계속 보여야 하기
+        때문이다. 2단계(ORDER_BASICS)에는 그리지 않는다 — 그 단계는 예약을 다루지 않는다.
+        주식(STOCK)에도 그리지 않는다 — 예약 매도 탭 자체가 코인 전용이라, 걸 방법이 없는 화면에서
+        "예약을 걸어야 합니다"라고 말하면 오지 않을 일을 약속하는 것이 된다.
+      */}
+      {market === 'CRYPTO' && scenarioStage !== 'ORDER_BASICS' && !holdingQuantityUnknown && (
+        <ExitJourneyGuide
+          holdingQuantity={remainingQuantity}
+          plan={exitPlan}
+          canReserve={exitPlanCreatable}
+          experience={exitExperience}
+          hasTraded={progress.entries.length > 0}
+          cancelledOnce={exitPlanCancelled}
+          onOpenReservation={
+            exitPlanCreatable && !exitPlanStageLocked ? () => setReservedSellTabOpen(true) : null
+          }
+        />
+      )}
 
       {/*
         2→3단계 전환 CTA(049, frontend-reply-505.md 결정 2) — 사용자 버튼으로만 넘어간다. 되돌릴 수
@@ -2289,39 +2453,12 @@ export function AttemptTutorialFlow({
           </h2>
           <CurrentPriceBox price={latestPrice} note="3초마다 새로 불러옵니다." />
           {/*
-            손절·익절 설명·프리셋 고르기는 3단계(스토리) 몫이다 — 2단계(ORDER_BASICS)는 백엔드가
-            자동 청산 예약 자체를 만들지 않는다(049 ORDERBASICS-022, `automaticExitPlanAllowed`).
-            그런데 이 문단은 "값이 선에 닿으면 자동으로 팔립니다"라고 단정한다 — 2단계에서는 사실이
-            아닌 문장이 된다. 기준선(snapshot)만 계산돼 있을 뿐 자동 청산은 3단계부터다. 예전엔
-            "비활성 + 이유"로 카드는 남기고 눌리지만 않게 했는데, 그래도 카드 자체가 "지금 이걸 정할
-            차례"처럼 보여 "우리는 그냥 사고팔아 보는 거 아니었냐"는 혼란을 낳았다(2026-08-21 피드백).
-            그래서 2단계에서는 카드 자체를 아예 안 그린다 — "지금 할 일" 팝업(아래 렌더 트리, guideStep)이
-            이 자리를 대신한다.
+            **매수 폼에는 손절·익절 입력이 없다.** 2026-08-21 재설계로 "매수할 때 미리 정해 두는 값"이
+            아니라 "사고 나서 예약 매도로 직접 거는 것"이 되었기 때문이다(제품 오너 지적: 지금 3단계는
+            매수할 때부터 예약매도가 떠 있어 실전 순서와 어긋난다). 여기서 빼야 매수 폼이 실전 매수
+            폼과 같아지고, "예약 매도"라는 행위가 사라지지 않는다. 옮겨 간 자리는 아래 매도 쪽
+            `TutorialExitPlanPanel`이다 — 범위 제한·의미 문구·예상 금액·차트 참고선도 함께 갔다.
           */}
-          {scenarioStage !== 'ORDER_BASICS' && (
-            <>
-              <p className="text-xs leading-relaxed text-muted">
-                {/* "팔라고 알려주는 선"은 매수 후 카드(RiskEducationCard)와 같은 실수를 하고 있었다 —
-                    실제로는 값이 이 선에 닿는 순간 자동으로 팔린다(2026-08-20 실사용 중 발견). */}
-                사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 값이 이 선에
-                닿으면 그 순간 자동으로 팔립니다 — 손절선은 더 잃지 않도록, 익절선은 이익을 챙기도록
-                정리해 줘요. 그 폭을 아래에서 직접 정합니다. 두 폭은 서로 무관해서 각각 정하면 되고,
-                정한 선이 지금 값에서 어디쯤인지는 옆 차트에 점선으로 함께 그려집니다.
-              </p>
-              <ExitRateFields
-                bounds={exitRateBounds}
-                stopLossRate={exitStopLossRate}
-                takeProfitRate={exitTakeProfitRate}
-                holdingLocked={attempt.exitPresetLocked}
-                stageLocked={exitPresetStageLocked}
-                saving={exitRatesSaving}
-                latestPrice={latestPrice}
-                quantity={buyQuantityNumber}
-                onCommit={(stopLoss, takeProfit) => void handleExitRatesCommit(stopLoss, takeProfit)}
-              />
-              <ErrorNote error={flowError} scope="preset" />
-            </>
-          )}
           {market === 'CRYPTO' && (
             <>
               <div
@@ -2498,12 +2635,11 @@ export function AttemptTutorialFlow({
               </p>
             </div>
           )}
-          <BuyRiskPreviewLine
-            latestPrice={latestPrice}
-            quantity={buyQuantityNumber}
-            stopLossRate={exitStopLossRate}
-            takeProfitRate={exitTakeProfitRate}
-          />
+          {/*
+            매수 전 "손절선에 닿으면 얼마를 잃는다" 미리보기도 함께 뺐다(옛 `BuyRiskPreviewLine`).
+            예약을 걸기 전에는 그런 선이 존재하지 않으므로 매수 시점에 그 금액을 말하면 없는 약속이
+            된다. 같은 계산은 예약 폼(`ExitRateFields`) 안에서, 실제로 걸 값과 보유 수량 기준으로 한다.
+          */}
           <Button
             type="button"
             data-tour="buy"
@@ -2569,107 +2705,169 @@ export function AttemptTutorialFlow({
           {market === 'CRYPTO' && (
             <>
               {/*
-                모의투자 화면(pages/Trade.tsx)의 매도는 시장가·지정가·예약 매도 세 탭이다. 실전에 있는
-                탭이 여기 없으면 사용자가 실전에서 처음 마주치게 되므로 자리는 같게 만들되, 튜토리얼의
-                손절·익절선은 사용자가 거는 것이 아니라 **매수 순간 서버가 체결가에서 자동으로 만들기
-                때문에**(TUTORIAL-FLOW-008) 지금은 누를 수 없다. 어둡게만 두면 "왜 안 눌리지"에서
-                막히므로 아래에 이유 한 줄을 반드시 함께 둔다.
+                모의투자 화면(pages/Trade.tsx)의 매도는 시장가·지정가·예약 매도 세 탭이다. **세 번째
+                탭이 이번에 실제로 켜졌다** — 예전에는 매수 순간 서버가 손절·익절을 자동으로 걸어 줘서
+                사용자가 걸 것이 없었고(TUTORIAL-FLOW-008) 그래서 비활성이었는데, 2026-08-21 재설계로
+                예약을 직접 거는 것이 이 단계의 학습 목표가 되었다. 이제 잠기는 경우는 2단계
+                (ORDER_BASICS)뿐이고, 그때는 아래에 이유 한 줄을 함께 둔다.
               */}
               <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
-                {(['MARKET', 'LIMIT'] as const).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    aria-pressed={sellOrderType === type}
-                    disabled={
-                      (type === 'LIMIT' && limitOrderStageLocked) ||
-                      (type === 'MARKET' && marketOrderStageLocked)
-                    }
-                    onClick={() => setSellOrderType(type)}
-                    className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-40 ${
-                      sellOrderType === type
-                        ? 'bg-coin-soft text-coin ring-1 ring-coin/40'
-                        : 'text-muted hover:text-ink'
-                    }`}
-                  >
-                    {type === 'MARKET' ? '시장가' : '지정가'}
-                  </button>
-                ))}
+                {(['MARKET', 'LIMIT'] as const).map((type) => {
+                  const active = !reservedSellTabOpen && sellOrderType === type
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      aria-pressed={active}
+                      disabled={
+                        (type === 'LIMIT' && limitOrderStageLocked) ||
+                        (type === 'MARKET' && marketOrderStageLocked)
+                      }
+                      onClick={() => {
+                        setReservedSellTabOpen(false)
+                        setSellOrderType(type)
+                      }}
+                      className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-40 ${
+                        active ? 'bg-coin-soft text-coin ring-1 ring-coin/40' : 'text-muted hover:text-ink'
+                      }`}
+                    >
+                      {type === 'MARKET' ? '시장가' : '지정가'}
+                    </button>
+                  )
+                })}
                 <button
                   type="button"
-                  disabled
-                  aria-disabled="true"
-                  aria-describedby={reservedSellNoteId}
-                  className="flex-1 cursor-default rounded-full px-4 py-2 text-sm font-medium text-muted opacity-45"
+                  aria-pressed={reservedSellTabOpen}
+                  disabled={exitPlanStageLocked}
+                  aria-describedby={exitPlanStageLocked ? reservedSellNoteId : undefined}
+                  onClick={() => setReservedSellTabOpen(true)}
+                  className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-40 ${
+                    reservedSellTabOpen
+                      ? 'bg-coin-soft text-coin ring-1 ring-coin/40'
+                      : 'text-muted hover:text-ink'
+                  }`}
                 >
                   예약 매도
                 </button>
               </div>
-              {limitOrderStageLocked && (
+              {limitOrderStageLocked && !reservedSellTabOpen && (
                 <p className="text-xs leading-relaxed text-muted">
                   시장가로 먼저 한 번 사고팔아 본 뒤에 지정가를 쓸 수 있습니다.
                 </p>
               )}
-              <p id={reservedSellNoteId} className="text-xs leading-relaxed text-muted">
-                예약 매도는 실전에서 손절·익절 가격을 미리 걸어두는 기능입니다. 이 연습에서는 살 때
-                기준선이 자동으로 만들어지므로 따로 걸지 않습니다.
-              </p>
+              {exitPlanStageLocked && (
+                <p id={reservedSellNoteId} className="text-xs leading-relaxed text-muted">
+                  예약 매도는 손절·익절 가격을 미리 걸어두는 기능입니다. 지금은 주문 방법을 배우는
+                  단계라, 다음 단계에서 직접 걸어 봅니다.
+                </p>
+              )}
             </>
           )}
-          <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
-          {market === 'CRYPTO' && sellOrderType === 'LIMIT' && (
-            <LimitPriceField
-              id="tutorial-sell-limit-price"
-              label="지정가"
-              value={sellLimitPrice}
-              onChange={setSellLimitPrice}
-              latestPrice={latestPrice}
-            />
-          )}
-          <Button
-            type="button"
-            data-tour="sell"
-            size="lg"
-            variant="sell"
-            className="w-full"
-            disabled={
-              selling ||
-              sellLocked ||
-              pendingOrder !== null ||
-              remainingQuantity === null ||
-              remainingQuantity <= 0
-            }
-            onClick={handleSellClick}
-          >
-            {selling
-              ? '주문하는 중…'
-              : remainingQuantity === null
-                ? // 수량을 모르는 상태다. 0으로 지어내지 않고 개수를 뺀다 — 버튼은 위에서 이미 잠긴다.
-                  sellOrderType === 'LIMIT'
-                  ? '가진 만큼 정한 값에 판매하기'
-                  : '가진 만큼 전부 판매하기'
-                : sellOrderType === 'LIMIT'
-                  ? `가진 ${remainingQuantity}개 정한 값에 판매하기`
-                  : `가진 ${remainingQuantity}개 전부 판매하기`}
-          </Button>
-          {/*
-            잠긴 이유가 여럿이면 하나만 말한다. 예약이 걸려 있는 건 방금 자기가 한 행동의
-            결과라 가장 먼저 알려 준다. 수량을 모르는 상태에서 "잠시 뒤 팔 수 있어요"는
-            영원히 오지 않을 일을 약속하는 거짓말이라, 그때는 관찰 안내를 밀어내고 실제 이유를 쓴다.
-          */}
-          {pendingOrder !== null ? (
-            <PendingBlocksOrderNote />
-          ) : remainingQuantity === null ? (
-            <p className="text-xs text-muted">
-              지금 가진 수량을 불러오지 못했습니다. 잠시 뒤에도 그대로면 위의 "처음부터 다시 시작"으로
-              다시 해 주세요.
-            </p>
+          {reservedSellTabOpen ? (
+            <>
+              <TutorialExitPlanPanel
+                bounds={exitRateBounds}
+                plan={exitPlan}
+                entryPrice={entryPrice}
+                holdingQuantity={remainingQuantity}
+                stopLossInput={stopLossInput}
+                takeProfitInput={takeProfitInput}
+                onStopLossInputChange={setStopLossInput}
+                onTakeProfitInputChange={setTakeProfitInput}
+                suggestedStopLossRate={exitStopLossRate}
+                suggestedTakeProfitRate={exitTakeProfitRate}
+                stageLocked={exitPlanStageLocked}
+                canReserve={exitPlanCreatable}
+                submitting={creatingExitPlan}
+                cancelling={cancellingExitPlan}
+                cancelledOnce={exitPlanCancelled}
+                onSubmit={(stopLoss, takeProfit) => void handleCreateExitPlan(stopLoss, takeProfit)}
+                onCancel={(exitPlanId) => void handleCancelExitPlan(exitPlanId)}
+              />
+              <ErrorNote error={flowError} scope="exitPlan" />
+              {/* 예약 탭에서도 그냥 팔고 싶을 수 있다 — 되돌아갈 길을 막지 않는다. */}
+              <button
+                type="button"
+                onClick={() => setReservedSellTabOpen(false)}
+                className="text-xs text-muted underline underline-offset-4 transition-colors hover:text-ink"
+              >
+                예약하지 않고 지금 팔기
+              </button>
+            </>
           ) : (
-            sellLocked && (
-              <p className="text-xs text-muted">가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.</p>
-            )
+            <>
+              <OrderTypeGuideButton onClick={() => setOrderTypeGuideOpen(true)} />
+              {market === 'CRYPTO' && sellOrderType === 'LIMIT' && (
+                <LimitPriceField
+                  id="tutorial-sell-limit-price"
+                  label="지정가"
+                  value={sellLimitPrice}
+                  onChange={setSellLimitPrice}
+                  latestPrice={latestPrice}
+                />
+              )}
+              <Button
+                type="button"
+                data-tour="sell"
+                size="lg"
+                variant="sell"
+                className="w-full"
+                disabled={
+                  selling ||
+                  sellLocked ||
+                  pendingOrder !== null ||
+                  remainingQuantity === null ||
+                  remainingQuantity <= 0
+                }
+                onClick={handleSellClick}
+              >
+                {selling
+                  ? '주문하는 중…'
+                  : remainingQuantity === null
+                    ? // 수량을 모르는 상태다. 0으로 지어내지 않고 개수를 뺀다 — 버튼은 위에서 이미 잠긴다.
+                      sellOrderType === 'LIMIT'
+                      ? '가진 만큼 정한 값에 판매하기'
+                      : '가진 만큼 전부 판매하기'
+                    : sellOrderType === 'LIMIT'
+                      ? `가진 ${remainingQuantity}개 정한 값에 판매하기`
+                      : `가진 ${remainingQuantity}개 전부 판매하기`}
+              </Button>
+              {/*
+                잠긴 이유가 여럿이면 하나만 말한다. 예약이 걸려 있는 건 방금 자기가 한 행동의
+                결과라 가장 먼저 알려 준다. 수량을 모르는 상태에서 "잠시 뒤 팔 수 있어요"는
+                영원히 오지 않을 일을 약속하는 거짓말이라, 그때는 관찰 안내를 밀어내고 실제 이유를 쓴다.
+              */}
+              {pendingOrder !== null ? (
+                <PendingBlocksOrderNote />
+              ) : remainingQuantity === null ? (
+                <p className="text-xs text-muted">
+                  지금 가진 수량을 불러오지 못했습니다. 잠시 뒤에도 그대로면 위의 "처음부터 다시 시작"으로
+                  다시 해 주세요.
+                </p>
+              ) : (
+                sellLocked && (
+                  <p className="text-xs text-muted">가격을 조금 더 지켜봐야 합니다. 잠시 뒤 팔 수 있어요.</p>
+                )
+              )}
+              {/*
+                **예약 없이 그냥 파는 것도 허용한다(강제 강도 b) — 다만 침묵하지 않는다.** 지금 팔면
+                무엇을 건너뛰는지 한 줄로 말해 준다. 2단계(예약 자체가 없는 단계)와 주식에는 붙이지
+                않는다 — 걸 방법이 없는 화면에서 "예약해 두면"이라고 말하면 오지 않을 일을 권하는 것이다.
+              */}
+              {market === 'CRYPTO' &&
+                !exitPlanStageLocked &&
+                exitPlanCreatable &&
+                exitPlan === null &&
+                holdingNow &&
+                !sellLocked && (
+                  <p className="text-xs leading-relaxed text-muted">
+                    지금 팔면 직접 판 것이라 손절·익절은 겪지 않습니다. "예약 매도"로 걸어 두면 값이 선에
+                    닿는 순간 자동으로 정리되는 것을 겪어 볼 수 있어요.
+                  </p>
+                )}
+              <ErrorNote error={flowError} scope="sell" />
+            </>
           )}
-          <ErrorNote error={flowError} scope="sell" />
         </div>
       )}
 
@@ -3046,14 +3244,15 @@ export function AttemptTutorialFlow({
                     />
                   </div>
                   <div>
+                    {/* 기준선 요약도 **예약이 있을 때만** 말한다 — 차트 참고선과 같은 이유다. */}
                     <ChartSummary
                       latestPrice={latestPrice}
                       high={chartHigh}
                       low={chartLow}
                       dayCount={chart?.candles.length ?? 0}
-                      entryPrice={attempt.riskSnapshot?.entryPrice ?? null}
-                      stopLossPrice={attempt.riskSnapshot?.stopLossPrice ?? null}
-                      takeProfitPrice={attempt.riskSnapshot?.takeProfitPrice ?? null}
+                      entryPrice={entryPrice}
+                      stopLossPrice={exitPlan?.stopLossPrice ?? null}
+                      takeProfitPrice={exitPlan?.takeProfitPrice ?? null}
                     />
                     {/*
                       전체 사건 목록은 왼쪽 컬럼(ScenarioEventFeed)에 있다 — 낮은 화면에서는 차트
@@ -3085,7 +3284,12 @@ export function AttemptTutorialFlow({
                 </div>
               )}
             </Card>
-            <RiskEducationCard attempt={attempt} holdingQuantity={remainingQuantity} />
+            <RiskEducationCard
+              market={market}
+              entryPrice={entryPrice}
+              plan={exitPlan}
+              holdingQuantity={remainingQuantity}
+            />
           </div>
 
           {/* 3. 주문 · 되돌아보기 패널 */}

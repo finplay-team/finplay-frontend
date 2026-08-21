@@ -7,7 +7,9 @@ import { ApiError } from '../../lib/apiClient'
 import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
+  PracticeEntryResponse,
   PracticeEvidenceResponse,
+  PracticeExitPlanSummary,
   PracticeOrderResponse,
   PracticeOverallStatus,
   PracticeTutorialChartResponse,
@@ -15,15 +17,16 @@ import type {
 } from '../../services/tutorialTypes'
 import {
   advancePracticeAttemptScript,
+  createPracticeExitPlan,
   getPracticeAttemptChart,
   getPracticeAttemptOrders,
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
-  updateExitRates,
   selectPracticeInstrument,
   tickPracticeAttempt,
 } from '../../services/tutorialService'
+import { cancelExitPlan } from '../../services/exitPlanService'
 import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
 import { amendLimitOrder, cancelLimitOrder, placeLimitOrder, placeOrder } from '../../services/orderService'
 import { AttemptTutorialFlow } from './AttemptTutorialFlow'
@@ -75,15 +78,19 @@ vi.mock('../../services/orderService', () => ({
 }))
 vi.mock('../../services/tutorialService', () => ({
   advancePracticeAttemptScript: vi.fn(),
+  createPracticeExitPlan: vi.fn(),
   getPracticeAttemptChart: vi.fn(),
   getPracticeAttemptOrders: vi.fn(),
   recordHoldingObservation: vi.fn(),
   restartPracticeAttempt: vi.fn(),
   saveHoldingReflection: vi.fn(),
+  // 화면은 더 이상 부르지 않지만(2026-08-21 재설계) 서버·서비스에는 남아 있는 경로다.
   updateExitRates: vi.fn(),
   selectPracticeInstrument: vi.fn(),
   tickPracticeAttempt: vi.fn(),
 }))
+// 예약 취소는 실전과 같은 경로를 쓴다 — 튜토리얼 전용 취소 API가 따로 없다.
+vi.mock('../../services/exitPlanService', () => ({ cancelExitPlan: vi.fn() }))
 
 const chart: PracticeTutorialChartResponse = {
   attemptId: 10,
@@ -138,6 +145,51 @@ const risk = {
   stopLossRate: 3,
   takeProfitRate: 5,
   entrySequence: 1,
+}
+
+/** 사용자가 직접 건 예약(2026-08-21 재설계). 기준가 10,000원 · 손절 -3% · 익절 +5%. */
+const exitPlan: PracticeExitPlanSummary = {
+  exitPlanId: 77,
+  stopLossRate: 3,
+  takeProfitRate: 5,
+  stopLossPrice: 9700,
+  takeProfitPrice: 10500,
+}
+
+/** 지금 2개를 보유 중인 상태의 evidence — 예약을 걸 수 있는 유일한 상태다. */
+function holdingEvidence(overrides: Partial<PracticeEvidenceResponse> = {}): PracticeEvidenceResponse {
+  return evidence({
+    buyTradeId: 31,
+    holdingId: 41,
+    observationId: 51,
+    buyQuantity: 2,
+    remainingQuantity: 2,
+    ...overrides,
+  })
+}
+
+/** 한 진입의 기록. 손절/익절을 "겪었는가"의 폴백 판정이 이 배열의 `sellCause`를 읽는다. */
+function entry(overrides: Partial<PracticeEntryResponse> = {}): PracticeEntryResponse {
+  return {
+    entrySequence: 1,
+    exitPreset: null,
+    stopLossRate: 3,
+    takeProfitRate: 5,
+    buyAt: '2026-08-14T12:00:00',
+    buyPrice: 10000,
+    buyQuantity: 2,
+    buyOrderType: 'MARKET',
+    stopLossPrice: 9700,
+    takeProfitPrice: 10500,
+    sellPrice: 9700,
+    sellQuantity: 2,
+    sellAt: '2026-08-14T12:05:00',
+    sellCause: 'STOP_LOSS',
+    realizedPnl: -600,
+    unrealizedPnlIfHeld: null,
+    scenarioScriptId: 'CRYPTO_STORY_V1',
+    ...overrides,
+  }
 }
 
 function attempt(overrides: Partial<PracticeAttemptResponse> = {}): PracticeAttemptResponse {
@@ -269,6 +321,8 @@ describe('AttemptTutorialFlow', () => {
       attempt({ runNumber: 2, status: 'SELECTING_INSTRUMENT', instrumentId: null }),
     )
     vi.mocked(advancePracticeAttemptScript).mockResolvedValue(attempt())
+    vi.mocked(createPracticeExitPlan).mockResolvedValue(undefined)
+    vi.mocked(cancelExitPlan).mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -425,7 +479,12 @@ describe('AttemptTutorialFlow', () => {
       sellQuantity: 0.75,
       remainingQuantity: 1.25,
     })
-    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    // 기준선 카드는 **예약이 걸려 있을 때만** 뜬다(2026-08-21 재설계) — 예약 없이 그 선을 보여주면
+    // 아무도 지키지 않을 약속을 그리는 셈이다.
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(currentEvidence),
+      pendingExitPlan: exitPlan,
+    })
 
     expect(screen.getByText('9,700원')).toBeInTheDocument()
     expect(screen.getByText('10,500원')).toBeInTheDocument()
@@ -521,9 +580,9 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(placeOrder).toHaveBeenCalled())
   })
 
-  it('매수 전에는 지금 값 기준으로 손절선·익절선에서 얼마를 잃고 버는지 어림해 보여준다', async () => {
-    // 매수 전에는 체결가가 없어 riskSnapshot도 없다 — 차트 최신가 × 0.97 / × 1.05 로 어림한 값이라
-    // "지금 값이면"·"약"으로 확정값이 아님을 드러내야 한다.
+  it('매수 화면에는 손절·익절이 아예 없다 — 실전 매수 폼과 같아진다 (2026-08-21 재설계)', async () => {
+    // 제품 오너 지적: "매수는 지정가·시장가로 하고 매도할 때 예약매도로 손절·익절을 겪는 것"인데
+    // 매수 폼에 비율 입력이 떠 있어 실전 순서와 어긋났다. 입력도, 매수 전 손익 어림 줄도 여기서 뺐다.
     vi.mocked(getPracticeAttemptChart).mockResolvedValue({
       ...chart,
       candles: [{ date: '2026-08-14', open: 12000, high: 12500, low: 11800, close: 12340, current: true }],
@@ -532,29 +591,26 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    // 코인은 금액으로 산다 — 금액을 적기 전에는 채울 수량이 없어 이 줄 자체가 없다.
     fireEvent.change(screen.getByLabelText('주문 금액'), { target: { value: '123400' } })
 
-    // 두 기준선 값은 수량과 무관하다 — 금액을 얼마로 적든 이 숫자여야 한다.
-    expect(screen.getByText(/지금 값이면 손절선은 약 11,970원이고/)).toBeInTheDocument()
-    expect(screen.getByText(/익절선은 약 12,957원이고/)).toBeInTheDocument()
-    // 잃고 버는 금액은 환산된 수량에 비례한다 — 금액이 붙어 나오는지만 확인한다.
-    expect(screen.getByText(/여기까지 떨어지면 약 [\d,]+원을 잃습니다/)).toBeInTheDocument()
-    expect(screen.getByText(/여기까지 오르면 약 [\d,]+원을 법니다/)).toBeInTheDocument()
-    // 서버 실현손익은 수수료가 반영된 순손익이라 나중에 숫자가 어긋나 보이면 안 된다.
-    expect(screen.getByText(/수수료는 빼고 계산한 값입니다/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('손절 비율 (−%)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('익절 비율 (+%)')).not.toBeInTheDocument()
+    expect(screen.queryByText(/지금 값이면 손절선은/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/사는 순간의 값을 기준으로 팔 기준선 두 개/)).not.toBeInTheDocument()
+    // 매수에 필요한 것들은 그대로 있어야 한다.
+    expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
   })
 
-  it('금액이 비면 손익 어림 줄을 렌더하지 않는다', async () => {
+  it('매수 전에는 차트에 손절·익절선을 그리지 않는다 — 아직 아무 예약도 없기 때문이다', async () => {
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      candles: [{ date: '2026-08-14', open: 12000, high: 12500, low: 11800, close: 12340, current: true }],
+    })
     renderFlow(attempt({ riskSnapshot: null }), progress())
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    const amountField = screen.getByLabelText('주문 금액')
-    fireEvent.change(amountField, { target: { value: '123400' } })
-    expect(screen.getByText(/지금 값이면 손절선은/)).toBeInTheDocument()
-    fireEvent.change(amountField, { target: { value: '' } })
-    expect(screen.queryByText(/지금 값이면 손절선은/)).not.toBeInTheDocument()
+    expect(screen.queryAllByTestId('chart-reference-line')).toHaveLength(0)
   })
 
   it('코인 시장가 매수는 attempt의 실제 잔액을 "주문 가능"으로 보여준다 (이슈 #502)', async () => {
@@ -616,132 +672,355 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByRole('button', { name: '최대' })).toBeDisabled()
   })
 
-  it('매수 전 어림값은 고정 -3%/+5%가 아니라 지금 정해 둔 비율을 따른다', async () => {
-    // 손절 5·익절 8을 정해 둔 상태다 — 기본값(3·5)과 다른 숫자가 나와야 실제로 반영된 것을 알 수 있다.
-    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
-      ...chart,
-      candles: [{ date: '2026-08-14', open: 12000, high: 12500, low: 11800, close: 12340, current: true }],
-    })
-    renderFlow(
-      attempt({ riskSnapshot: null, exitStopLossRate: 5, exitTakeProfitRate: 8 }),
-      progress(),
-    )
+  /* ---------- 예약 매도 수동화(2026-08-21 재설계) — 손절·익절을 겪는 자리 ---------- */
+
+  /** 보유 중(예약 없음) 상태를 그리고, 예약 매도 탭까지 열어 준다. */
+  async function renderHoldingAndOpenReservation(
+    currentAttempt = attempt({ riskSnapshot: risk }),
+    currentProgress: InvestmentPracticeResponse = progress(holdingEvidence()),
+  ) {
+    const view = renderFlow(currentAttempt, currentProgress)
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
+    fireEvent.click(screen.getByRole('button', { name: '예약 매도' }))
+    return view
+  }
 
-    fireEvent.change(screen.getByLabelText('주문 금액'), { target: { value: '123400' } })
+  it('매수해서 보유가 생겼는데 예약이 없으면 지금 걸어야 한다고 눈에 띄게 안내한다', async () => {
+    renderFlow(attempt({ riskSnapshot: risk }), progress(holdingEvidence()))
+    await flushPromises()
 
-    // 12,340 × 0.95 = 11,723 / 12,340 × 1.08 = 13,327.2 → 반올림 13,327.
-    expect(screen.getByText(/지금 값이면 손절선은 약 11,723원이고/)).toBeInTheDocument()
-    expect(screen.getByText(/익절선은 약 13,327원이고/)).toBeInTheDocument()
+    expect(screen.getByText('지금 예약을 걸어야 손절·익절을 겪습니다')).toBeInTheDocument()
+    expect(screen.getByText(/값이 아무리 떨어지거나 올라도 저절로 정리되지 않아요/)).toBeInTheDocument()
+    // 진행 표시는 지금 어느 칸인지를 계속 보여준다 — 2번(예약 걸기)에 서 있어야 한다.
+    expect(screen.getByText('2. 예약 걸기')).toHaveAttribute('aria-current', 'step')
   })
 
-  it('손절·익절을 실전 예약 매도 탭과 같은 자유 입력 두 칸으로 보여준다', async () => {
-    renderFlow(attempt({ riskSnapshot: null }), progress())
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+  it('안내의 "예약 매도 열기"를 누르면 예약 탭이 열린다', async () => {
+    renderFlow(attempt({ riskSnapshot: risk }), progress(holdingEvidence()))
     await flushPromises()
 
-    // 실전(OcoExitPlanPanel)과 같은 라벨·같은 방식이다. 프리셋 이름은 어디에도 남지 않는다.
+    expect(screen.queryByLabelText('손절 비율 (−%)')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '예약 매도 열기' }))
+
+    expect(screen.getByLabelText('손절 비율 (−%)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '예약 걸기' })).toBeInTheDocument()
+  })
+
+  it('예약 폼은 실전 예약 매도 탭과 같은 자유 입력 두 칸이고, 하한이 아니라 서버가 든 값을 제안한다', async () => {
+    // 익절 하한(3)은 학습 순서 여유가 0.96%p뿐이라(백엔드 전수 조사) 화면이 그 가장자리를 권하면 안 된다.
+    await renderHoldingAndOpenReservation()
+
     expect(screen.getByLabelText('손절 비율 (−%)')).toHaveValue('3')
     expect(screen.getByLabelText('익절 비율 (+%)')).toHaveValue('5')
-    expect(screen.queryByText('조심스럽게')).not.toBeInTheDocument()
-    expect(screen.queryByText('느긋하게')).not.toBeInTheDocument()
-  })
-
-  it('입력창 placeholder로 범위의 하한을 제안하지 않는다', async () => {
-    // 익절 하한(3)은 학습 순서 여유가 0.96%p뿐이라(백엔드 전수 조사) 화면이 그 가장자리를 권하면
-    // 안 된다. placeholder는 하한(손절 2·익절 3)이 아니라 지금 저장된 값(3·5)을 되비춘다.
-    renderFlow(attempt({ riskSnapshot: null }), progress())
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
-    await flushPromises()
-
     expect(screen.getByLabelText('손절 비율 (−%)')).toHaveAttribute('placeholder', '3')
     expect(screen.getByLabelText('익절 비율 (+%)')).toHaveAttribute('placeholder', '5')
+    expect(screen.queryByText('조심스럽게')).not.toBeInTheDocument()
   })
 
   it('서버가 준 범위를 입력 안내로 그대로 보여준다 (숫자를 화면에 박아 두지 않는다)', async () => {
-    renderFlow(attempt({ riskSnapshot: null }), {
-      ...progress(),
+    await renderHoldingAndOpenReservation(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
       exitRateBounds: { stopLossMin: 1, stopLossMax: 4, takeProfitMin: 2, takeProfitMax: 6 },
     })
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
-    await flushPromises()
 
     expect(screen.getByText('1~4% 중에서')).toBeInTheDocument()
     expect(screen.getByText('2~6% 중에서')).toBeInTheDocument()
   })
 
-  it('손절 5 + 익절 3 같은 조합도 그대로 저장한다 (두 비율은 서로 독립이다)', async () => {
-    const onAttemptChange = vi.fn()
-    const updated = attempt({ riskSnapshot: null, exitStopLossRate: 5, exitTakeProfitRate: 3 })
-    vi.mocked(updateExitRates).mockResolvedValue(updated)
-    renderFlow(attempt({ riskSnapshot: null }), progress(), undefined, onAttemptChange)
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+  it('정한 폭이 무슨 뜻인지와 지금 수량이면 얼마인지를 예약 자리에서 말해 준다', async () => {
+    await renderHoldingAndOpenReservation()
+
+    fireEvent.change(screen.getByLabelText('손절 비율 (−%)'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('익절 비율 (+%)'), { target: { value: '8' } })
+
+    expect(screen.getByText(/좁게 잡았습니다.*작은 흔들림에도 금방 닿아/)).toBeInTheDocument()
+    expect(screen.getByText(/넓게 잡았습니다.*크게 오를 때까지 기다리는 대신/)).toBeInTheDocument()
+    // 기준가는 현재가가 아니라 평균 매수가(10,000) — 2개 보유이므로 손절 -2%면 400원이다.
+    expect(screen.getByText(/9,800원에 닿으면 자동으로 정리됩니다 — 지금 가진 수량이면 약 400원을 잃습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/10,800원에 닿으면 자동으로 정리됩니다 — 지금 가진 수량이면 약 1,600원을 법니다/)).toBeInTheDocument()
+  })
+
+  it('손절 5 + 익절 3 같은 조합도 그대로 예약한다 (두 비율은 서로 독립이고 손절도 양수다)', async () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined)
+    renderFlow(attempt({ riskSnapshot: risk }), progress(holdingEvidence()), onRefresh)
     await flushPromises()
+    fireEvent.click(screen.getByRole('button', { name: '예약 매도' }))
 
     fireEvent.change(screen.getByLabelText('손절 비율 (−%)'), { target: { value: '5' } })
     fireEvent.change(screen.getByLabelText('익절 비율 (+%)'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: '예약 걸기' }))
 
     // 손절도 양수 퍼센트 수로 보낸다 — 여기서 부호를 뒤집으면 서버가 정반대 선을 만든다.
-    await waitFor(() => expect(updateExitRates).toHaveBeenCalledWith('CRYPTO', 5, 3), { timeout: 3000 })
-    await waitFor(() => expect(onAttemptChange).toHaveBeenCalledWith(updated))
+    await waitFor(() => expect(createPracticeExitPlan).toHaveBeenCalledWith('CRYPTO', 5, 3))
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled())
   })
 
-  it('범위 밖 값은 저장하지 않고 그 자리에 이유를 보여준다', async () => {
-    renderFlow(attempt({ riskSnapshot: null }), progress())
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
-    await flushPromises()
+  it('범위 밖 값이면 예약을 걸 수 없고 그 자리에 이유를 보여준다', async () => {
+    await renderHoldingAndOpenReservation()
 
     fireEvent.change(screen.getByLabelText('손절 비율 (−%)'), { target: { value: '9' } })
 
     expect(await screen.findByText('손절 비율은 2%에서 5% 사이로 정해 주세요.')).toBeInTheDocument()
-    await new Promise((resolve) => setTimeout(resolve, 700))
-    expect(updateExitRates).not.toHaveBeenCalled()
+    // 버튼 아래 줄은 같은 문장을 되풀이하지 않는다 — 두 개의 다른 문제로 읽히면 안 된다.
+    expect(screen.getByText('두 비율을 범위 안에서 정해야 예약을 걸 수 있습니다.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '예약 걸기' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '예약 걸기' }))
+    expect(createPracticeExitPlan).not.toHaveBeenCalled()
   })
 
-  it('정한 폭이 무슨 뜻인지 말로 함께 돌려준다 (프리셋 이름이 하던 역할)', async () => {
-    renderFlow(attempt({ riskSnapshot: null, exitStopLossRate: 2, exitTakeProfitRate: 8 }), progress())
+  it('예약을 걸면 무엇을 기다리는 중인지 가격으로 말해 주고 차트에 확정선을 그린다', async () => {
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
+      pendingExitPlan: exitPlan,
+    })
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    expect(screen.getByText(/좁게 잡았습니다.*작은 흔들림에도 금방 닿아/)).toBeInTheDocument()
-    expect(screen.getByText(/넓게 잡았습니다.*크게 오를 때까지 기다리는 대신/)).toBeInTheDocument()
+    expect(screen.getByText('예약을 걸었습니다. 이제 기다립니다.')).toBeInTheDocument()
+    expect(
+      screen.getByText(/값이 손절선 9,700원에 먼저 닿으면 더 잃지 않도록 자동으로 정리되고/),
+    ).toBeInTheDocument()
+    expect(screen.getByText('3. 기다리기')).toHaveAttribute('aria-current', 'step')
+    // "예상"이 아니라 확정선이다.
+    expect(screen.getByText('손절 -3% 9700')).toBeInTheDocument()
+    expect(screen.getByText('익절 +5% 10500')).toBeInTheDocument()
   })
 
-  it('보유 중에는 비율을 바꿀 수 없고 그 이유를 보여준다', async () => {
-    renderFlow(attempt({ riskSnapshot: null, exitPresetLocked: true }), progress())
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
-    await flushPromises()
-
-    expect(screen.getByLabelText('손절 비율 (−%)')).toBeDisabled()
-    expect(screen.getByLabelText('익절 비율 (+%)')).toBeDisabled()
-    expect(screen.getByText(/지금은 보유 중이라 바꿀 수 없습니다/)).toBeInTheDocument()
-  })
-
-  it('비율 저장이 실패하면 그 자리에 오류를 보여준다', async () => {
-    vi.mocked(updateExitRates).mockRejectedValue(new ApiError(409, 'PRACTICE_STEP_LOCKED', null, null))
-    renderFlow(attempt({ riskSnapshot: null }), progress())
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
-    await flushPromises()
+  it('아직 안 건 값도 차트에 예상선으로 그려 준다 — 걸기 전에 폭을 눈으로 판단하는 자리다', async () => {
+    await renderHoldingAndOpenReservation()
 
     fireEvent.change(screen.getByLabelText('손절 비율 (−%)'), { target: { value: '4' } })
+    fireEvent.change(screen.getByLabelText('익절 비율 (+%)'), { target: { value: '6' } })
 
-    expect(await screen.findByText(/먼저 이전 단계를 완료해야 합니다/, undefined, { timeout: 3000 })).toBeInTheDocument()
+    // 기준가는 평균 매수가 10,000원이다(현재가가 아니다).
+    expect(screen.getByText('예상 손절 -4% 9600')).toBeInTheDocument()
+    expect(screen.getByText('예상 익절 +6% 10600')).toBeInTheDocument()
   })
 
-  it('매수 전에도 정한 비율로 차트에 예상 손절·익절선을 그린다', async () => {
-    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
-      ...chart,
-      candles: [{ date: '2026-08-14', open: 12000, high: 12500, low: 11800, close: 12340, current: true }],
+  it('걸어 둔 예약은 취소할 수 있고, 취소하면 다시 걸라고 말해 준다', async () => {
+    const view = renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
+      pendingExitPlan: exitPlan,
     })
-    renderFlow(attempt({ riskSnapshot: null, exitStopLossRate: 4, exitTakeProfitRate: 6 }), progress())
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+    fireEvent.click(screen.getByRole('button', { name: '예약 매도' }))
+    fireEvent.click(screen.getByRole('button', { name: '예약 취소' }))
+
+    // 튜토리얼 전용 취소 API가 아니라 실전과 같은 경로를 쓴다.
+    await waitFor(() => expect(cancelExitPlan).toHaveBeenCalledWith(77))
+
+    // 취소가 반영된 진행 조회가 오면(예약 없음 + 이 진입에는 더 못 검) 그 사실을 조용히 넘기지 않는다.
+    view.rerender(
+      <MemoryRouter>
+        <AttemptTutorialFlow
+          market="CRYPTO"
+          attempt={attempt({ riskSnapshot: risk })}
+          progress={{
+            ...progress(holdingEvidence()),
+            pendingExitPlan: null,
+            exitPlanCreatable: false,
+          }}
+          onAttemptChange={vi.fn()}
+          onRefresh={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    )
     await flushPromises()
 
-    // 아직 진입가가 없어 현재가로 잡은 어림선이라 "예상"이 붙는다.
-    // 12,340 × 0.96 = 11,846.4 / 12,340 × 1.06 = 13,080.4.
-    expect(screen.getByText('예상 손절 -4% 11846')).toBeInTheDocument()
-    expect(screen.getByText('예상 익절 +6% 13080')).toBeInTheDocument()
+    expect(screen.getByText('이 진입에는 예약을 다시 걸 수 없습니다')).toBeInTheDocument()
+    expect(screen.getByText(/방금 예약을 취소했습니다/)).toBeInTheDocument()
+  })
+
+  it('서버가 예약 가격을 문자열로 내려줘도 금액 문구가 깨지지 않는다', async () => {
+    // 백엔드 예시 응답은 BigDecimal을 "9700.00000000" 문자열로 싣는다 — 그대로 계산하면 문자열
+    // 연결이 되어 금액이 통째로 망가진다. 읽는 자리(readPendingExitPlan)에서 숫자로 강제한다.
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
+      pendingExitPlan: {
+        ...exitPlan,
+        stopLossPrice: '9700.00000000' as unknown as number,
+        takeProfitPrice: '10500.00000000' as unknown as number,
+      },
+    })
+    await flushPromises()
+
+    expect(screen.getByText(/값이 손절선 9,700원에 먼저 닿으면/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/손절선에 닿으면 약 600원을 잃고 익절선에 닿으면 약 1,000원을 법니다/),
+    ).toBeInTheDocument()
+  })
+
+  it('취소한 진입에는 다시 걸 수 없다는 것을 말해 준다 — "다시 걸어 주세요"라고 하지 않는다', async () => {
+    // 예약은 한 진입에 한 번뿐이다(백엔드 확정, write-once). 취소하면 보유 중이고 예약도 없지만
+    // exitPlanCreatable이 false라, 이때 "지금 예약을 걸어야 합니다"라고 말하면 누를 때마다 409다.
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
+      pendingExitPlan: null,
+      exitPlanCreatable: false,
+    })
+    await flushPromises()
+
+    expect(screen.getByText('이 진입에는 예약을 다시 걸 수 없습니다')).toBeInTheDocument()
+    expect(screen.queryByText('지금 예약을 걸어야 손절·익절을 겪습니다')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '예약 매도 열기' })).not.toBeInTheDocument()
+    // 걸 수 없는 상태에서 "예약해 두면 겪을 수 있다"고 권하지도 않는다.
+    expect(screen.queryByText(/지금 팔면 직접 판 것이라/)).not.toBeInTheDocument()
+
+    // 탭을 직접 열면 입력 칸 대신 이유가 보인다 — 눌리지 않는 폼을 남겨 두지 않는다.
+    fireEvent.click(screen.getByRole('button', { name: '예약 매도' }))
+    expect(screen.queryByLabelText('손절 비율 (−%)')).not.toBeInTheDocument()
+    expect(screen.getByText(/이 진입에는 이미 예약을 걸었던 적이 있어 다시 걸 수 없습니다/)).toBeInTheDocument()
+  })
+
+  it('예약 탭에서도 "예약하지 않고 지금 팔기"로 되돌아갈 수 있다 (길을 막지 않는다)', async () => {
+    await renderHoldingAndOpenReservation()
+
+    fireEvent.click(screen.getByRole('button', { name: '예약하지 않고 지금 팔기' }))
+
+    expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('손절 비율 (−%)')).not.toBeInTheDocument()
+  })
+
+  it('손절을 겪고 다시 샀는데 예약이 없으면, 걸라고 하면서 이번엔 익절 차례임을 함께 말한다', async () => {
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
+      // 1회차는 손절로 정리됐고, 2회차 진입은 아직 안 팔린 상태다.
+      entries: [entry({ sellCause: 'STOP_LOSS' }), entry({ entrySequence: 2, sellAt: null, sellCause: null, sellPrice: null, sellQuantity: null, realizedPnl: null })],
+    })
+    await flushPromises()
+
+    expect(screen.getByText('지금 예약을 걸어야 손절·익절을 겪습니다')).toBeInTheDocument()
+    expect(screen.getByText(/이제 익절을 겪어 볼 차례입니다\./)).toBeInTheDocument()
+    expect(screen.getByText('✓ 손절 겪기')).toBeInTheDocument()
+  })
+
+  it('예약 생성이 거부되면 그 자리에 이유를 보여준다', async () => {
+    vi.mocked(createPracticeExitPlan).mockRejectedValue(
+      new ApiError(409, 'PRACTICE_STEP_LOCKED', null, null),
+    )
+    await renderHoldingAndOpenReservation()
+
+    fireEvent.click(screen.getByRole('button', { name: '예약 걸기' }))
+
+    expect(await screen.findByText(/먼저 이전 단계를 완료해야 합니다/)).toBeInTheDocument()
+  })
+
+  it('중복 예약 거부는 공용 문구("취소한 뒤 다시")를 쓰지 않는다 — 튜토리얼에서는 거짓말이다', async () => {
+    vi.mocked(createPracticeExitPlan).mockRejectedValue(
+      new ApiError(409, 'EXIT_PLAN_ALREADY_EXISTS', null, null),
+    )
+    await renderHoldingAndOpenReservation()
+
+    fireEvent.click(screen.getByRole('button', { name: '예약 걸기' }))
+
+    expect(
+      await screen.findByText(/취소한 예약도 같은 진입에서는 다시 걸 수 없어요/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/취소한 뒤 다시 시도해 주세요/)).not.toBeInTheDocument()
+  })
+
+  it('예약 없이 그냥 팔 수도 있지만, 그러면 무엇을 건너뛰는지 말해 준다 (잠그지는 않는다)', async () => {
+    renderFlow(attempt({ riskSnapshot: risk }), progress(holdingEvidence()))
+    await flushPromises()
+
+    expect(
+      screen.getByText(/지금 팔면 직접 판 것이라 손절·익절은 겪지 않습니다/),
+    ).toBeInTheDocument()
+    // 강도 (b) — 안내만 하고 매도 버튼은 그대로 눌린다.
+    expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeEnabled()
+  })
+
+  it('예약을 걸어 두면 "지금 팔면 못 겪는다" 안내를 더 이상 보여주지 않는다', async () => {
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
+      pendingExitPlan: exitPlan,
+    })
+    await flushPromises()
+
+    expect(screen.queryByText(/지금 팔면 직접 판 것이라/)).not.toBeInTheDocument()
+  })
+
+  it('예약 없이 직접 팔고 나면 손절·익절을 아직 못 겪었다고 알려준다', async () => {
+    const sold = evidence({ buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 0 })
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(sold),
+      entries: [entry({ sellCause: 'MANUAL' })],
+    })
+    await flushPromises()
+
+    expect(
+      screen.getByText('직접 팔아서 정리했습니다. 손절·익절은 아직 겪지 않았어요.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('손절 겪기')).toBeInTheDocument()
+    expect(screen.getByText('익절 겪기')).toBeInTheDocument()
+  })
+
+  it('손절만 겪었으면 이제 익절을 겪을 차례라고 다음 할 일을 말해 준다', async () => {
+    const sold = evidence({ buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 0 })
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(sold),
+      entries: [entry({ sellCause: 'STOP_LOSS' })],
+    })
+    await flushPromises()
+
+    expect(screen.getByText('손절을 겪었습니다. 이제 익절을 겪어 볼 차례입니다.')).toBeInTheDocument()
+    expect(screen.getByText('✓ 손절 겪기')).toBeInTheDocument()
+    expect(screen.getByText('익절 겪기')).toBeInTheDocument()
+    // 다시 사라고 권할 뿐, 나가는 길을 막지 않는다.
+    expect(screen.getByText(/여기서 그만두고 되돌아보기로 마무리해도 괜찮습니다/)).toBeInTheDocument()
+  })
+
+  it('둘 다 겪으면 목표를 다 채웠다고 말한다', async () => {
+    const sold = evidence({ buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 0 })
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(sold),
+      entries: [entry({ sellCause: 'STOP_LOSS' }), entry({ entrySequence: 2, sellCause: 'TAKE_PROFIT' })],
+    })
+    await flushPromises()
+
+    expect(screen.getByText('손절과 익절을 모두 겪었습니다.')).toBeInTheDocument()
+    expect(screen.getByText('✓ 손절 겪기')).toBeInTheDocument()
+    expect(screen.getByText('✓ 익절 겪기')).toBeInTheDocument()
+  })
+
+  it('서버가 경험 판정을 내려주면 진입 기록 폴백 대신 그 값을 따른다', async () => {
+    const sold = evidence({ buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 0 })
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(sold),
+      // 진입 기록은 손절이라고 말하지만 서버는 익절이라고 말한다 — 서버가 이긴다.
+      entries: [entry({ sellCause: 'STOP_LOSS' })],
+      exitExperience: {
+        stopLossExperienced: false,
+        takeProfitExperienced: true,
+        bothExperienced: false,
+        recommendedNext: 'STOP_LOSS',
+      },
+    })
+    await flushPromises()
+
+    expect(screen.getByText('익절을 겪었습니다. 이제 손절을 겪어 볼 차례입니다.')).toBeInTheDocument()
+    expect(screen.getByText('✓ 익절 겪기')).toBeInTheDocument()
+    expect(screen.getByText('손절 겪기')).toBeInTheDocument()
+  })
+
+  it('아직 아무것도 안 샀으면 먼저 사라고만 말한다', async () => {
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await flushPromises()
+
+    expect(screen.getByText('먼저 삽니다')).toBeInTheDocument()
+    expect(screen.getByText('1. 사기')).toHaveAttribute('aria-current', 'step')
+  })
+
+  it('주식 튜토리얼에는 예약 매도가 없어 학습 안내도 그리지 않는다 — 걸 방법이 없는 화면이다', async () => {
+    renderFlow(
+      attempt({ market: 'STOCK', riskSnapshot: risk }),
+      progress(holdingEvidence()),
+    )
+    await flushPromises()
+
+    expect(screen.queryByLabelText('손절·익절 학습 진행')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '예약 매도' })).not.toBeInTheDocument()
   })
 
   it('2단계 학습 체크리스트를 서버 판정 그대로 보여준다 (이슈 #503)', async () => {
@@ -815,23 +1094,23 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.queryByText(/손절·익절로 자동 정리된 매도는/)).not.toBeInTheDocument()
   })
 
-  it('손절·익절선은 자동으로 팔린다고 정확히 말한다 — 직접 팔아야만 정리된다고 잘못 말하지 않는다 (실사용 중 발견)', async () => {
-    renderFlow(attempt({ riskSnapshot: null }), progress())
-    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+  it('기준선 카드는 예약을 건 뒤에만 뜨고, 자동으로 팔린다고 정확히 말한다', async () => {
+    // 예약이 없으면 "이 선에 닿으면 자동으로 팔립니다"가 거짓말이 된다(2026-08-21 재설계) —
+    // 그 상태에서 화면이 할 말은 이 카드가 아니라 "지금 예약을 걸어야 합니다"다.
+    const view = renderFlow(attempt({ riskSnapshot: risk }), progress(holdingEvidence()))
     await flushPromises()
+    expect(screen.queryByText(/이 선에 닿으면 자동으로 팔립니다/)).not.toBeInTheDocument()
+    view.unmount()
 
-    expect(screen.getByText(/값이 이 선에\s*닿으면 그 순간 자동으로 팔립니다/)).toBeInTheDocument()
-    expect(screen.queryByText(/자동으로 팔리지는 않습니다/)).not.toBeInTheDocument()
-  })
-
-  it('매수 후 카드도 손절·익절선이 자동으로 팔린다고 정확히 말한다 (실사용 중 발견)', async () => {
-    const holding = evidence({
-      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(holdingEvidence()),
+      pendingExitPlan: exitPlan,
     })
-    renderFlow(attempt({ riskSnapshot: risk }), progress(holding))
     await flushPromises()
-
-    expect(screen.getByText(/이 선에 닿으면 자동으로 팔립니다\./)).toBeInTheDocument()
+    expect(
+      screen.getByText(/직접 걸어 둔 예약이라 이 선에 닿으면 자동으로 팔립니다/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/자동으로 팔리지는 않습니다/)).not.toBeInTheDocument()
   })
 
   it('주식 튜토리얼은 지정가 항목을 아예 빼고 보여준다 — 코인 전용이라 영원히 못 채운다 (이슈 #503)', async () => {
@@ -1060,7 +1339,28 @@ describe('AttemptTutorialFlow', () => {
       ).not.toBeInTheDocument()
     })
 
-    it('3단계(스토리)로 넘어가면 손절·익절 설명·비율 입력 카드가 다시 보인다', async () => {
+    it('2단계에서는 예약 매도 탭을 잠그고 다음 단계에서 다룬다고 이유를 말한다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: risk }),
+        progress(holdingEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: false,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.getByRole('button', { name: '예약 매도' })).toBeDisabled()
+      expect(
+        screen.getByText(/지금은 주문 방법을 배우는\s*단계라, 다음 단계에서 직접 걸어 봅니다/),
+      ).toBeInTheDocument()
+      // 2단계에는 학습 안내(예약을 걸라는 말)도 그리지 않는다 — 아직 그 차례가 아니다.
+      expect(screen.queryByLabelText('손절·익절 학습 진행')).not.toBeInTheDocument()
+    })
+
+    it('3단계(스토리)로 넘어가면 예약 매도 탭이 풀린다', async () => {
       vi.mocked(getPracticeAttemptChart).mockResolvedValue({
         ...chart,
         scenarioStage: 'ACT1',
@@ -1069,8 +1369,8 @@ describe('AttemptTutorialFlow', () => {
         priceGuideRange: null,
       })
       renderFlow(
-        attempt({ riskSnapshot: null }),
-        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+        attempt({ riskSnapshot: risk }),
+        progress(holdingEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
           marketBuySellCompleted: true,
           limitBuySellCompleted: true,
           exitPresetSelected: false,
@@ -1079,8 +1379,8 @@ describe('AttemptTutorialFlow', () => {
       await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
       await flushPromises()
 
-      expect(screen.getByLabelText('손절 비율 (−%)')).toBeInTheDocument()
-      expect(screen.getByText(/사는 순간의 값을 기준으로 팔 기준선 두 개/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '예약 매도' })).toBeEnabled()
+      expect(screen.getByText('지금 예약을 걸어야 손절·익절을 겪습니다')).toBeInTheDocument()
     })
 
     it('시장가·지정가 왕복을 모두 마치면 "3단계로 가기" 버튼이 뜬다', async () => {
@@ -1191,11 +1491,14 @@ describe('AttemptTutorialFlow', () => {
     })
   })
 
-  it('매수 후에는 서버 확정 기준선으로 실제 보유 수량만큼의 손익 금액을 보여준다', async () => {
+  it('예약을 건 뒤에는 그 예약 가격으로 실제 보유 수량만큼의 손익 금액을 보여준다', async () => {
     const currentEvidence = evidence({
       buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
     })
-    renderFlow(attempt({ riskSnapshot: risk }), progress(currentEvidence))
+    renderFlow(attempt({ riskSnapshot: risk }), {
+      ...progress(currentEvidence),
+      pendingExitPlan: exitPlan,
+    })
     await flushPromises()
 
     // entry 10,000 / stop 9,700 / take 10,500 · 2개 → 600원 손실, 1,000원 이익.
