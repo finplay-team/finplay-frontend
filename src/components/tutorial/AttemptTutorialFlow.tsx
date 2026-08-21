@@ -2243,6 +2243,37 @@ export function AttemptTutorialFlow({
   const orderSide: OrderSide = attempt.riskSnapshot && !fullySold ? 'SELL' : 'BUY'
 
   /**
+   * 2단계를 마치면 **사용자가 버튼을 찾지 않아도** 3단계로 넘어간다. 전환 CTA가 주문 컬럼 아래쪽에
+   * 있어서, 지정가 왕복을 끝낸 사용자가 위로 스크롤해 그 버튼을 찾아 눌러야 다음으로 갈 수 있었다
+   * (2026-08-21 실사용 피드백). 앞으로 나아가는 선택이고 되돌릴 것이 없어 확인을 받을 이유가 없다.
+   *
+   * **한 번만 시도한다.** 실패하면 아래 CTA 카드가 그대로 남아 사용자가 직접 누를 수 있다. 여기서
+   * 재시도를 반복하면 3초 폴링마다 서버를 두드리게 된다.
+   */
+  const autoAdvancedRef = useRef(false)
+  useEffect(() => {
+    if (autoAdvancedRef.current) return
+    if (scenarioStage !== 'ORDER_BASICS') return
+    // 보유 중에는 서버가 409로 거부한다(순보유수량 > 0). 매수 폼일 때가 곧 미보유다.
+    if (orderSide !== 'BUY') return
+    if (!progress.tutorialStageProgress.marketBuySellCompleted) return
+    if (!progress.tutorialStageProgress.limitBuySellCompleted) return
+    autoAdvancedRef.current = true
+    showToast({
+      tone: 'success',
+      text: '주문 넣는 법을 마쳤습니다. 이제 팔 기준을 정할 차례예요.',
+      key: 'tutorial-stage-advance',
+    })
+    void handleAdvanceScript()
+  }, [
+    handleAdvanceScript,
+    orderSide,
+    progress.tutorialStageProgress.limitBuySellCompleted,
+    progress.tutorialStageProgress.marketBuySellCompleted,
+    scenarioStage,
+  ])
+
+  /**
    * 지금 어느 학습 국면인가. **번호가 아니라 이름이다** — 판정 로직은 `tutorialPhase.ts` 한 곳에만 있다.
    * 손절을 겪으면 이름이 다시 "팔 기준을 미리 정하기"로 되돌아가는데, 그 되돌아감 자체가 "한 번 더
    * 한다"는 신호다(예전 로드맵은 전진만 해서 이 반복이 버그처럼 보였다).
@@ -2341,7 +2372,8 @@ export function AttemptTutorialFlow({
           <div className="rounded-2xl border border-coin/30 bg-coin-soft/40 p-4">
             <p className="text-sm font-medium text-ink">시장가·지정가 매매를 모두 마쳤습니다.</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">
-              이제 팔 기준을 미리 정해 두고, 그 기준이 대신 팔아 주는 것을 겪어 봅니다.
+              이제 팔 기준을 미리 정해 두고, 그 기준이 대신 팔아 주는 것을 겪어 봅니다. 잠시 뒤 자동으로
+              넘어갑니다.
             </p>
             <Button
               type="button"

@@ -142,6 +142,23 @@ function EntryCard({ entry }: { entry: PracticeEntryResponse }) {
         </div>
       )}
 
+      {/*
+        익절로 팔렸는데 "안 팔았다면"이 더 크면 이 카드는 숫자만으로 **정반대 교훈**을 가르친다 —
+        "규칙을 지켜서 손해 봤다"로 읽힌다(2026-08-21 실사용에서 +403,171원 옆에 +761,192원이 뜬 것을
+        확인). 숫자를 숨기지는 않는다. 숨기면 유리할 때만 보여주는 셈이고 그건 이 화면이 가르치려는
+        정직함과 어긋난다. 대신 **규칙이 무엇과 무엇을 맞바꾸는지**를 한 줄로 말한다.
+      */}
+      {sold &&
+        entry.sellCause === 'TAKE_PROFIT' &&
+        entry.realizedPnl !== null &&
+        entry.unrealizedPnlIfHeld !== null &&
+        entry.unrealizedPnlIfHeld > entry.realizedPnl && (
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          이번에는 더 오를 수도 있었습니다. 규칙은 최고점을 맞히는 약속이 아니라, 정한 만큼을 지키는
+          약속이에요.
+        </p>
+      )}
+
       {partial && (
         <p className="mt-2 text-[11px] leading-relaxed text-muted">
           이 진입은 일부만 팔았습니다. 위 두 금액은 판 수량 기준입니다.

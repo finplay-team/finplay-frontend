@@ -1443,8 +1443,11 @@ describe('AttemptTutorialFlow', () => {
       expect(screen.getByText('지금 예약을 걸어야 손절·익절을 겪습니다')).toBeInTheDocument()
     })
 
-    it('시장가·지정가 왕복을 모두 마치면 "3단계로 가기" 버튼이 뜬다', async () => {
+    // 예전에는 사용자가 주문 컬럼 아래쪽 CTA를 찾아 눌러야 넘어갔다. 지정가 왕복을 끝낸 자리에서
+    // 위로 스크롤해 버튼을 찾아야 하는 게 실사용에서 막힘으로 드러나(2026-08-21) 자동 전환으로 바꿨다.
+    it('시장가·지정가 왕복을 모두 마치면 누르지 않아도 3단계로 넘어간다', async () => {
       vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      vi.mocked(advancePracticeAttemptScript).mockResolvedValue(attempt({ riskSnapshot: null }))
       renderFlow(
         attempt({ riskSnapshot: null }),
         progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
@@ -1456,7 +1459,26 @@ describe('AttemptTutorialFlow', () => {
       await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
       await flushPromises()
 
-      expect(screen.getByRole('button', { name: '다음으로 · 팔 기준 정하기' })).toBeInTheDocument()
+      await waitFor(() => expect(advancePracticeAttemptScript).toHaveBeenCalledWith('CRYPTO'))
+    })
+
+    // 3초 폴링이 같은 조건을 계속 만족시키므로, 한 번만 시도한다는 것이 계약이다.
+    it('자동 전환은 조건이 계속 참이어도 한 번만 부른다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      vi.mocked(advancePracticeAttemptScript).mockResolvedValue(attempt({ riskSnapshot: null }))
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(advancePracticeAttemptScript).toHaveBeenCalledTimes(1))
+      await flushPromises()
+      await flushPromises()
+
+      expect(advancePracticeAttemptScript).toHaveBeenCalledTimes(1)
     })
 
     it('둘 중 하나만 마쳤으면 "3단계로 가기" 버튼이 뜨지 않는다', async () => {
@@ -1495,7 +1517,7 @@ describe('AttemptTutorialFlow', () => {
       expect(screen.queryByRole('button', { name: '다음으로 · 팔 기준 정하기' })).not.toBeInTheDocument()
     })
 
-    it('"3단계로 가기"를 누르면 전환을 부른 뒤 커서를 새로 받으려고 tick을 한 번 더 부른다', async () => {
+    it('전환 뒤 커서를 새로 받으려고 tick을 한 번 더 부른다', async () => {
       vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
       vi.mocked(advancePracticeAttemptScript).mockResolvedValue(attempt({ riskSnapshot: null }))
       vi.mocked(tickPracticeAttempt).mockResolvedValue({
@@ -1515,8 +1537,6 @@ describe('AttemptTutorialFlow', () => {
       )
       await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
       await flushPromises()
-
-      fireEvent.click(screen.getByRole('button', { name: '다음으로 · 팔 기준 정하기' }))
 
       await waitFor(() => expect(advancePracticeAttemptScript).toHaveBeenCalledWith('CRYPTO'))
       await waitFor(() => expect(tickPracticeAttempt).toHaveBeenCalledWith('CRYPTO'))

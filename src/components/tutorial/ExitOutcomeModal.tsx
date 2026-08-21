@@ -122,7 +122,7 @@ export function ExitOutcomeModal({
         className="mt-5 w-full"
         onClick={allDone ? onWriteReview : onClose}
       >
-        {allDone ? '되돌아보기 쓰기' : '계속하기'}
+        {allDone ? '되돌아보기 쓰기' : '확인했습니다'}
       </Button>
     </TutorialModal>
   )
