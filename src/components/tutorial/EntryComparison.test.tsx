@@ -9,6 +9,7 @@ function entry(overrides: Partial<PracticeEntryResponse> = {}): PracticeEntryRes
     entrySequence: 1,
     exitPreset: 'BALANCED',
     buyOrderType: 'MARKET',
+    scenarioScriptId: 'CRYPTO_STORY_V1',
     buyAt: '2026-08-20T11:00:00',
     buyPrice: 12400,
     buyQuantity: 40,
@@ -102,6 +103,28 @@ describe('EntryComparison', () => {
 
     expect(screen.getByText(/아직 팔지 않았습니다/)).toBeInTheDocument()
     expect(screen.queryByText(/실제 손익/)).not.toBeInTheDocument()
+  })
+
+  it('2단계(ORDER_BASICS)에서 연 진입에만 "2단계 연습" 칩을 붙인다 (049 "5-A")', () => {
+    render(
+      <EntryComparison
+        layout="wide"
+        entries={[
+          entry({ entrySequence: 1, scenarioScriptId: 'CRYPTO_ORDER_BASICS_V1' }),
+          entry({ entrySequence: 2, scenarioScriptId: 'CRYPTO_STORY_V1' }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('2단계 연습')).toBeInTheDocument()
+    // 3단계(이야기) 진입은 매번 당연한 걸 말하지 않는다 — 칩이 하나뿐이어야 한다.
+    expect(screen.getAllByText('2단계 연습')).toHaveLength(1)
+  })
+
+  it('대본이 없는 실행(scenarioScriptId=null)은 대본 칩을 안 붙인다', () => {
+    render(<EntryComparison layout="narrow" entries={[entry({ scenarioScriptId: null })]} />)
+
+    expect(screen.queryByText('2단계 연습')).not.toBeInTheDocument()
   })
 
   it('진입이 없으면 아무것도 그리지 않는다', () => {

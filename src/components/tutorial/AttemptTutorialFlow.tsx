@@ -9,7 +9,7 @@ import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
 import { EntryComparison, PRESET_LABEL } from './EntryComparison'
 import { BreakingNewsCrawl } from './BreakingNewsCrawl'
-import { ScenarioEventFeed, ScenarioStatusLine } from './ScenarioEventPanel'
+import { OrderBasicsStatusLine, ScenarioEventFeed, ScenarioStatusLine } from './ScenarioEventPanel'
 import { OrderTypeGuideButton, OrderTypeGuideDialog } from './OrderTypeGuide'
 import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
@@ -27,6 +27,7 @@ import {
   placeOrder,
 } from '../../services/orderService'
 import {
+  advancePracticeAttemptScript,
   getPracticeAttemptChart,
   getPracticeAttemptOrders,
   recordHoldingObservation,
@@ -74,7 +75,16 @@ const OBSERVE_EVERY_N_TICKS = 2
 const SALE_URGENT_MS = 60_000
 type TutorialOrderType = 'MARKET' | 'LIMIT'
 /** 오류를 "그 오류를 낸 액션 바로 아래"에 그리기 위한 위치 표시. 페이지 맨 아래 한 곳에만 두면 아무도 못 본다. */
-type ErrorScope = 'select' | 'buy' | 'sell' | 'pending' | 'observe' | 'reflection' | 'restart' | 'preset'
+type ErrorScope =
+  | 'select'
+  | 'buy'
+  | 'sell'
+  | 'pending'
+  | 'observe'
+  | 'reflection'
+  | 'restart'
+  | 'preset'
+  | 'advance'
 interface FlowError {
   scope: ErrorScope
   message: string
@@ -714,25 +724,33 @@ function RiskAmountLine({
  * 고른 프리셋의 실제 비율을 버튼 안에 함께 적어 "폭이 다르다"는 게 눈에 보이게 한다.
  *
  * 매수 전에는 서버가 늘 잠그지 않은 상태(exitPresetLocked=false)로 응답한다 — 잠금은 "지금 보유
- * 중인가"를 기준으로 하고, 이 자리는 아직 아무것도 사지 않은 시점이기 때문이다. `locked`는 그래도
- * 서버 값을 그대로 받아 방어적으로 반영한다.
+ * 중인가"를 기준으로 하고, 이 자리는 아직 아무것도 사지 않은 시점이기 때문이다. `holdingLocked`는
+ * 그래도 서버 값을 그대로 받아 방어적으로 반영한다.
+ *
+ * **(049, `frontend-reply-505.md` 결정 1) 2단계에서는 `stageLocked`로도 잠근다.** 숨기지 않고
+ * 비활성 + 이유로 두는 이 화면의 관례(예약 매도 탭)를 그대로 따른다 — 컨트롤이 갑자기 3단계에서
+ * 나타나면 "이게 언제 생겼지"가 된다. 실제로 서버도 이 조건에서 409 `PRACTICE_STAGE_LOCKED`로
+ * 거부하므로, 버튼을 잠그지 않으면 눌러도 저장되지 않는 상태가 된다.
  */
 function ExitPresetPicker({
   options,
   selected,
-  locked,
+  holdingLocked,
+  stageLocked,
   saving,
   activeClassName,
   onSelect,
 }: {
   options: PracticeExitPresetOption[]
   selected: PracticeExitPreset
-  locked: boolean
+  holdingLocked: boolean
+  stageLocked: boolean
   saving: boolean
   activeClassName: string
   onSelect: (preset: PracticeExitPreset) => void
 }) {
   if (options.length === 0) return null
+  const locked = holdingLocked || stageLocked
   return (
     <div data-tour="exit-preset">
       <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
@@ -758,10 +776,17 @@ function ExitPresetPicker({
           )
         })}
       </div>
-      {locked && (
+      {stageLocked ? (
         <p className="mt-1.5 text-[11px] text-muted">
-          지금은 보유 중이라 바꿀 수 없습니다. 다 판 뒤에 다시 고르세요.
+          이 단계는 주문 방법을 배우는 자리라 손절·익절은 다음 단계에서 다룹니다. 시장가·지정가를
+          먼저 왕복해 보세요.
         </p>
+      ) : (
+        holdingLocked && (
+          <p className="mt-1.5 text-[11px] text-muted">
+            지금은 보유 중이라 바꿀 수 없습니다. 다 판 뒤에 다시 고르세요.
+          </p>
+        )
       )}
     </div>
   )
@@ -1066,6 +1091,7 @@ export function AttemptTutorialFlow({
   const [flowError, setFlowError] = useState<FlowError | null>(null)
   const [buying, setBuying] = useState(false)
   const [presetSaving, setPresetSaving] = useState(false)
+  const [advancingScript, setAdvancingScript] = useState(false)
   const [buyOrderType, setBuyOrderType] = useState<TutorialOrderType>('MARKET')
   const [buyLimitPrice, setBuyLimitPrice] = useState('')
   const [observing, setObserving] = useState(false)
@@ -1164,6 +1190,42 @@ export function AttemptTutorialFlow({
    * (대본 없음)이 아니면 전부 "아직 이야기가 안 끝났다"로 본다.
    */
   const awaitingReentry = scenarioStage !== null && scenarioStage !== 'FINISHED'
+  /**
+   * 사건 UI(속보 자막·사건 피드·상태 줄)를 그릴지의 판정(049, `frontend-reply-505.md` 결정 3).
+   * **`ORDER_BASICS`는 이야기 UI 판정에서 `null`과 똑같이 취급한다** — 2단계 대본은 사건이 아예
+   * 없어서(causeStatus 항상 NONE_KNOWN, revealedEvents 항상 빈 배열) 그 UI를 그대로 그리면
+   * "다음 움직임을 기다리는 중입니다"처럼 내용 없는 줄만 계속 보인다. 대신 그 자리에 목적 설명
+   * 한 줄(`OrderBasicsStatusLine`)을 둔다.
+   */
+  const storyUiActive = scenarioStage !== null && scenarioStage !== 'ORDER_BASICS'
+  /**
+   * 프리셋 선택 잠금(049 ORDERBASICS-015, `frontend-reply-505.md` 결정 1) — 두 조건 중 하나만
+   * 맞아도 잠근다. **`ORDER_BASICS`는 왕복을 다 마쳤어도 무조건 잠근다** — 이건 서버 조건이 아니라
+   * 화면의 결정이다. 2단계는 "주문 방법만 배우는 자리"라 프리셋이 여기서 뜨면 3단계에서 처음 배울
+   * 개념이 미리 등장해 버린다. **나머지(대본을 쓰는 실행에서 왕복 미완료)는 서버가 실제로 같은
+   * 조건에서 409 `PRACTICE_STAGE_LOCKED`로 거부하는 방어선**이다 — 화면이 먼저 잠그지 않으면 눌러도
+   * 저장 안 되는 버튼이 된다. STOCK은 대본이 없어(scenarioStage 항상 null) 둘 다 적용되지 않는다.
+   */
+  const exitPresetStageLocked =
+    scenarioStage === 'ORDER_BASICS' ||
+    (scenarioStage !== null &&
+      !(progress.tutorialStageProgress.marketBuySellCompleted && progress.tutorialStageProgress.limitBuySellCompleted))
+  /**
+   * 지정가 토글 잠금(049 ORDERBASICS-015). 시장가 왕복을 마쳐야 지정가를 쓸 수 있다 — 프리셋과
+   * 같은 근거·같은 서버 거부(`PRACTICE_STAGE_LOCKED`)라 판정만 다르다(시장가 왕복 하나만 본다).
+   */
+  const limitOrderStageLocked = scenarioStage !== null && !progress.tutorialStageProgress.marketBuySellCompleted
+  /**
+   * 잠긴 상태에서 지정가가 이미 골라져 있으면 시장가로 되돌린다 — 재시작은 `tutorialStageProgress`
+   * 세 값을 전부 되돌리므로, 재시작 전에 지정가를 골라 뒀던 사용자가 재시작 뒤 "잠긴 채 선택된"
+   * 상태로 보이는 걸 막는다.
+   */
+  useEffect(() => {
+    if (limitOrderStageLocked && buyOrderType === 'LIMIT') setBuyOrderType('MARKET')
+  }, [limitOrderStageLocked, buyOrderType])
+  useEffect(() => {
+    if (limitOrderStageLocked && sellOrderType === 'LIMIT') setSellOrderType('MARKET')
+  }, [limitOrderStageLocked, sellOrderType])
   /** 진행 조회의 사건 목록은 완료 후에도 남는다 — 차트가 없는 순간에도 결과 모달이 쓸 수 있다. */
   const revealedEvents =
     chart !== null && chart.revealedEvents.length > 0 ? chart.revealedEvents : progress.revealedEvents
@@ -1523,9 +1585,9 @@ export function AttemptTutorialFlow({
 
   /**
    * 손절·익절 프리셋 선택(042, 이슈 #477). 서버가 "지금 보유 중인가"로 잠그므로(EXITPRESET-003)
-   * 매수 전 단계에서는 항상 통과한다 — 이 화면이 재진입 UI를 아직 갖추지 않아, 여기서는 그 경우가
-   * 실제로 일어나지 않는다. `attempt.exitPresetLocked`로 버튼 자체를 미리 막아 두는 것과는 별개로,
-   * 서버가 막으면 그 오류를 그대로 보여준다.
+   * 매수 전과 재진입 대기(D35) 양쪽 모두 통과한다. `holdingLocked`·`stageLocked`로 버튼 자체를
+   * 미리 막아 두는 것과는 별개로, 서버가 막으면(보유 중이거나 049 단계 미충족) 그 오류를 그대로
+   * 보여준다.
    */
   const handleSelectPreset = useCallback(
     async (preset: PracticeExitPreset) => {
@@ -1543,6 +1605,30 @@ export function AttemptTutorialFlow({
     },
     [attempt.selectedExitPreset, clearError, market, onAttemptChange, presetSaving, showError],
   )
+
+  /**
+   * 2단계(주문 방법) 대본을 마친 실행을 3단계(041 이야기)로 전환한다(049 ORDERBASICS-018~021,
+   * 이슈 #507). **응답 시점에는 대본 커서가 아직 안 바뀐다** — 서버가 커서를 `null`로 되돌려 두고
+   * 다음 tick에서 3단계 첫 구간을 새로 열므로, 성공 직후 tick을 한 번 더 불러 새 `scenarioStage`를
+   * 직접 반영한다(자연 폴링에 맡기면 최대 3초 동안 화면이 아직 2단계처럼 보인다).
+   */
+  const handleAdvanceScript = useCallback(async () => {
+    if (advancingScript) return
+    setAdvancingScript(true)
+    clearError()
+    try {
+      const updated = await advancePracticeAttemptScript(market)
+      onAttemptChange(updated)
+      const nextChart = await tickPracticeAttempt(market)
+      setChart(nextChart)
+      bumpTutorial()
+      await onRefresh()
+    } catch (error) {
+      showError('advance', toUserMessage(error))
+    } finally {
+      setAdvancingScript(false)
+    }
+  }, [advancingScript, clearError, market, onAttemptChange, onRefresh, showError])
 
   const handleBuy = useCallback(async () => {
     if (attempt.instrumentId === null) return
@@ -2009,6 +2095,34 @@ export function AttemptTutorialFlow({
       />
 
       {/*
+        2→3단계 전환 CTA(049, frontend-reply-505.md 결정 2) — 사용자 버튼으로만 넘어간다. 되돌릴 수
+        없는 확인창(재시작)과 달리 앞으로 나아가는 선택이라 톤을 다르게 뒀다 — 막는 어조가 아니라
+        초대형 CTA. 보유 중에는 서버가 409로 거부하므로(순보유수량 > 0) `orderSide === 'BUY'`로
+        먼저 가린다.
+      */}
+      {scenarioStage === 'ORDER_BASICS' &&
+        orderSide === 'BUY' &&
+        progress.tutorialStageProgress.marketBuySellCompleted &&
+        progress.tutorialStageProgress.limitBuySellCompleted && (
+          <div className="rounded-2xl border border-coin/30 bg-coin-soft/40 p-4">
+            <p className="text-sm font-medium text-ink">시장가·지정가 매매를 모두 마쳤습니다.</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              이제 사건이 있는 진짜 이야기로 넘어갈 수 있습니다. 손절·익절 프리셋을 고르고, 시세가
+              왜 움직이는지 지켜보며 연습합니다.
+            </p>
+            <Button
+              type="button"
+              className="mt-3 w-full"
+              disabled={advancingScript}
+              onClick={() => void handleAdvanceScript()}
+            >
+              {advancingScript ? '넘어가는 중…' : '3단계로 가기'}
+            </Button>
+            <ErrorNote error={flowError} scope="advance" />
+          </div>
+        )}
+
+      {/*
         재진입을 기다리는 전량 매도(D35) — "끝"이 아니라 "다음 진입 전"이라는 걸 먼저 말해 준다.
         지난 진입 카드를 그대로 보여주면 방금 판 게 사라진 게 아니라 정리됐을 뿐이라는 게 눈에 보인다.
         **`orderSide === 'BUY'`가 반드시 있어야 한다** — 없으면 지금 한창 보유 중일 때도 "직전 진입이
@@ -2068,7 +2182,8 @@ export function AttemptTutorialFlow({
           <ExitPresetPicker
             options={attempt.availableExitPresets}
             selected={attempt.selectedExitPreset}
-            locked={attempt.exitPresetLocked}
+            holdingLocked={attempt.exitPresetLocked}
+            stageLocked={exitPresetStageLocked}
             saving={presetSaving}
             activeClassName={`${activeRowTone} ${activeRowText}`}
             onSelect={(preset) => void handleSelectPreset(preset)}
@@ -2085,8 +2200,9 @@ export function AttemptTutorialFlow({
                     key={type}
                     type="button"
                     aria-pressed={buyOrderType === type}
+                    disabled={type === 'LIMIT' && limitOrderStageLocked}
                     onClick={() => setBuyOrderType(type)}
-                    className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
+                    className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-40 ${
                       buyOrderType === type
                         ? 'bg-coin-soft text-coin ring-1 ring-coin/40'
                         : 'text-muted hover:text-ink'
@@ -2096,10 +2212,16 @@ export function AttemptTutorialFlow({
                   </button>
                 ))}
               </div>
-              <p className="text-xs leading-relaxed text-muted">
-                시장가는 지금 값에 바로 구매합니다(처음이라면 이걸 추천합니다). 지정가는 원하는 값이 될
-                때까지 기다립니다.
-              </p>
+              {limitOrderStageLocked ? (
+                <p className="text-xs leading-relaxed text-muted">
+                  시장가로 먼저 한 번 사고팔아 본 뒤에 지정가를 쓸 수 있습니다.
+                </p>
+              ) : (
+                <p className="text-xs leading-relaxed text-muted">
+                  시장가는 지금 값에 바로 구매합니다(처음이라면 이걸 추천합니다). 지정가는 원하는 값이 될
+                  때까지 기다립니다.
+                </p>
+              )}
             </>
           )}
           {/*
@@ -2293,8 +2415,9 @@ export function AttemptTutorialFlow({
                     key={type}
                     type="button"
                     aria-pressed={sellOrderType === type}
+                    disabled={type === 'LIMIT' && limitOrderStageLocked}
                     onClick={() => setSellOrderType(type)}
-                    className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring ${
+                    className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-40 ${
                       sellOrderType === type
                         ? 'bg-coin-soft text-coin ring-1 ring-coin/40'
                         : 'text-muted hover:text-ink'
@@ -2313,6 +2436,11 @@ export function AttemptTutorialFlow({
                   예약 매도
                 </button>
               </div>
+              {limitOrderStageLocked && (
+                <p className="text-xs leading-relaxed text-muted">
+                  시장가로 먼저 한 번 사고팔아 본 뒤에 지정가를 쓸 수 있습니다.
+                </p>
+              )}
               <p id={reservedSellNoteId} className="text-xs leading-relaxed text-muted">
                 예약 매도는 실전에서 손절·익절 가격을 미리 걸어두는 기능입니다. 이 연습에서는 살 때
                 기준선이 자동으로 만들어지므로 따로 걸지 않습니다.
@@ -2547,8 +2675,9 @@ export function AttemptTutorialFlow({
       {/*
         속보 자막 — tick(3초)마다가 아니라 revealedEvents가 실제로 늘어난 순간에만 흐른다
         (컴포넌트 안에서 판정). 대본이 없는 실행은 events가 늘 비어 있어 자연히 뜨지 않는다.
+        2단계(ORDER_BASICS)도 사건이 없어 자연히 안 뜨지만, storyUiActive로 명시적으로 뺀다.
       */}
-      {scenarioStage !== null && <BreakingNewsCrawl market={market} events={revealedEvents} />}
+      {storyUiActive && <BreakingNewsCrawl market={market} events={revealedEvents} />}
 
       {/*
         진행 표시줄 — 모의투자 화면에는 없는 튜토리얼 고유 안내 장치(단계 레일·회차·안내 다시 보기)를
@@ -2678,7 +2807,7 @@ export function AttemptTutorialFlow({
               이 화면은 종목을 늘 하나만 보여주므로 목록 아래는 원래 빈 자리다(2026-08-20 피드백).
               그 자리에 사건 피드를 둔다 — 차트 컬럼과 달리 스크롤에 밀릴 걱정이 없다.
             */}
-            {scenarioStage !== null && (
+            {storyUiActive && (
               <ScenarioEventFeed
                 market={market}
                 instrumentName={selectedInstrument?.name ?? null}
@@ -2773,13 +2902,16 @@ export function AttemptTutorialFlow({
                       피드백). 여기는 "지금 상태 + 왼쪽을 보라"는 한 줄만 남긴다. 대본이 없는
                       실행에서는 통째로 빠진다 — 빈 줄을 남기면 "곧 뭔가 온다"는 약속이 된다.
                     */}
-                    {scenarioStage !== null && (
+                    {scenarioStage !== null && scenarioStage !== 'ORDER_BASICS' && (
                       <ScenarioStatusLine
                         market={market}
                         stage={scenarioStage}
                         progressing={chart?.scenarioProgressing ?? null}
                         causeStatus={chart?.causeStatus ?? null}
                       />
+                    )}
+                    {scenarioStage === 'ORDER_BASICS' && (
+                      <OrderBasicsStatusLine market={market} priceGuideRange={chart?.priceGuideRange ?? null} />
                     )}
                     <div className="mt-4">
                       <CandleGuide />

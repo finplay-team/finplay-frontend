@@ -62,6 +62,8 @@ export function selectPracticeInstrument(
 /**
  * 손절·익절 프리셋 선택(042, 이슈 #477). 자연 멱등이라 `Idempotency-Key`가 필요 없다. 보유 중이면
  * 409 `PRACTICE_STEP_LOCKED`로 거부된다 — 매수 전이거나 포지션을 정리한 뒤(재진입 대기)에만 통한다.
+ * **(049 ORDERBASICS-015, 이슈 #507)** 대본을 쓰는 CRYPTO 실행은 시장가·지정가 왕복을 둘 다
+ * 마쳐야 한다 — 아직이면 409 `PRACTICE_STAGE_LOCKED`(이 판정이 보유 중 잠금보다 앞선다).
  */
 export function selectExitPreset(
   market: Market,
@@ -74,6 +76,18 @@ export function selectExitPreset(
 
 export function restartPracticeAttempt(market: Market): Promise<PracticeAttemptResponse> {
   return api.post<PracticeAttemptResponse>(`/education/practice/attempts/${market}/restart`)
+}
+
+/**
+ * 2단계(주문 방법 학습) 대본을 마친 실행을 같은 run 안에서 3단계(041 이야기) 대본으로 전환한다
+ * (049 ORDERBASICS-018~021, 이슈 #507). `runNumber`·튜토리얼 계좌 현금·`exitPreset`은 바뀌지
+ * 않는다 — 재시작이 아니다. **응답 시점에는 대본 커서가 아직 바뀌지 않는다** — 서버가 커서를
+ * `null`로 되돌려 두고 다음 tick에서 3단계 첫 구간을 새로 연다. 호출부는 성공 직후 tick을
+ * 한 번 더 불러야 새 `scenarioStage`(`ACT1` 등)를 받는다. 409 `PRACTICE_STAGE_LOCKED`(대본을
+ * 쓰지 않는 실행·이미 3단계·시장가/지정가 왕복 미완료·보유 중).
+ */
+export function advancePracticeAttemptScript(market: Market): Promise<PracticeAttemptResponse> {
+  return api.post<PracticeAttemptResponse>(`/education/practice/attempts/${market}/advance-script`)
 }
 
 export function getPracticeAttemptChart(market: Market): Promise<PracticeTutorialChartResponse> {

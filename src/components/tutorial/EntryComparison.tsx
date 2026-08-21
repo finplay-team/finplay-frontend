@@ -38,6 +38,15 @@ const ORDER_TYPE_LABEL: Record<PracticeEntryResponse['buyOrderType'], string> = 
   LIMIT: '지정가 매수',
 }
 
+/**
+ * 2단계(주문 방법 학습, ORDER_BASICS)에서 연 진입만 표시한다(049 "5-A", 이슈 #512) — 3단계(이야기)
+ * 진입이 다수라 그쪽에 칩을 또 붙이면 "당연한 걸 왜 매번 말하나"가 된다. `null`(대본 없음)·
+ * `CRYPTO_STORY_V1`은 칩을 안 붙인다.
+ */
+const SCENARIO_SCRIPT_LABEL: Partial<Record<NonNullable<PracticeEntryResponse['scenarioScriptId']>, string>> = {
+  CRYPTO_ORDER_BASICS_V1: '2단계 연습',
+}
+
 /** 코인은 소수 수량이 나온다 — 반올림해 "0개"라고 말하지 않도록 자리를 살린다. */
 function formatQuantity(value: number): string {
   return value.toLocaleString('ko-KR', { maximumFractionDigits: 8 })
@@ -63,6 +72,11 @@ function EntryCard({ entry }: { entry: PracticeEntryResponse }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-ink">{entry.entrySequence}번째 진입</p>
         <div className="flex flex-wrap gap-1.5">
+          {entry.scenarioScriptId !== null && SCENARIO_SCRIPT_LABEL[entry.scenarioScriptId] && (
+            <Chip tone="border-coin/40 bg-coin-soft text-coin">
+              {SCENARIO_SCRIPT_LABEL[entry.scenarioScriptId] as string}
+            </Chip>
+          )}
           <Chip tone="border-line bg-elevated text-muted">{ORDER_TYPE_LABEL[entry.buyOrderType]}</Chip>
           <Chip tone="border-line bg-elevated text-muted">{PRESET_LABEL[entry.exitPreset]}</Chip>
           {entry.sellCause !== null && (

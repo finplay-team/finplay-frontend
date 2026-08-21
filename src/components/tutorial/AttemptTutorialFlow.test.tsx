@@ -14,6 +14,7 @@ import type {
   TutorialStageProgress,
 } from '../../services/tutorialTypes'
 import {
+  advancePracticeAttemptScript,
   getPracticeAttemptChart,
   getPracticeAttemptOrders,
   recordHoldingObservation,
@@ -58,6 +59,7 @@ vi.mock('../../services/orderService', () => ({
   placeOrder: vi.fn(),
 }))
 vi.mock('../../services/tutorialService', () => ({
+  advancePracticeAttemptScript: vi.fn(),
   getPracticeAttemptChart: vi.fn(),
   getPracticeAttemptOrders: vi.fn(),
   recordHoldingObservation: vi.fn(),
@@ -78,6 +80,7 @@ const chart: PracticeTutorialChartResponse = {
   scenarioProgressing: null,
   causeStatus: null,
   revealedEvents: [],
+  priceGuideRange: null,
   candles: [
     { date: '2026-08-14', open: 100, high: 130, low: 90, close: 123, current: true },
   ],
@@ -257,6 +260,7 @@ describe('AttemptTutorialFlow', () => {
     vi.mocked(restartPracticeAttempt).mockResolvedValue(
       attempt({ runNumber: 2, status: 'SELECTING_INSTRUMENT', instrumentId: null }),
     )
+    vi.mocked(advancePracticeAttemptScript).mockResolvedValue(attempt())
   })
 
   afterEach(() => {
@@ -674,6 +678,7 @@ describe('AttemptTutorialFlow', () => {
             entrySequence: 1,
             exitPreset: 'BALANCED',
             buyOrderType: 'MARKET',
+            scenarioScriptId: 'CRYPTO_STORY_V1',
             buyAt: '2026-08-20T11:00:00',
             buyPrice: 10000,
             buyQuantity: 2,
@@ -747,6 +752,214 @@ describe('AttemptTutorialFlow', () => {
 
     expect(screen.getByText('시장가 매매')).toBeInTheDocument()
     expect(screen.queryByText(/지정가 매매/)).not.toBeInTheDocument()
+  })
+
+  describe('049 — 2단계(ORDER_BASICS) 대본', () => {
+    function orderBasicsChart(overrides: Partial<PracticeTutorialChartResponse> = {}) {
+      return {
+        ...chart,
+        scenarioStage: 'ORDER_BASICS' as const,
+        scenarioProgressing: true,
+        causeStatus: 'NONE_KNOWN' as const,
+        priceGuideRange: { low: 90_000, high: 110_000 },
+        ...overrides,
+      }
+    }
+
+    it('ORDER_BASICS에서는 사건 UI 대신 목적 설명과 가격 안내 범위를 보여준다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(attempt({ riskSnapshot: null }), progress())
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(
+        screen.getByText('지금은 주문 방법을 연습하는 자리입니다 — 사건은 없습니다'),
+      ).toBeInTheDocument()
+      expect(screen.getByText(/90,000원~110,000원 사이에서 움직입니다/)).toBeInTheDocument()
+      // 사건이 없으므로 이야기 UI(상태 줄의 "이야기가 진행 중입니다" 문구)는 뜨지 않는다.
+      expect(screen.queryByText(/이야기가 진행 중입니다/)).not.toBeInTheDocument()
+      expect(screen.queryByText('지금 무슨 일이')).not.toBeInTheDocument()
+    })
+
+    it('priceGuideRange가 null이면(041 이야기 대본) 범위 문구를 붙이지 않는다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+        ...chart,
+        scenarioStage: 'ACT1',
+        scenarioProgressing: true,
+        causeStatus: 'NONE_KNOWN',
+        priceGuideRange: null,
+      })
+      renderFlow(attempt({ riskSnapshot: risk }), progress())
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.queryByText(/사이에서 움직입니다/)).not.toBeInTheDocument()
+    })
+
+    it('시장가 왕복 전에는 지정가 토글을 잠그고 이유를 알려준다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: false,
+          limitBuySellCompleted: false,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.getByRole('button', { name: '지정가' })).toBeDisabled()
+      expect(
+        screen.getByText('시장가로 먼저 한 번 사고팔아 본 뒤에 지정가를 쓸 수 있습니다.'),
+      ).toBeInTheDocument()
+    })
+
+    it('시장가 왕복을 마치면 지정가 토글이 풀린다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: false,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.getByRole('button', { name: '지정가' })).toBeEnabled()
+      expect(
+        screen.queryByText('시장가로 먼저 한 번 사고팔아 본 뒤에 지정가를 쓸 수 있습니다.'),
+      ).not.toBeInTheDocument()
+    })
+
+    it('2단계에서는 프리셋 선택을 비활성으로 두고 다음 단계에서 다룬다고 알려준다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      // 왕복을 다 마쳤어도 2단계 자체에서는 여전히 잠긴다 — 프리셋은 3단계 몫이다.
+      expect(screen.getByRole('button', { name: /보통.*-3%.*\+5%/s })).toBeDisabled()
+      expect(
+        screen.getByText(/이 단계는 주문 방법을 배우는 자리라 손절·익절은 다음 단계에서 다룹니다/),
+      ).toBeInTheDocument()
+    })
+
+    it('시장가·지정가 왕복을 모두 마치면 "3단계로 가기" 버튼이 뜬다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.getByRole('button', { name: '3단계로 가기' })).toBeInTheDocument()
+    })
+
+    it('둘 중 하나만 마쳤으면 "3단계로 가기" 버튼이 뜨지 않는다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: false,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.queryByRole('button', { name: '3단계로 가기' })).not.toBeInTheDocument()
+    })
+
+    it('보유 중에는 조건을 다 채웠어도 "3단계로 가기" 버튼을 보여주지 않는다', async () => {
+      // 서버가 순보유수량 > 0이면 409로 거부한다 — 버튼을 눌러도 실패할 걸 미리 안 보여준다.
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      const holding = evidence({
+        buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, remainingQuantity: 2,
+      })
+      renderFlow(
+        attempt({ riskSnapshot: risk }),
+        progress(holding, 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.queryByRole('button', { name: '3단계로 가기' })).not.toBeInTheDocument()
+    })
+
+    it('"3단계로 가기"를 누르면 전환을 부른 뒤 커서를 새로 받으려고 tick을 한 번 더 부른다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      vi.mocked(advancePracticeAttemptScript).mockResolvedValue(attempt({ riskSnapshot: null }))
+      vi.mocked(tickPracticeAttempt).mockResolvedValue({
+        ...chart,
+        scenarioStage: 'ACT1',
+        scenarioProgressing: true,
+        causeStatus: 'NONE_KNOWN',
+        priceGuideRange: null,
+      })
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      fireEvent.click(screen.getByRole('button', { name: '3단계로 가기' }))
+
+      await waitFor(() => expect(advancePracticeAttemptScript).toHaveBeenCalledWith('CRYPTO'))
+      await waitFor(() => expect(tickPracticeAttempt).toHaveBeenCalledWith('CRYPTO'))
+      // 전환 뒤 커서가 반영돼 이제 이야기 상태 줄(ACT1)이 보여야 한다 — 2단계 문구는 사라진다.
+      await waitFor(() =>
+        expect(
+          screen.queryByText('지금은 주문 방법을 연습하는 자리입니다 — 사건은 없습니다'),
+        ).not.toBeInTheDocument(),
+      )
+    })
+
+    it('전환이 409로 거부되면 그 자리에 오류를 보여준다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      vi.mocked(advancePracticeAttemptScript).mockRejectedValue(
+        new ApiError(409, 'PRACTICE_STAGE_LOCKED', null, null),
+      )
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      fireEvent.click(screen.getByRole('button', { name: '3단계로 가기' }))
+
+      expect(await screen.findByText('먼저 앞 단계를 마쳐야 합니다. 화면의 체크리스트를 확인해 주세요.')).toBeInTheDocument()
+      expect(tickPracticeAttempt).not.toHaveBeenCalled()
+    })
   })
 
   it('매수 후에는 서버 확정 기준선으로 실제 보유 수량만큼의 손익 금액을 보여준다', async () => {
@@ -1118,6 +1331,7 @@ describe('AttemptTutorialFlow', () => {
           entrySequence: 1,
           exitPreset: 'BALANCED',
           buyOrderType: 'MARKET',
+          scenarioScriptId: 'CRYPTO_STORY_V1',
           buyAt: '2026-08-20T11:00:00',
           buyPrice: 10000,
           buyQuantity: 2,
@@ -1156,6 +1370,7 @@ describe('AttemptTutorialFlow', () => {
           entrySequence: 1,
           exitPreset: 'BALANCED',
           buyOrderType: 'MARKET',
+          scenarioScriptId: 'CRYPTO_STORY_V1',
           buyAt: '2026-08-20T11:00:00',
           buyPrice: 10000,
           buyQuantity: 2,
@@ -1200,6 +1415,7 @@ describe('AttemptTutorialFlow', () => {
           entrySequence: 1,
           exitPreset: 'BALANCED',
           buyOrderType: 'MARKET',
+          scenarioScriptId: 'CRYPTO_STORY_V1',
           buyAt: '2026-08-20T11:00:00',
           buyPrice: 10000,
           buyQuantity: 2,

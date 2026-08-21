@@ -650,3 +650,22 @@ Chrome 확장이 여전히 안 붙어서 **별도 Chrome 을 CDP(9333)로 띄워
 - [x] 완료 화면 진입 카드에 `buyOrderType` 칩 표시 (EntryComparison)
 - [x] 백엔드 회신 3건 결정 — docs/frontend-reply-505.md (D41)
 - [x] 신규/수정 테스트 10건 + 전체 스위트 228개 통과, `npm run build` 통과
+
+## 12. 백엔드 PR #516·#517·#521·#522 반영 — 2단계(ORDER_BASICS) 대본 완결 (2026-08-21, 이슈 #507)
+- [x] `ScenarioStage`에 `ORDER_BASICS` 추가, `PriceGuideRangeResponse`·`priceGuideRange` 추가,
+      `PracticeEntryResponse.scenarioScriptId` 추가
+- [x] `advancePracticeAttemptScript` 서비스 함수 (`POST .../advance-script`)
+- [x] 사건 UI(속보 자막·사건 피드·상태 줄)는 `ORDER_BASICS`를 `null`과 동일하게 취급 —
+      대신 `OrderBasicsStatusLine`(목적 설명 + 가격 안내 범위)을 그 자리에 둔다 (결정 3)
+- [x] 프리셋 선택: `ORDER_BASICS`에서는 무조건 잠그고("주문 방법을 배우는 자리"), 그 밖에는
+      시장가·지정가 왕복 미완료 시 잠근다 (결정 1) — 서버 409 `PRACTICE_STAGE_LOCKED` 실제 강제와 짝
+- [x] 지정가 토글: 시장가 왕복 전에는 잠그고 이유를 붙인다. 잠긴 채로 지정가가 골라져 있으면
+      시장가로 되돌린다(재시작 대응)
+- [x] "3단계로 가기" CTA — 시장가·지정가 왕복을 모두 마치고 보유 중이 아닐 때만 뜬다. 사용자
+      버튼으로만 호출(결정 2). 전환 성공 직후 tick을 한 번 더 불러 새 대본 커서를 즉시 반영
+- [x] 완료 화면 진입 카드에 "2단계 연습" 칩 (`scenarioScriptId === CRYPTO_ORDER_BASICS_V1`만)
+- [x] `errorMessages.ts`에 `PRACTICE_STAGE_LOCKED` 기본 문구 추가
+- [x] 신규 테스트 15건(093 소단원) + 전체 스위트 250개 통과, `tsc -b`·`npm run build` 통과
+- [x] 실제 백엔드(origin/dev, PR #516·517·521·522 반영 워크트리)로 종목 선택 →
+      2단계 목적 설명·가격 범위 확인 → 시장가 매수·매도(체크리스트 확인) → 지정가 매수·매도
+      (체크리스트 확인) → "3단계로 가기" 클릭 → 041 이야기 대본으로 실제 전환까지 전부 검증

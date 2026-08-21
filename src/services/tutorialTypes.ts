@@ -198,6 +198,12 @@ export interface PracticeOrderResponse {
  *
  * 대본을 쓰지 않는 실행(주식 튜토리얼·완료 replay)은 `null`이라, 화면은 `scenarioStage === null`로
  * "대본 UI 없음"을 판정한다.
+ *
+ * **(049, 이슈 #507) `ORDER_BASICS`는 2단계(주문 방법 학습) 대본의 유일한 구간이다.** 사건이 없고
+ * (`causeStatus`는 항상 `NONE_KNOWN`, `revealedEvents`는 항상 빈 배열) 대기 구간도 없다 — 진행
+ * 구간 하나뿐이다. `frontend-reply-505.md`의 결정대로 **사건 UI(속보 자막·사건 피드·상태 줄) 판정에서는
+ * `null`과 똑같이 취급한다** — `scenarioStage !== null && scenarioStage !== 'ORDER_BASICS'`로
+ * "이야기 UI를 그린다"를 판정하고, `ORDER_BASICS`에서는 그 자리에 목적 설명 한 줄만 남긴다.
  */
 export type ScenarioStage =
   | 'IDLE_ENTRY'
@@ -207,6 +213,7 @@ export type ScenarioStage =
   | 'ACT3'
   | 'ACT4'
   | 'FINISHED'
+  | 'ORDER_BASICS'
 
 /**
  * **두 값뿐이고 그게 의도다.** 미공개 사건이 있는 구간도 `NONE_KNOWN`이라 "아직 안 밝혀졌다"와
@@ -240,6 +247,16 @@ export interface PracticeTutorialCandleResponse {
   current: boolean
 }
 
+/**
+ * 대본이 안내하는 가격 변동 범위(049 ORDERBASICS-009~011, 이슈 #507). 극값에서 폭의 5%만큼
+ * 안쪽으로 물린 뒤 안내 단위로 안쪽 반올림한 값이라 **차트에 실제로 찍히는 값보다 살짝 좁다** —
+ * "대략 이 사이"라는 안내이지 정확한 상한·하한이 아니다.
+ */
+export interface PriceGuideRangeResponse {
+  low: Decimal
+  high: Decimal
+}
+
 export interface PracticeTutorialChartResponse {
   attemptId: number
   runNumber: number
@@ -256,6 +273,12 @@ export interface PracticeTutorialChartResponse {
   scenarioProgressing: boolean | null
   causeStatus: ScenarioCauseStatus | null
   revealedEvents: PracticeScenarioEventResponse[]
+  /**
+   * **사건이 하나라도 있는 대본(041 이야기)은 항상 `null`이다** — 041의 폭락 극값을 미리 알려주면
+   * 사건 공개 게이트를 뚫는다. 대본을 쓰지 않는 실행도 `null`. 그 대본 전체에 대한 고정값이라
+   * tick으로 커서가 움직여도 값이 바뀌지 않는다.
+   */
+  priceGuideRange: PriceGuideRangeResponse | null
   candles: PracticeTutorialCandleResponse[]
 }
 
@@ -311,6 +334,13 @@ export interface PracticeEntryResponse {
   realizedPnl: number | null
   /** 팔지 않고 들고 있었다면의 평가손익(원). 대본을 쓰지 않는 실행이면 null */
   unrealizedPnlIfHeld: number | null
+  /**
+   * 이 진입이 열릴 때 attempt가 쓰던 대본(049 ORDERBASICS-023, 이슈 #512 "5-A"). **진입별로
+   * 고정된다** — 2→3단계 전환(`advance-script`)은 같은 실행 세대 안에서 대본만 갈아끼우므로,
+   * 전환 전에 연 진입과 전환 후에 연 진입이 같은 `entries[]`에 섞이고 서로 다른 값을 가질 수 있다.
+   * 대본을 쓰지 않는 실행(생성기 버전 1·legacy)은 `null`이다.
+   */
+  scenarioScriptId: 'CRYPTO_ORDER_BASICS_V1' | 'CRYPTO_STORY_V1' | null
 }
 
 /**
@@ -321,6 +351,12 @@ export interface PracticeEntryResponse {
  * ⚠️ **`limitBuySellCompleted`는 주식(STOCK)에서 영원히 `false`다** — 지정가 주문 경로가 코인
  * 전용이라 주식 튜토리얼에는 이 단계를 통과할 수단이 없다. 진행 표시를 시장 구분 없이 쓰면 주식에서
  * 영원히 막힌 것처럼 보인다.
+ *
+ * **(049 ORDERBASICS-015~017, 이슈 #507) 이제 판정뿐 아니라 강제도 한다.** 대본을 쓰는 CRYPTO
+ * 실행에서 시장가 왕복 전에 지정가 주문을 내거나, 지정가 왕복 전에 프리셋을 고르면 서버가 409
+ * `PRACTICE_STAGE_LOCKED`로 거부한다 — 거부 본문에 이유가 안 실리므로(그 정보는 이미 이 값에 있다)
+ * 화면이 이 값으로 미리 판단해 버튼을 잠그거나 이유를 붙여야 한다. 강제 대상은 대본을 쓰는 CRYPTO
+ * 실행뿐이고 STOCK·시장가 주문은 항상 통과한다.
  */
 export interface TutorialStageProgress {
   /** 이 실행에 시장가 매수 체결이 있고, **사용자가 낸** 시장가 매도 체결도 있다. */
