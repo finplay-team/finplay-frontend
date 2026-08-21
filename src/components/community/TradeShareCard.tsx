@@ -6,6 +6,8 @@ import type { SharedTrade } from '../../services/types'
 interface Props {
   trade: SharedTrade
   className?: string
+  /** 목록 미리보기용 간략 표시 — 매수가·매도가·수량 없이 종목·수익률·손익만 보여준다. */
+  compact?: boolean
 }
 
 /** 10.00000000 처럼 scale 이 붙어 오는 코인 수량을 불필요한 0 없이 표시한다. Portfolio.tsx 의 동명 헬퍼와 같은 규칙. */
@@ -19,8 +21,23 @@ function signedKRW(value: number): string {
   return `${sign}${formatKRW(Math.abs(value))}`
 }
 
-export function TradeShareCard({ trade, className = '' }: Props) {
+export function TradeShareCard({ trade, className = '', compact = false }: Props) {
   const tone = pnlTone(trade.realizedPnl)
+
+  if (compact) {
+    return (
+      <div className={`flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-3 py-2.5 ${className}`}>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-ink">{trade.name}</p>
+          <p className="text-[10px] text-muted">{trade.symbol}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={`text-sm font-bold tabular ${tone}`}>{formatRatePercent(trade.returnRate)}</p>
+          <p className={`text-[10px] tabular ${tone}`}>{signedKRW(trade.realizedPnl)}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`overflow-hidden rounded-2xl border border-line bg-surface p-5 ${className}`}>
