@@ -56,6 +56,14 @@ describe('extractLinkPreview', () => {
     })
   })
 
+  it('끝에 슬래시가 붙은 youtu.be 링크도 첫 경로 조각만 영상 id로 쓴다', () => {
+    expect(extractLinkPreview('https://youtu.be/dQw4w9WgXcQ/')).toEqual({
+      url: 'https://youtu.be/dQw4w9WgXcQ/',
+      host: 'youtu.be',
+      thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    })
+  })
+
   it('youtube.com/watch 링크도 영상 썸네일 URL을 반환한다', () => {
     expect(extractLinkPreview('https://www.youtube.com/watch?v=abc123&t=10s')).toEqual({
       url: 'https://www.youtube.com/watch?v=abc123&t=10s',

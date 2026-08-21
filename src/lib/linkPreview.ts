@@ -20,7 +20,8 @@ function trimUrlMatch(raw: string): string {
 function getYoutubeVideoId(url: URL): string | null {
   const host = url.hostname.replace(/^www\./, '')
   if (host === 'youtu.be') {
-    const id = url.pathname.slice(1)
+    // pathname 이 "/id/" 나 "/id/추가경로" 로 끝나는 경우 첫 세그먼트만 영상 id로 쓴다.
+    const id = url.pathname.slice(1).split('/')[0]
     return id.length > 0 ? id : null
   }
   if (host === 'youtube.com' || host === 'm.youtube.com') {
