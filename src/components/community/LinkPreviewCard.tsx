@@ -27,15 +27,26 @@ export function LinkPreviewCard({
   const rounded = compact ? 'rounded-lg' : 'rounded-xl'
   const textSize = compact ? 'text-xs' : 'text-sm'
   const bg = background === 'elevated' ? 'bg-elevated' : 'bg-surface'
+  const thumbnailHeight = compact ? 'h-24' : 'h-40'
 
   return (
-    <div className={`flex items-center ${gap} ${rounded} border border-line ${bg} ${padding} ${className}`}>
-      <span
-        className={`flex ${iconBoxSize} shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-muted`}
-      >
-        <LinkIcon width={iconSize} height={iconSize} />
-      </span>
-      <span className={`truncate ${textSize} text-muted`}>{link.host}</span>
+    <div className={`overflow-hidden ${rounded} border border-line ${bg} ${className}`}>
+      <div className={`flex items-center ${gap} ${padding}`}>
+        <span
+          className={`flex ${iconBoxSize} shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-muted`}
+        >
+          <LinkIcon width={iconSize} height={iconSize} />
+        </span>
+        <span className={`truncate ${textSize} text-muted`}>{link.host}</span>
+      </div>
+      {/* OG 메타데이터를 가져올 백엔드가 없어 일반 링크는 썸네일이 없다 — 유튜브만 공개 썸네일 경로로 그린다. */}
+      {link.thumbnailUrl && (
+        <img
+          src={link.thumbnailUrl}
+          alt=""
+          className={`${thumbnailHeight} w-full border-t border-line object-cover`}
+        />
+      )}
     </div>
   )
 }

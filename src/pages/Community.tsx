@@ -529,10 +529,8 @@ export function Community() {
                             />
                           )
                         )}
-                        {/* 매매 카드·사진이 없을 때만 본문 속 URL을 도메인 미리보기 카드로 보여준다. */}
-                        {post.sharedTrade === null && post.imageId === null && (
-                          <LinkPreviewCard content={post.content} background="elevated" className="mt-3" />
-                        )}
+                        {/* 본문 속 링크 미리보기는 매매 카드·사진과 별개다 — 함께 붙을 수 있다. */}
+                        <LinkPreviewCard content={post.content} background="elevated" className="mt-3" />
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                           <p className="text-xs text-muted">
                             <span className="text-ink/80">{post.authorNickname}</span>

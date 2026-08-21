@@ -90,9 +90,8 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
                     />
                   )
                 )}
-                {post.sharedTrade === null && post.imageId === null && (
-                  <LinkPreviewCard content={post.content} compact className="mt-2" />
-                )}
+                {/* 본문 속 링크 미리보기는 매매 카드·사진과 별개다 — 함께 붙을 수 있다. */}
+                <LinkPreviewCard content={post.content} compact className="mt-2" />
                 <p className="mt-1.5 text-[10px] text-muted">
                   {post.authorNickname} · {formatDateTime(post.createdAt)}
                 </p>

@@ -16,10 +16,30 @@ function trimUrlMatch(raw: string): string {
   return cut.replace(TRAILING_PUNCTUATION, '')
 }
 
-/** OG 메타데이터를 가져올 백엔드가 없어, 본문에 적힌 URL과 호스트명만으로 만드는 단순 미리보기. */
+/** youtu.be/{id}, youtube.com/watch?v={id}, youtube.com/shorts/{id} 에서 영상 id를 뽑아낸다. 아니면 null. */
+function getYoutubeVideoId(url: URL): string | null {
+  const host = url.hostname.replace(/^www\./, '')
+  if (host === 'youtu.be') {
+    const id = url.pathname.slice(1)
+    return id.length > 0 ? id : null
+  }
+  if (host === 'youtube.com' || host === 'm.youtube.com') {
+    if (url.pathname === '/watch') return url.searchParams.get('v')
+    const shortsMatch = url.pathname.match(/^\/shorts\/([^/]+)/)
+    if (shortsMatch) return shortsMatch[1]
+  }
+  return null
+}
+
+/**
+ * OG 메타데이터를 가져올 백엔드가 없어, 본문에 적힌 URL과 호스트명만으로 만드는 단순 미리보기.
+ * 유튜브 링크만은 예외 — 영상 썸네일이 인증 없이 공개된 고정 경로(img.youtube.com)로 제공돼
+ * 백엔드 프록시 없이 바로 그릴 수 있다.
+ */
 export interface LinkPreview {
   url: string
   host: string
+  thumbnailUrl: string | null
 }
 
 /** content 안의 첫 URL을 찾는다. 없으면 null. */
@@ -30,7 +50,12 @@ export function extractLinkPreview(content: string): LinkPreview | null {
   if (!trimmed) return null
   try {
     const url = new URL(trimmed)
-    return { url: url.href, host: url.host }
+    const videoId = getYoutubeVideoId(url)
+    return {
+      url: url.href,
+      host: url.host,
+      thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null,
+    }
   } catch {
     return null
   }
