@@ -689,8 +689,13 @@ Chrome 확장이 여전히 안 붙어서 **별도 Chrome 을 CDP(9333)로 띄워
 - [ ] 실제 백엔드로 검증 — 백엔드가 구현은 마쳤으나 머지·배포 전이라 네트워크 호출은 못 해 봄
 - [x] placeholder가 범위 하한을 제안하던 것 수정 — 익절 하한은 학습 순서 여유가 0.96%p뿐이다
       (백엔드 1,581조합 전수 조사). 회귀 테스트 1건 추가
-- [ ] 배포 확인 후 두 rate·진입별 비율의 타입 옵셔널(`?`)과 폴백 제거 — 진입별 비율은 042 이전
-      진입도 서버가 채워 보내므로 배포 후 역산 폴백은 도달 불가 경로가 된다
+- [ ] **배포 확인 후 옵셔널(`?`)과 폴백 세 개를 한 번에 제거** — 셋 다 서버가 항상 non-null로
+      채워 보내는 것이 확정됐고, 지금 옵셔널인 이유는 계약이 아니라 머지·배포 순서뿐이다.
+      (1) `attempt.exitStopLossRate`·`exitTakeProfitRate` + `FALLBACK_EXIT_RATES`
+      (2) `PracticeEntryResponse.stopLossRate`·`takeProfitRate` + `rateFromPrices` 역산 폴백
+          — 042 이전 진입도 서버가 `exit_preset` → 기본값 3·5 순으로 해석해 채운다
+      (3) `InvestmentPracticeResponse.exitRateBounds` + `FALLBACK_EXIT_RATE_BOUNDS`
+          — 루트·`attempt` 양쪽, attempt가 없는 legacy 경로에서도 non-null이다
 - [x] 완료 화면 진입 카드의 프리셋 이름 칩 → 진입별 실제 비율 표기(`손절 −3% · 익절 +5%`)로 교체,
       `exitPreset`은 화면에서 완전히 제거(타입도 nullable로 정정), 비율 필드가 없으면 기준선
       가격에서 역산하는 폴백 — 테스트 2건 추가, 전체 265개 통과

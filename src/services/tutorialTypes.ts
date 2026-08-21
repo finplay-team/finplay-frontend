@@ -438,8 +438,10 @@ export interface InvestmentPracticeResponse {
    * 없으면 화면이 `FALLBACK_EXIT_RATE_BOUNDS`로 대신 그린다.
    *
    * 서버는 같은 값을 `attempt` 안에도 싣는다(쓰기 경로 네 곳은 `PracticeAttemptResponse`만 돌려주기
-   * 때문이다). 화면은 **루트만 읽는다** — attempt가 없는 legacy 경로에서도 루트는 non-null이라
-   * 한 곳만 보면 되고, 두 곳을 다 읽으면 어느 쪽이 정본인지가 흐려진다(2026-08-21 백엔드 확인).
+   * 때문이다). 화면은 **루트만 읽는다** — 한 곳만 보면 되고, 두 곳을 다 읽으면 어느 쪽이 정본인지가
+   * 흐려진다. 루트·`attempt` 양쪽 모두, 그리고 attempt가 아예 없는 legacy 경로(즐겨찾기만·미착수·
+   * 042 이전 chain)에서도 **항상 non-null**이다(2026-08-21 백엔드 확인). 따라서 이 `?`와
+   * `FALLBACK_EXIT_RATE_BOUNDS`도 배포 확인 뒤에는 두 rate·진입별 비율과 **함께** 뗄 수 있다.
    */
   exitRateBounds?: ExitRateBounds
 }
