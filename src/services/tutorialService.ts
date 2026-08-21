@@ -3,7 +3,6 @@ import { api } from '../lib/apiClient'
 import type { Market } from './types'
 import type {
   InvestmentPracticeResponse,
-  PracticeExitPreset,
   PracticeHoldingObservationResponse,
   PracticeHoldingReflectionResponse,
   PracticeAttemptResponse,
@@ -60,17 +59,23 @@ export function selectPracticeInstrument(
 }
 
 /**
- * 손절·익절 프리셋 선택(042, 이슈 #477). 자연 멱등이라 `Idempotency-Key`가 필요 없다. 보유 중이면
- * 409 `PRACTICE_STEP_LOCKED`로 거부된다 — 매수 전이거나 포지션을 정리한 뒤(재진입 대기)에만 통한다.
- * **(049 ORDERBASICS-015, 이슈 #507)** 대본을 쓰는 CRYPTO 실행은 시장가·지정가 왕복을 둘 다
- * 마쳐야 한다 — 아직이면 409 `PRACTICE_STAGE_LOCKED`(이 판정이 보유 중 잠금보다 앞선다).
+ * 손절·익절 비율 지정(2026-08-21 재설계, 프리셋 선택을 대체한다). 자연 멱등이라 `Idempotency-Key`가
+ * 필요 없다. 보유 중이면 409 `PRACTICE_STEP_LOCKED`로 거부된다 — 매수 전이거나 포지션을 정리한 뒤
+ * (재진입 대기)에만 통한다. **(049 ORDERBASICS-015, 이슈 #507)** 대본을 쓰는 CRYPTO 실행은 시장가·
+ * 지정가 왕복을 둘 다 마쳐야 한다 — 아직이면 409 `PRACTICE_STAGE_LOCKED`(이 판정이 보유 중 잠금보다
+ * 앞선다).
+ *
+ * ⚠️ **두 값 모두 퍼센트 수의 양수다** — 3%는 `3`(`0.03` 아님)이고 **손절도 `-3`이 아니라 `3`으로
+ * 보낸다**(서버가 −로 해석한다). 여기서 부호나 배율을 틀리면 100배·부호 반전이 조용히 난다.
  */
-export function selectExitPreset(
+export function updateExitRates(
   market: Market,
-  preset: PracticeExitPreset,
+  stopLossRate: number,
+  takeProfitRate: number,
 ): Promise<PracticeAttemptResponse> {
-  return api.put<PracticeAttemptResponse>(`/education/practice/attempts/${market}/exit-preset`, {
-    preset,
+  return api.put<PracticeAttemptResponse>(`/education/practice/attempts/${market}/exit-rates`, {
+    stopLossRate,
+    takeProfitRate,
   })
 }
 

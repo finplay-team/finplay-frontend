@@ -669,3 +669,22 @@ Chrome 확장이 여전히 안 붙어서 **별도 Chrome 을 CDP(9333)로 띄워
 - [x] 실제 백엔드(origin/dev, PR #516·517·521·522 반영 워크트리)로 종목 선택 →
       2단계 목적 설명·가격 범위 확인 → 시장가 매수·매도(체크리스트 확인) → 지정가 매수·매도
       (체크리스트 확인) → "3단계로 가기" 클릭 → 041 이야기 대본으로 실제 전환까지 전부 검증
+
+## 13. 손절·익절 프리셋 → 자유 입력 재설계 (2026-08-21, 제안 A)
+- [x] `ExitRateFields` 신설 — 실전 예약 매도 탭(OcoExitPlanPanel) 비율 모드를 그대로 본뜬 손절·익절
+      자유 입력 두 칸. 입력 정제(`cleanDecimal`)는 실전 것을 export 해서 재사용
+- [x] `ExitPresetPicker` 제거, `selectExitPreset`·`availableExitPresets`·`selectedExitPreset`·
+      `PracticeExitPresetOption`·`PRESET_LABEL` 사용처 정리(내 변경이 만든 orphan만)
+- [x] `updateExitRates` 서비스 함수 (`PUT .../exit-rates`, 손절도 양수 퍼센트 수로 전송)
+- [x] 범위는 `exitRateBounds`(진행 조회)로 그리고, 없으면 폴백 상수(이름에 FALLBACK 명시)
+- [x] 두 비율 독립 — 손절 5 + 익절 3 조합도 그대로 저장(테스트로 고정)
+- [x] 보유 중(`exitPresetLocked`)에는 입력 잠금 + 이유 표시(서버도 거부하는 제약)
+- [x] 수량 기준 예상 손익 금액 병기 유지 (042 EXITPRESET-006 취지)
+- [x] 폭의 뜻을 한 줄로 돌려주는 문구 — 경계 숫자가 아니라 범위 안 위치로 판정
+- [x] 차트에 손절·익절선 미리 그리기 — 매수 전 "예상" 어림선, 체결 후 서버 확정선, 2단계는 제외
+- [x] 디바운스 자동 저장 + 마지막 요청 응답만 반영(순번 ref)
+- [x] 신규/수정 테스트 8건, 전체 263개 통과 · `tsc -b --noEmit` · `npm run build` 통과
+- [ ] 실제 백엔드로 검증 — `PUT .../exit-rates` 미배포라 네트워크 확인 못 함
+- [x] 완료 화면 진입 카드의 프리셋 이름 칩 → 진입별 실제 비율 표기(`손절 −3% · 익절 +5%`)로 교체,
+      `exitPreset`은 화면에서 완전히 제거(타입도 nullable로 정정), 비율 필드가 없으면 기준선
+      가격에서 역산하는 폴백 — 테스트 2건 추가, 전체 265개 통과

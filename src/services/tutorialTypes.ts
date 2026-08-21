@@ -98,20 +98,26 @@ export type PracticeAttemptMode = 'ACTIVE' | 'REPLAY'
 export type PracticeAttemptStatus = 'SELECTING_INSTRUMENT' | 'IN_PROGRESS' | 'EXPIRED' | 'COMPLETED'
 
 /**
- * 042(이슈 #477) 손절·익절 프리셋 3종. 표시 이름(조심스럽게·보통·느긋하게)은 서버가 주지 않는다 —
- * 서버가 쓰지 않는 문구를 열거형에 두지 않기로 정했으므로 화면이 갖는다.
+ * 042(이슈 #477) 손절·익절 프리셋 3종. **화면에서는 더 이상 고르지 않는다** — 2026-08-21 재설계로
+ * 프리셋 픽커가 자유 입력(`exitStopLossRate`·`exitTakeProfitRate`)으로 바뀌었다. 서버가 진입 기록
+ * (`PracticeEntryResponse.exitPreset`·`riskSnapshot.exitPreset`)에 아직 이 값을 실어 보내므로 타입만
+ * 남긴다. 표시 이름(조심스럽게·보통·느긋하게)은 함께 지웠다 — 사용자에게 없는 개념이다.
  */
 export type PracticeExitPreset = 'CAUTIOUS' | 'BALANCED' | 'RELAXED'
 
 /**
- * 고를 수 있는 프리셋 하나의 식별자와 비율. **비율은 퍼센트 수다**(3%는 `3`, `0.03`이 아니다) —
- * `exit_plans.stop_loss_rate`와 단위를 맞춘 것이고, 100으로 다시 나누면 100배 틀린 값이 조용히 나온다.
- * `stopLossRate`·`takeProfitRate` 모두 양수 크기이며 부호는 이름으로만 정해진다(손절은 −, 익절은 +).
+ * 손절·익절 비율의 허용 범위(2026-08-21 재설계). **퍼센트 수이고 양 끝을 포함한다**(손절 2~5,
+ * 익절 3~8이 서버 기본값). 손절도 양수 크기이며 부호는 이름으로만 정해진다.
+ *
+ * ⚠️ **화면이 이 숫자를 하드코딩하지 않는다** — 서버가 범위를 바꾸면 입력창만 옛 범위로 남아
+ * "저장은 되는데 화면이 막는" 상태가 된다. 서버가 아직 안 내려주는 동안만
+ * `FALLBACK_EXIT_RATE_BOUNDS`(ExitRateFields.tsx)로 대신한다.
  */
-export interface PracticeExitPresetOption {
-  preset: PracticeExitPreset
-  stopLossRate: number
-  takeProfitRate: number
+export interface ExitRateBounds {
+  stopLossMin: number
+  stopLossMax: number
+  takeProfitMin: number
+  takeProfitMax: number
 }
 
 export interface PracticeRiskSnapshotResponse {
@@ -141,7 +147,7 @@ export interface PracticeAttemptResponse {
   completedAt: LocalDateTimeString | null
   /**
    * 이 응답을 돌려주는 **쓰기 경로 네 곳**(진입 `PUT .../attempts/{market}`·재시작 `POST .../restart`·
-   * 종목 선택 `PUT .../instrument`·프리셋 선택 `PUT .../exit-preset`, 이슈 #502)만 실제 값을 채운다.
+   * 종목 선택 `PUT .../instrument`·손절익절 비율 `PUT .../exit-rates`, 이슈 #502)만 실제 값을 채운다.
    * **`GET /api/education/practice`의 `attempt` 필드는 여전히 세 필드 모두 `0`이다** — 그 경로는 tick과
    * 함께 폴링되느라 호출마다 계좌를 다시 읽지 않기 때문이며, `0`은 "잔고가 0"이 아니라 "이 응답은
    * 계좌를 조회하지 않았다"는 뜻이다. 잔액이 필요한 화면은 반드시 위 네 응답에서 받은 값을 상태로 들고
@@ -151,17 +157,21 @@ export interface PracticeAttemptResponse {
   tutorialAvailableCash: number
   tutorialRealizedPnl: number
   /**
-   * 현재 실행 세대의 선택값. **미선택이면 `null`이 아니라 `"BALANCED"`(기본 프리셋)로 온다** — 화면이
-   * null 분기를 갖지 않아도 되고, 보이는 값과 실제로 적용될 값이 항상 같다.
+   * 현재 실행 세대의 손절·익절 비율(2026-08-21 재설계, `PUT .../exit-rates`). **퍼센트 수이고 둘 다
+   * 양수다** — 3%는 `3`이지 `0.03`이 아니고, 손절도 `-3`이 아니라 `3`으로 온다(부호는 이름이 정한다).
+   * 미선택이면 서버 기본값(3·5)이 오므로 화면은 null 분기를 갖지 않는다.
+   *
+   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 계약상 항상 non-null이지만 이 필드를 내려주는
+   * 백엔드가 아직 배포 전이라, 옛 서버에 붙으면 `undefined`가 온다. 배포를 확인하면 `?`를 뗀다.
    */
-  selectedExitPreset: PracticeExitPreset
+  exitStopLossRate?: number
+  exitTakeProfitRate?: number
   /**
    * **잠금 기준은 "최초 매수 여부"가 아니라 "지금 보유 중인가"다.** 매수 전과 포지션을 정리한 뒤(재진입
-   * 대기)에는 몇 번이든 바꿀 수 있고, 보유 중에만 막힌다.
+   * 대기)에는 몇 번이든 바꿀 수 있고, 보유 중에만 막힌다. 프리셋이 자유 입력으로 바뀐 뒤에도 같은
+   * 제약이라 이름만 옛 것이고 그대로 쓴다(손실 중에 손절선을 내리는 사후 합리화를 막는 제약이다).
    */
   exitPresetLocked: boolean
-  /** 고정 3개. 비율만 오고 표시 이름은 화면이 붙인다. */
-  availableExitPresets: PracticeExitPresetOption[]
 }
 
 /**
@@ -312,7 +322,22 @@ export type PracticeSellCause = 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL'
 export interface PracticeEntryResponse {
   /** 실행 세대 안의 몇 번째 진입인가(1부터). 손절 후 재매수하면 2다. */
   entrySequence: number
-  exitPreset: PracticeExitPreset
+  /**
+   * ⚠️ **화면에서 쓰지 않는다.** 자유 비율이 옛 프리셋 3개 중 하나와 **정확히 일치할 때만** 그
+   * 식별자가 오고 그 밖에는 `null`이다(2026-08-21 재설계, 백엔드 확정). 이 값으로 이름을 그리면
+   * 사용자가 고른 대부분의 조합에서 빈 칩이 된다 — 완료 화면은 아래 두 비율을 정본으로 읽는다.
+   */
+  exitPreset: PracticeExitPreset | null
+  /**
+   * **그 진입에 실제로 적용된** 손절·익절 비율(퍼센트 수, 둘 다 양수). 진입별로 고정된다 — 한 실행
+   * 안에서도 재진입 사이에 비율을 다시 정할 수 있으므로 attempt의 현재 값과 다를 수 있고, 완료
+   * 화면은 반드시 이 진입별 값을 써야 한다.
+   *
+   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 이 필드를 채우는 백엔드가 아직 배포 전이라
+   * 옛 응답에는 없다. 없을 때 화면은 진입가와 기준선 가격에서 되돌려 계산한다(EntryComparison).
+   */
+  stopLossRate?: number
+  takeProfitRate?: number
   buyAt: LocalDateTimeString
   buyPrice: Decimal
   buyQuantity: Decimal
@@ -363,7 +388,10 @@ export interface TutorialStageProgress {
   marketBuySellCompleted: boolean
   /** 이 실행에 지정가 매수와 지정가 매도가 둘 다 있다. 주식은 항상 false. */
   limitBuySellCompleted: boolean
-  /** 이 실행에서 프리셋을 직접 골랐는가(`PUT .../exit-preset` 호출 여부). */
+  /**
+   * 이 실행에서 손절·익절 기준을 직접 정했는가. 프리셋이 자유 입력으로 바뀐 뒤에도 서버가 이 이름을
+   * 그대로 쓰며 `PUT .../exit-rates` 호출 여부로 판정한다(백엔드 확인 필요 — 미확인 가정이다).
+   */
   exitPresetSelected: boolean
 }
 
@@ -401,4 +429,9 @@ export interface InvestmentPracticeResponse {
   attempt: PracticeAttemptResponse | null
   /** 2단계 판정(이슈 #503). null이 되지 않는다 — 위 타입 설명을 반드시 먼저 읽는다. */
   tutorialStageProgress: TutorialStageProgress
+  /**
+   * 손절·익절 비율 입력의 허용 범위(2026-08-21 재설계). **아직 안 내려주는 서버가 있어 옵셔널이다** —
+   * 없으면 화면이 `FALLBACK_EXIT_RATE_BOUNDS`로 대신 그린다.
+   */
+  exitRateBounds?: ExitRateBounds
 }

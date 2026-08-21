@@ -8,7 +8,8 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { Close } from '../ui/icons'
 import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
-import { EntryComparison, PRESET_LABEL } from './EntryComparison'
+import { EntryComparison } from './EntryComparison'
+import { ExitRateFields, FALLBACK_EXIT_RATES, FALLBACK_EXIT_RATE_BOUNDS } from './ExitRateFields'
 import { BreakingNewsCrawl } from './BreakingNewsCrawl'
 import { OrderBasicsStatusLine, ScenarioEventFeed, ScenarioStatusLine } from './ScenarioEventPanel'
 import { OrderTypeGuideButton, OrderTypeGuideDialog } from './OrderTypeGuide'
@@ -34,7 +35,7 @@ import {
   recordHoldingObservation,
   restartPracticeAttempt,
   saveHoldingReflection,
-  selectExitPreset,
+  updateExitRates,
   selectPracticeInstrument,
   tickPracticeAttempt,
 } from '../../services/tutorialService'
@@ -42,8 +43,6 @@ import type {
   InvestmentPracticeResponse,
   PracticeAttemptResponse,
   PracticeEvidenceResponse,
-  PracticeExitPreset,
-  PracticeExitPresetOption,
   PracticeHoldingReflectionResponse,
   PracticeSellVerdict,
   PracticeTradeResultResponse,
@@ -384,7 +383,7 @@ function StageProgressChecklist({
   if (market === 'CRYPTO') {
     items.push({ key: 'limit', label: '지정가 매매', done: progress.limitBuySellCompleted })
   }
-  items.push({ key: 'preset', label: '손절·익절 프리셋 선택', done: progress.exitPresetSelected })
+  items.push({ key: 'preset', label: '손절·익절 기준 정하기', done: progress.exitPresetSelected })
   return (
     <div>
       <div className="flex flex-wrap items-center gap-1.5" aria-label="주문 방법 학습 체크리스트">
@@ -823,79 +822,6 @@ function RiskAmountLine({
   )
 }
 
-/**
- * 매수 전 손절·익절 프리셋 선택(042, 이슈 #477). 조심스럽게·보통·느긋하게 세 개를 나란히 놓고,
- * 고른 프리셋의 실제 비율을 버튼 안에 함께 적어 "폭이 다르다"는 게 눈에 보이게 한다.
- *
- * 매수 전에는 서버가 늘 잠그지 않은 상태(exitPresetLocked=false)로 응답한다 — 잠금은 "지금 보유
- * 중인가"를 기준으로 하고, 이 자리는 아직 아무것도 사지 않은 시점이기 때문이다. `holdingLocked`는
- * 그래도 서버 값을 그대로 받아 방어적으로 반영한다.
- *
- * **(049, `frontend-reply-505.md` 결정 1) 2단계에서는 `stageLocked`로도 잠근다.** 숨기지 않고
- * 비활성 + 이유로 두는 이 화면의 관례(예약 매도 탭)를 그대로 따른다 — 컨트롤이 갑자기 3단계에서
- * 나타나면 "이게 언제 생겼지"가 된다. 실제로 서버도 이 조건에서 409 `PRACTICE_STAGE_LOCKED`로
- * 거부하므로, 버튼을 잠그지 않으면 눌러도 저장되지 않는 상태가 된다.
- */
-function ExitPresetPicker({
-  options,
-  selected,
-  holdingLocked,
-  stageLocked,
-  saving,
-  activeClassName,
-  onSelect,
-}: {
-  options: PracticeExitPresetOption[]
-  selected: PracticeExitPreset
-  holdingLocked: boolean
-  stageLocked: boolean
-  saving: boolean
-  activeClassName: string
-  onSelect: (preset: PracticeExitPreset) => void
-}) {
-  if (options.length === 0) return null
-  const locked = holdingLocked || stageLocked
-  return (
-    <div data-tour="exit-preset">
-      <div className="flex w-full items-center gap-1 rounded-full bg-white/[0.04] p-1 ring-1 ring-white/[0.08]">
-        {options.map((option) => {
-          const active = option.preset === selected
-          const labels = presetRateLabels(option)
-          return (
-            <button
-              key={option.preset}
-              type="button"
-              aria-pressed={active}
-              disabled={locked || saving}
-              onClick={() => onSelect(option.preset)}
-              className={`flex-1 rounded-2xl px-3 py-2 text-center text-xs font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-50 ${
-                active ? activeClassName : 'text-muted hover:text-ink'
-              }`}
-            >
-              {PRESET_LABEL[option.preset]}
-              <span className="mt-0.5 block text-[10px] tabular opacity-80">
-                {labels.stopLoss} · {labels.takeProfit}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      {stageLocked ? (
-        <p className="mt-1.5 text-[11px] text-muted">
-          이 단계는 주문 방법을 배우는 자리라 손절·익절은 다음 단계에서 다룹니다. 시장가·지정가를
-          먼저 왕복해 보세요.
-        </p>
-      ) : (
-        holdingLocked && (
-          <p className="mt-1.5 text-[11px] text-muted">
-            지금은 보유 중이라 바꿀 수 없습니다. 다 판 뒤에 다시 고르세요.
-          </p>
-        )
-      )}
-    </div>
-  )
-}
-
 function RiskEducationCard({
   attempt,
   holdingQuantity,
@@ -1194,7 +1120,9 @@ export function AttemptTutorialFlow({
   const [buyAmount, setBuyAmount] = useState('')
   const [flowError, setFlowError] = useState<FlowError | null>(null)
   const [buying, setBuying] = useState(false)
-  const [presetSaving, setPresetSaving] = useState(false)
+  const [exitRatesSaving, setExitRatesSaving] = useState(false)
+  /** 손절·익절 비율 저장 요청의 순번 — 늦게 도착한 옛 응답이 새 값을 덮어쓰지 못하게 한다. */
+  const exitRatesSeqRef = useRef(0)
   const [advancingScript, setAdvancingScript] = useState(false)
   const [buyOrderType, setBuyOrderType] = useState<TutorialOrderType>('MARKET')
   const [buyLimitPrice, setBuyLimitPrice] = useState('')
@@ -1724,26 +1652,37 @@ export function AttemptTutorialFlow({
   }, [clearError, market, onAttemptChange, onRefresh, showError])
 
   /**
-   * 손절·익절 프리셋 선택(042, 이슈 #477). 서버가 "지금 보유 중인가"로 잠그므로(EXITPRESET-003)
-   * 매수 전과 재진입 대기(D35) 양쪽 모두 통과한다. `holdingLocked`·`stageLocked`로 버튼 자체를
+   * 손절·익절 비율 저장(2026-08-21 재설계, 프리셋 선택을 대체한다). 서버가 "지금 보유 중인가"로
+   * 잠그므로 매수 전과 재진입 대기(D35) 양쪽 모두 통과한다. 입력창을 `holdingLocked`·`stageLocked`로
    * 미리 막아 두는 것과는 별개로, 서버가 막으면(보유 중이거나 049 단계 미충족) 그 오류를 그대로
    * 보여준다.
+   *
+   * ⚠️ **두 값을 그대로 보낸다** — 손절도 양수 퍼센트 수다(3%는 `3`). 여기서 `-`를 붙이거나 100으로
+   * 나누면 부호 반전·100배 오차가 조용히 난다.
    */
-  const handleSelectPreset = useCallback(
-    async (preset: PracticeExitPreset) => {
-      if (preset === attempt.selectedExitPreset || presetSaving) return
-      setPresetSaving(true)
+  const handleExitRatesCommit = useCallback(
+    async (nextStopLossRate: number, nextTakeProfitRate: number) => {
+      /**
+       * 저장 중이라고 새 요청을 버리지 않는다 — 앞선 저장이 느릴 때 그 사이에 고친 값을 버리면
+       * **화면에는 5%가 적혀 있는데 서버에는 4%가 저장된** 조용한 어긋남이 남는다. 대신 마지막
+       * 요청의 응답만 반영한다(먼저 보낸 요청이 늦게 도착해 새 값을 덮어쓰는 것을 막는다).
+       */
+      const seq = exitRatesSeqRef.current + 1
+      exitRatesSeqRef.current = seq
+      setExitRatesSaving(true)
       clearError()
       try {
-        const updated = await selectExitPreset(market, preset)
+        const updated = await updateExitRates(market, nextStopLossRate, nextTakeProfitRate)
+        if (seq !== exitRatesSeqRef.current) return
         onAttemptChange(updated)
       } catch (error) {
+        if (seq !== exitRatesSeqRef.current) return
         showError('preset', toUserMessage(error))
       } finally {
-        setPresetSaving(false)
+        if (seq === exitRatesSeqRef.current) setExitRatesSaving(false)
       }
     },
-    [attempt.selectedExitPreset, clearError, market, onAttemptChange, presetSaving, showError],
+    [clearError, market, onAttemptChange, showError],
   )
 
   /**
@@ -2138,14 +2077,51 @@ export function AttemptTutorialFlow({
   const activeRowText = market === 'CRYPTO' ? 'text-coin' : 'text-[#2DD4BF]'
 
   /**
-   * 매수 전 미리보기(BuyRiskPreviewLine)가 쓸, 지금 고른 프리셋의 실제 비율. 못 찾으면(응답 지연 등)
-   * 서버 기본값(BALANCED, −3%·+5%)으로 어림한다 — 프리셋 목록이 아직 안 왔다고 미리보기 자체를
-   * 지우면 화면이 매번 깜빡인다.
+   * 지금 정해 둔 손절·익절 비율. 매수 전 미리보기(BuyRiskPreviewLine)와 차트 어림 기준선, 입력창의
+   * 초깃값이 모두 이 값을 쓴다. 서버가 아직 이 필드를 안 내려주면(배포 전) 폴백으로 어림한다 —
+   * 값이 안 왔다고 미리보기 자체를 지우면 화면이 매번 깜빡인다.
    */
-  const selectedPresetOption =
-    attempt.availableExitPresets.find((option) => option.preset === attempt.selectedExitPreset) ?? null
-  const previewStopLossRate = selectedPresetOption?.stopLossRate ?? 3
-  const previewTakeProfitRate = selectedPresetOption?.takeProfitRate ?? 5
+  const exitStopLossRate = attempt.exitStopLossRate ?? FALLBACK_EXIT_RATES.stopLossRate
+  const exitTakeProfitRate = attempt.exitTakeProfitRate ?? FALLBACK_EXIT_RATES.takeProfitRate
+  /** 입력 범위. 서버가 안 내려주는 동안만 폴백을 쓴다(FALLBACK_EXIT_RATE_BOUNDS 주석 참고). */
+  const exitRateBounds = progress.exitRateBounds ?? FALLBACK_EXIT_RATE_BOUNDS
+
+  /**
+   * 차트에 얹는 손절·익절선. **매수 전에도 그린다** — 비율을 정하는 동안 그 선이 지금 값·최근 변동폭
+   * 대비 어디에 놓이는지 눈으로 보여야 "이 폭이면 금방 닿겠다 / 여간해선 안 닿겠다"를 스스로 판단할 수
+   * 있고, 이 튜토리얼이 가르치려는 판단이 정확히 그것이다(숫자만으로는 감이 오지 않는다).
+   *
+   * 매수 전 선은 아직 진입가가 없어 **현재가로 잡은 어림선**이다 — 라벨에 "예상"을 붙여 확정선이 아님을
+   * 드러낸다. 체결 후에는 서버가 확정한 `stopLossPrice`·`takeProfitPrice`로 바꿔 그린다.
+   *
+   * 2단계(ORDER_BASICS)에는 아예 그리지 않는다 — 그 단계는 자동 청산 예약 자체를 만들지 않으므로
+   * (049 ORDERBASICS-022) 선을 그리면 없는 약속을 하는 것이 된다. 손절·익절 입력 카드를 그 단계에서
+   * 안 그리는 것과 같은 이유다.
+   */
+  const chartReferenceLines = useMemo((): { value: number; tone: 'gain' | 'loss'; label: string }[] | undefined => {
+    if (scenarioStage === 'ORDER_BASICS') return undefined
+    if (attempt.riskSnapshot) {
+      const labels = presetRateLabels(attempt.riskSnapshot)
+      return [
+        { value: attempt.riskSnapshot.stopLossPrice, tone: 'loss', label: `손절 ${labels.stopLoss}` },
+        { value: attempt.riskSnapshot.takeProfitPrice, tone: 'gain', label: `익절 ${labels.takeProfit}` },
+      ]
+    }
+    if (latestPrice === null) return undefined
+    const labels = presetRateLabels({ stopLossRate: exitStopLossRate, takeProfitRate: exitTakeProfitRate })
+    return [
+      {
+        value: latestPrice * (1 - exitStopLossRate / 100),
+        tone: 'loss',
+        label: `예상 손절 ${labels.stopLoss}`,
+      },
+      {
+        value: latestPrice * (1 + exitTakeProfitRate / 100),
+        tone: 'gain',
+        label: `예상 익절 ${labels.takeProfit}`,
+      },
+    ]
+  }, [attempt.riskSnapshot, exitStopLossRate, exitTakeProfitRate, latestPrice, scenarioStage])
 
   /**
    * 되돌아보기는 팔고 난 뒤에야 할 일이 생긴다. 그전에는 탭을 잠그고, 전량 매도되는 순간 자동으로
@@ -2329,16 +2305,19 @@ export function AttemptTutorialFlow({
                     실제로는 값이 이 선에 닿는 순간 자동으로 팔린다(2026-08-20 실사용 중 발견). */}
                 사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 값이 이 선에
                 닿으면 그 순간 자동으로 팔립니다 — 손절선은 더 잃지 않도록, 익절선은 이익을 챙기도록
-                정리해 줘요. 아래에서 그 폭을 고를 수 있습니다.
+                정리해 줘요. 그 폭을 아래에서 직접 정합니다. 두 폭은 서로 무관해서 각각 정하면 되고,
+                정한 선이 지금 값에서 어디쯤인지는 옆 차트에 점선으로 함께 그려집니다.
               </p>
-              <ExitPresetPicker
-                options={attempt.availableExitPresets}
-                selected={attempt.selectedExitPreset}
+              <ExitRateFields
+                bounds={exitRateBounds}
+                stopLossRate={exitStopLossRate}
+                takeProfitRate={exitTakeProfitRate}
                 holdingLocked={attempt.exitPresetLocked}
                 stageLocked={exitPresetStageLocked}
-                saving={presetSaving}
-                activeClassName={`${activeRowTone} ${activeRowText}`}
-                onSelect={(preset) => void handleSelectPreset(preset)}
+                saving={exitRatesSaving}
+                latestPrice={latestPrice}
+                quantity={buyQuantityNumber}
+                onCommit={(stopLoss, takeProfit) => void handleExitRatesCommit(stopLoss, takeProfit)}
               />
               <ErrorNote error={flowError} scope="preset" />
             </>
@@ -2522,8 +2501,8 @@ export function AttemptTutorialFlow({
           <BuyRiskPreviewLine
             latestPrice={latestPrice}
             quantity={buyQuantityNumber}
-            stopLossRate={previewStopLossRate}
-            takeProfitRate={previewTakeProfitRate}
+            stopLossRate={exitStopLossRate}
+            takeProfitRate={exitTakeProfitRate}
           />
           <Button
             type="button"
@@ -3063,22 +3042,7 @@ export function AttemptTutorialFlow({
                       beginnerLabels
                       describedById={chartSummaryId}
                       emptyMessage="차트를 불러오는 중입니다."
-                      referenceLines={
-                        attempt.riskSnapshot
-                          ? [
-                              {
-                                value: attempt.riskSnapshot.stopLossPrice,
-                                tone: 'loss',
-                                label: `손절 ${presetRateLabels(attempt.riskSnapshot).stopLoss}`,
-                              },
-                              {
-                                value: attempt.riskSnapshot.takeProfitPrice,
-                                tone: 'gain',
-                                label: `익절 ${presetRateLabels(attempt.riskSnapshot).takeProfit}`,
-                              },
-                            ]
-                          : undefined
-                      }
+                      referenceLines={chartReferenceLines}
                     />
                   </div>
                   <div>

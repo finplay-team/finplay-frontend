@@ -1,19 +1,26 @@
 // 완료 화면의 진입별 대조 카드 — 실제 손익과 "안 팔았다면"을 나란히 그린다
 import { formatKRW, formatSignedKRW, pnlTone } from '../../lib/format'
-import type {
-  PracticeEntryResponse,
-  PracticeExitPreset,
-  PracticeSellCause,
-} from '../../services/tutorialTypes'
+import type { PracticeEntryResponse, PracticeSellCause } from '../../services/tutorialTypes'
 
 /**
- * 서버는 프리셋 표시 이름을 주지 않는다(계약 명시) — 화면이 정하는 말이라 여기 한 곳에만 두고,
- * 매수 전 프리셋 선택 UI(AttemptTutorialFlow.tsx)도 이 맵을 그대로 가져다 쓴다.
+ * 그 진입의 손절·익절 기준을 **사용자가 직접 넣은 숫자 그대로** 되돌려 준다(2026-08-21 재설계).
+ * 예전에는 프리셋 이름(조심스럽게·보통·느긋하게)을 그렸는데, 이제 이름을 고르는 자리가 없어져
+ * **사용자가 본 적 없는 말**이 됐다. 자기가 넣은 숫자를 다시 보는 편이 학습에도 맞다.
+ *
+ * 부호는 입력 화면(ExitRateFields)과 같은 톤으로 붙인다 — 손절은 −, 익절은 +.
  */
-export const PRESET_LABEL: Record<PracticeExitPreset, string> = {
-  CAUTIOUS: '조심스럽게',
-  BALANCED: '보통',
-  RELAXED: '느긋하게',
+function exitRateChipText(stopLossRate: number, takeProfitRate: number): string {
+  return `손절 −${stopLossRate}% · 익절 +${takeProfitRate}%`
+}
+
+/**
+ * 진입별 비율 필드가 아직 응답에 없을 때만 쓰는 **폴백**이다 — 서버가 그 비율로 만든 기준선
+ * 가격에서 되돌려 계산한다(진입가 대비 몇 %인가). 소수 첫째 자리까지만 남기는 것은 서버가 받는
+ * 정밀도와 같다. 응답에 비율이 실려 오면 **언제나 응답 쪽이 이긴다**.
+ */
+function rateFromPrices(entryPrice: number, linePrice: number): number {
+  if (!(entryPrice > 0)) return 0
+  return Math.round((Math.abs(linePrice - entryPrice) / entryPrice) * 1000) / 10
 }
 
 /**
@@ -78,7 +85,12 @@ function EntryCard({ entry }: { entry: PracticeEntryResponse }) {
             </Chip>
           )}
           <Chip tone="border-line bg-elevated text-muted">{ORDER_TYPE_LABEL[entry.buyOrderType]}</Chip>
-          <Chip tone="border-line bg-elevated text-muted">{PRESET_LABEL[entry.exitPreset]}</Chip>
+          <Chip tone="border-line bg-elevated text-muted">
+            {exitRateChipText(
+              entry.stopLossRate ?? rateFromPrices(entry.buyPrice, entry.stopLossPrice),
+              entry.takeProfitRate ?? rateFromPrices(entry.buyPrice, entry.takeProfitPrice),
+            )}
+          </Chip>
           {entry.sellCause !== null && (
             <Chip tone={CAUSE_TONE[entry.sellCause]}>{CAUSE_LABEL[entry.sellCause]}</Chip>
           )}

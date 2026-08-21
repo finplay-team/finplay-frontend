@@ -7,7 +7,10 @@ import type { PracticeEntryResponse } from '../../services/tutorialTypes'
 function entry(overrides: Partial<PracticeEntryResponse> = {}): PracticeEntryResponse {
   return {
     entrySequence: 1,
-    exitPreset: 'BALANCED',
+    // 자유 비율이 옛 프리셋과 일치하지 않으면 서버가 null을 준다 — 화면은 이 값을 쓰지 않는다.
+    exitPreset: null,
+    stopLossRate: 3,
+    takeProfitRate: 3,
     buyOrderType: 'MARKET',
     scenarioScriptId: 'CRYPTO_STORY_V1',
     buyAt: '2026-08-20T11:00:00',
@@ -35,7 +38,8 @@ describe('EntryComparison', () => {
           entry(),
           entry({
             entrySequence: 2,
-            exitPreset: 'CAUTIOUS',
+            stopLossRate: 5,
+            takeProfitRate: 8,
             sellCause: 'TAKE_PROFIT',
             realizedPnl: 27_180,
             unrealizedPnlIfHeld: 19_440,
@@ -48,8 +52,11 @@ describe('EntryComparison', () => {
     expect(screen.getByText('2번째 진입')).toBeInTheDocument()
     expect(screen.getByText('손절로 팔림')).toBeInTheDocument()
     expect(screen.getByText('익절로 팔림')).toBeInTheDocument()
-    expect(screen.getByText('보통')).toBeInTheDocument()
-    expect(screen.getByText('조심스럽게')).toBeInTheDocument()
+    // 프리셋 이름이 아니라 그 진입에 실제로 적용된 비율을 진입별로 보여준다.
+    expect(screen.getByText('손절 −3% · 익절 +3%')).toBeInTheDocument()
+    expect(screen.getByText('손절 −5% · 익절 +8%')).toBeInTheDocument()
+    expect(screen.queryByText('보통')).not.toBeInTheDocument()
+    expect(screen.queryByText('조심스럽게')).not.toBeInTheDocument()
   })
 
   it('손익을 다시 계산하지 않고 서버 값을 그대로 그린다', () => {
@@ -145,5 +152,30 @@ describe('EntryComparison', () => {
     const { container } = render(<EntryComparison layout="narrow" entries={[]} />)
 
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('진입별 비율이 서로 달라도 각 카드가 자기 비율을 그린다 (attempt의 현재 값이 아니다)', () => {
+    // 재진입 사이에 기준을 다시 정할 수 있으므로 진입마다 값이 다르다.
+    render(
+      <EntryComparison
+        layout="wide"
+        entries={[entry({ stopLossRate: 2, takeProfitRate: 7 }), entry({ entrySequence: 2, stopLossRate: 4.5, takeProfitRate: 3 })]}
+      />,
+    )
+
+    expect(screen.getByText('손절 −2% · 익절 +7%')).toBeInTheDocument()
+    expect(screen.getByText('손절 −4.5% · 익절 +3%')).toBeInTheDocument()
+  })
+
+  it('진입별 비율이 아직 응답에 없으면 기준선 가격에서 되돌려 계산한다 (폴백)', () => {
+    // 12,400 → 손절 12,028 은 -3%, 익절 12,772 는 +3%다.
+    render(
+      <EntryComparison
+        layout="narrow"
+        entries={[entry({ stopLossRate: undefined, takeProfitRate: undefined })]}
+      />,
+    )
+
+    expect(screen.getByText('손절 −3% · 익절 +3%')).toBeInTheDocument()
   })
 })
