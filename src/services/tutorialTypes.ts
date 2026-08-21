@@ -25,7 +25,6 @@ export interface PracticeHoldingObservationResponse {
 export interface PracticeHoldingReflectionResponse {
   reflectionId: number | null
   holdingId: number
-  prompt: string
   answer: string
   createdAt: LocalDateTimeString
   rewardGranted: boolean

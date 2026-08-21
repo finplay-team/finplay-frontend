@@ -1047,7 +1047,6 @@ describe('AttemptTutorialFlow', () => {
     vi.mocked(saveHoldingReflection).mockResolvedValue({
       reflectionId: 7,
       holdingId: 41,
-      prompt: '오늘 왜 그렇게 사고팔았나요?',
       answer: '한 줄 기록',
       createdAt: '2026-08-14T12:10:00',
       rewardGranted: true,
@@ -1065,6 +1064,14 @@ describe('AttemptTutorialFlow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '닫기' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    // 백엔드 이슈 #432 — 복기 질문 문구는 서버 응답(`prompt`)이 아니라 클라이언트가 소유한다.
+    // 저장된 답변 위에 그 문구가 실제로 그려지는지 고정한다(예전에는 렌더 결과를 단언하지 않아,
+    // 서버가 필드를 빼면 이 자리가 조용히 빈 줄이 되는 것을 아무 테스트도 잡지 못했다).
+    expect(screen.getByText('한 줄 기록')).toBeInTheDocument()
+    expect(
+      screen.getAllByText('오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.').length,
+    ).toBeGreaterThan(0)
   })
 
   it('재완료(rewardGranted=false)에는 축하 모달을 열지 않는다', async () => {
@@ -1072,7 +1079,6 @@ describe('AttemptTutorialFlow', () => {
     vi.mocked(saveHoldingReflection).mockResolvedValue({
       reflectionId: null,
       holdingId: 41,
-      prompt: '오늘 왜 그렇게 사고팔았나요?',
       answer: '한 줄 기록',
       createdAt: '2026-08-14T12:10:00',
       rewardGranted: false,

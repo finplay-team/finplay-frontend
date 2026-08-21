@@ -51,6 +51,10 @@ import type { Candle, Instrument, LimitOrderResponse, Market, OrderSide } from '
 
 const TICK_MS = 3000
 const REFLECTION_MAX = 2000
+// 복기 질문 문구는 클라이언트가 소유한다(백엔드 이슈 #432). 예전에는 저장 응답의 `prompt` 필드를 그대로
+// 그렸는데, 서버가 요청과 무관한 상수를 내려보내는 구조라 문구 하나 고치는 데 백엔드 배포가 필요했다.
+// 입력 라벨과 저장 후 회고 박스가 같은 문구를 써야 하므로 여기 한 곳에서만 정의한다.
+const REFLECTION_QUESTION = '오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.'
 /**
  * 관찰을 몇 번의 tick마다 반복할지. tick이 3초이므로 약 6초에 한 번이다.
  *
@@ -2192,7 +2196,7 @@ export function AttemptTutorialFlow({
       )}
       {savedReflection && (
         <div className="mt-4 rounded-2xl border border-line bg-elevated/60 p-4">
-          <p className="text-xs text-muted">{savedReflection.prompt}</p>
+          <p className="text-xs text-muted">{REFLECTION_QUESTION}</p>
           <p className="mt-2 text-sm leading-relaxed text-ink">{savedReflection.answer}</p>
         </div>
       )}
@@ -2251,7 +2255,7 @@ export function AttemptTutorialFlow({
       )}
       <div>
         <label htmlFor="tutorial-reflection" className="block text-sm font-medium text-ink">
-          오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.
+          {REFLECTION_QUESTION}
         </label>
         <textarea
           id="tutorial-reflection"
