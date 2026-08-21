@@ -61,47 +61,6 @@ export function rateError(raw: string, min: number, max: number, name: string): 
   return null
 }
 
-/**
- * 지금 고른 폭이 범위 안에서 어디쯤인가. 그 자리에 따라 폭의 성질을 말로 돌려주기 위한 것이라
- * 경계 숫자가 아니라 **비율 위치**로 판단한다 — 서버가 범위를 바꿔도 문구가 어긋나지 않는다.
- */
-function widthBand(value: number, min: number, max: number): 'narrow' | 'middle' | 'wide' {
-  const span = max - min
-  if (!(span > 0)) return 'middle'
-  const position = (value - min) / span
-  if (position <= 1 / 3) return 'narrow'
-  if (position >= 2 / 3) return 'wide'
-  return 'middle'
-}
-
-/**
- * 폭이 뜻하는 바를 한 줄로 돌려준다. 프리셋 이름(조심스럽게·보통·느긋하게)이 하던 교육적 역할을
- * 이름 대신 **설명**으로 대신하는 자리다 — 빈 숫자 칸만 남으면 사용자는 아무 숫자나 넣고 왜 그
- * 숫자인지 모른 채 지나간다.
- *
- * 어느 폭이 옳다고 말하지 않는다. 좁으면 좁은 대로, 넓으면 넓은 대로 무엇을 얻고 무엇을 내주는지
- * 양쪽을 함께 적는다 — 손절 폭은 정답이 아니라 성향의 선택이라는 게 이 튜토리얼이 가르치려는 것이다.
- */
-function stopLossMeaning(band: 'narrow' | 'middle' | 'wide'): string {
-  if (band === 'narrow') {
-    return '좁게 잡았습니다. 작은 흔들림에도 금방 닿아 일찍 정리되고, 한 번에 잃는 금액은 그만큼 작습니다.'
-  }
-  if (band === 'wide') {
-    return '넓게 잡았습니다. 큰 하락까지 버티는 대신, 닿았을 때 잃는 금액은 그만큼 큽니다.'
-  }
-  return '중간쯤으로 잡았습니다. 웬만한 흔들림은 버티고, 그보다 큰 하락에서 정리됩니다.'
-}
-
-function takeProfitMeaning(band: 'narrow' | 'middle' | 'wide'): string {
-  if (band === 'narrow') {
-    return '좁게 잡았습니다. 조금만 올라도 팔려서 자주 닿는 대신, 한 번에 버는 금액은 그만큼 작습니다.'
-  }
-  if (band === 'wide') {
-    return '넓게 잡았습니다. 크게 오를 때까지 기다리는 대신, 거기까지 오르지 않으면 팔리지 않습니다.'
-  }
-  return '중간쯤으로 잡았습니다. 어느 정도 오르기를 기다렸다가 정리합니다.'
-}
-
 interface Props {
   bounds: ExitRateBounds
   /** 지금 화면에 적힌 값. **상태는 부모가 들고 있다** — 차트 참고선도 같은 값을 따라가야 하기 때문이다. */
@@ -194,18 +153,19 @@ export function ExitRateFields({
         {stopLossErrorText !== null ? (
           <p className="mt-1.5 text-[11px] text-loss">{stopLossErrorText}</p>
         ) : (
-          <>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-              {stopLossMeaning(widthBand(stopLossNumber as number, bounds.stopLossMin, bounds.stopLossMax))}
+          /*
+            **의미 문구(좁게/중간/넓게)는 지웠다.** 금액 한 줄과 나란히 두면 한 칸 아래에 문장이 둘이
+            되고, 숫자가 이미 그 뜻을 말한다 — 3%가 자기 돈으로 얼마인지가 폭의 성질보다 먼저 와닿는다.
+            이 줄이 **예상 손익 금액의 정본**이다(예전에는 이 값을 두 곳이 각자 계산하고 한쪽만
+            "수수료 제외"를 붙여, 같은 금액이 다른 근거처럼 읽혔다).
+          */
+          stopLossPrice !== null && (
+            <p className="mt-1.5 text-[11px] text-muted tabular">
+              {formatKRW(stopLossPrice)}에 닿으면 자동으로 정리됩니다
+              {quantity > 0 &&
+                ` — 지금 가진 수량이면 약 ${formatKRW(((basePrice as number) - stopLossPrice) * quantity)}을 잃습니다`}
             </p>
-            {stopLossPrice !== null && (
-              <p className="mt-1 text-[11px] text-muted tabular">
-                {formatKRW(stopLossPrice)}에 닿으면 자동으로 정리됩니다
-                {quantity > 0 &&
-                  ` — 지금 가진 수량이면 약 ${formatKRW(((basePrice as number) - stopLossPrice) * quantity)}을 잃습니다`}
-              </p>
-            )}
-          </>
+          )
         )}
       </div>
 
@@ -235,20 +195,13 @@ export function ExitRateFields({
         {takeProfitErrorText !== null ? (
           <p className="mt-1.5 text-[11px] text-loss">{takeProfitErrorText}</p>
         ) : (
-          <>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-              {takeProfitMeaning(
-                widthBand(takeProfitNumber as number, bounds.takeProfitMin, bounds.takeProfitMax),
-              )}
+          takeProfitPrice !== null && (
+            <p className="mt-1.5 text-[11px] text-muted tabular">
+              {formatKRW(takeProfitPrice)}에 닿으면 자동으로 정리됩니다
+              {quantity > 0 &&
+                ` — 지금 가진 수량이면 약 ${formatKRW((takeProfitPrice - (basePrice as number)) * quantity)}을 법니다`}
             </p>
-            {takeProfitPrice !== null && (
-              <p className="mt-1 text-[11px] text-muted tabular">
-                {formatKRW(takeProfitPrice)}에 닿으면 자동으로 정리됩니다
-                {quantity > 0 &&
-                  ` — 지금 가진 수량이면 약 ${formatKRW((takeProfitPrice - (basePrice as number)) * quantity)}을 법니다`}
-              </p>
-            )}
-          </>
+          )
         )}
       </div>
     </div>

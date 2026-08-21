@@ -17,8 +17,13 @@ function MiniCandle({ tone }: { tone: 'gain' | 'loss' }) {
   )
 }
 
+/**
+ * **기본은 접힘이다.** `useState(true)`이던 시절에는 SVG 234px과 다섯 문단이 차트 바로 아래를 차지해서,
+ * 그 아래의 "내가 건 예약" 카드가 스크롤 밖으로 밀렸다 — 지금 판단해야 하는 것이 지난 설명에 가렸다.
+ * 접힌 상태에서도 색 규칙만은 요약 한 줄로 남긴다.
+ */
 export function CandleGuide() {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
 
   return (
     <div>
@@ -27,9 +32,16 @@ export function CandleGuide() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls="candle-guide-panel"
-        className="flex w-full items-center justify-between rounded-2xl border border-line bg-elevated px-5 py-3.5 text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
+        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-line bg-elevated px-5 py-3.5 text-left text-sm text-ink transition-colors duration-300 hover:bg-white/[0.06]"
       >
-        <span className="font-medium">막대 하나가 무슨 뜻인가요?</span>
+        <span className="min-w-0">
+          <span className="block font-medium">막대 하나가 무슨 뜻인가요?</span>
+          {!open && (
+            <span className="mt-0.5 block text-xs leading-relaxed text-muted">
+              막대 하나가 하루예요. 빨강은 오른 날, 파랑은 내린 날.
+            </span>
+          )}
+        </span>
         <span
           aria-hidden="true"
           className={`text-muted transition-transform duration-300 ${open ? 'rotate-180' : ''}`}
@@ -149,14 +161,14 @@ export function CandleGuide() {
               변하지 않습니다.
             </p>
             {/*
-              이전에는 "알림이지 자동 주문이 아니다"라고 적어 놨었는데, 실제로는 산 순간 손절·익절
-              예약(OCO)이 같이 걸려 그 선에 닿는 순간 자동으로 팔린다(AttemptTutorialFlow.tsx의
-              RiskEducationCard와 같은 이유로 2026-08-20 수정, D43).
+              ⚠️ **"사면 점선이 생긴다"고 쓰면 안 된다.** 2026-08-20에는 매수 순간 서버가 손절·익절
+              예약을 대신 걸어 줘서 그 말이 참이었지만, 2026-08-21 재설계로 예약은 사용자가 직접 거는
+              것이 되었다. 조건을 빼고 쓰면 예약을 안 건 사람이 없는 점선을 찾게 되고, 더 나쁘게는
+              자동으로 걸린다고 믿어 이 튜토리얼의 핵심을 통째로 건너뛴다.
             */}
             <p>
               <strong className="font-medium text-ink">점선 두 개는 손절·익절선입니다.</strong>{' '}
-              가격이 이 선에 닿으면 그 순간 자동으로 팔립니다. 닿기 전에 직접 매도 버튼을 눌러 먼저
-              팔 수도 있습니다.
+              예약을 걸면 점선 두 개가 생기고, 값이 닿는 순간 자동으로 팔립니다.
             </p>
             <p className="text-xs">
               막대를 손가락으로 누르거나 마우스를 올리면 그날의 네 가지 값이 그대로 나옵니다.

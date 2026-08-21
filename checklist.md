@@ -730,5 +730,7 @@ Chrome 확장이 여전히 안 붙어서 **별도 Chrome 을 CDP(9333)로 띄워
 - [ ] **배포 확인 후 제거** — `StageProgressChecklist`의 `exitPlanned` prop과 그 인자(서버
       `exitPresetSelected`만 그리면 된다) · `readExitExperience`의 `entries[].sellCause` 폴백 ·
       `readExitPlanCreatable`의 어림 폴백 · `estimateExitPlan`과 `localExitPlan` 상태.
-      §13의 폴백 세 개와 함께 한 번에 뗀다
+      §13의 폴백 세 개와 함께 한 번에 뗀다.
+      **배포 순서는 백엔드 먼저로 고정돼 있다**(백엔드 052 run-log "남은 것"에도 같은 내용) — 프론트가
+      먼저 떼면 옛 판정 서버에서 "손절·익절 기준 정하기"가 예약을 걸어도 안 채워지는 회귀가 난다
 - [ ] 실제 백엔드로 검증 — 로컬 8080이 인증 앞단에서 401을 돌려줘 라우트 존재 여부조차 확인 불가

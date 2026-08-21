@@ -104,9 +104,17 @@ export function updateExitRates(
  * 표기된 scale로 판정하므로 `toFixed` 계열로 문자열을 만들지 않는다. 범위는 화면이 하드코딩하지 않고
  * 진행 조회의 `exitRateBounds`에서 읽는다.
  *
- * 거부 — 보유가 없거나 이미 PENDING 예약이 있으면 거부된다(errorCode는 백엔드 확인 대기 중이라
- * 화면은 서버 메시지를 그대로 보여준다). 취소는 실전과 같은 `DELETE /api/exit-plans/{exitPlanId}`
- * (`exitPlanService.cancelExitPlan`)를 쓴다.
+ * 거부 코드(2026-08-21 백엔드 확정) — 보유 없음·attempt 없음·진행 중 아님 `PRACTICE_STEP_LOCKED`,
+ * 2단계 대본 미완료 `PRACTICE_STAGE_LOCKED`, 이 매수분에 이미 걸었음(취소해도 소모된다)
+ * `EXIT_PLAN_ALREADY_EXISTS`, 완료된 attempt `PRACTICE_ALREADY_COMPLETED`, 비율로 팔 가격을 만들 수
+ * 없음 `EXIT_PLAN_INVALID_PRICE_RANGE`, 수량 부족 `INSUFFICIENT_QTY`, 비율 범위 위반 `VALIDATION_ERROR`.
+ *
+ * ⚠️ **화면은 서버 메시지를 그대로 보여주지 않는다** — `toUserMessage`는 `serverMessage`를 `console.warn`
+ * 으로만 흘린다(백엔드 message는 불안정 계약이다). 위 코드의 문구는 `lib/errorMessages.ts`의
+ * `PRACTICE_EXIT_PLAN_ERRORS`에 있고, 호출부는 `toUserMessage(error, PRACTICE_EXIT_PLAN_ERRORS)`로 쓴다.
+ * 코드가 늘면 그 표를 같이 고친다 — 빠진 코드는 "요청을 처리할 수 없습니다."로 뭉개진다.
+ *
+ * 취소는 실전과 같은 `DELETE /api/exit-plans/{exitPlanId}`(`exitPlanService.cancelExitPlan`)를 쓴다.
  *
  * 응답 본문을 **일부러 쓰지 않는다**(`void`) — 예약의 정본은 진행 조회이고, 성공 뒤 그쪽을 다시 읽어
  * 그린다. 본문 모양을 여기서 추측해 타입으로 굳히면 백엔드가 확정할 때 두 곳이 어긋난다.

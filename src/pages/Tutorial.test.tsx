@@ -1,7 +1,12 @@
 // 튜토리얼 페이지가 진입·시장 전환에만 attempt를 ensure하고, 첫 화면 문구·상태 표시가 초보자 기준인지 검증한다.
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { InvestmentPracticeResponse, PracticeAttemptResponse } from '../services/tutorialTypes'
+import type {
+  InvestmentPracticeResponse,
+  PracticeAttemptResponse,
+  PracticeEvidenceResponse,
+  PracticeStepResponse,
+} from '../services/tutorialTypes'
 import { ensurePracticeAttempt, getPracticeProgress } from '../services/tutorialService'
 import { Tutorial } from './Tutorial'
 
@@ -126,6 +131,106 @@ describe('Tutorial attempt entry', () => {
     fireEvent.click(screen.getByRole('button', { name: '진행만 새로고침' }))
     await waitFor(() => expect(vi.mocked(getPracticeProgress).mock.calls.length).toBeGreaterThan(1))
     expect(screen.getByTestId('attempt-flow')).toHaveTextContent('CRYPTO:1:1000000')
+  })
+
+  /** 체결 흔적이 담기는 단계 evidence — 잔액 재조회 지문이 여기서 나온다. */
+  function step(evidence: Partial<PracticeEvidenceResponse>): PracticeStepResponse {
+    return {
+      step: 2,
+      status: 'IN_PROGRESS',
+      locked: false,
+      evidence: {
+        favoriteId: null,
+        favoriteCreatedAt: null,
+        intentionId: null,
+        intentionCreatedAt: null,
+        buyTradeId: null,
+        buyTradeExecutedAt: null,
+        holdingId: null,
+        referenceStopLossPrice: null,
+        referenceTakeProfitPrice: null,
+        observationId: null,
+        observationObservedAt: null,
+        evidenceType: null,
+        reflectionId: null,
+        reflectionCreatedAt: null,
+        sellTradeId: null,
+        sellTradeExecutedAt: null,
+        saleDeadlineAt: null,
+        buyQuantity: null,
+        sellQuantity: null,
+        remainingQuantity: null,
+        ...evidence,
+      },
+    }
+  }
+
+  it('매수·매도가 체결되면 "주문 가능" 금액을 다시 읽는다 — 옛 잔액으로 "최대"를 채우면 주문이 거절된다', async () => {
+    // 진입 시 100만원, 매수 뒤에는 수수료까지 빠진 30만원이 실값이다.
+    let cash = 1_000_000
+    vi.mocked(ensurePracticeAttempt).mockImplementation(async (market) => ({
+      ...attempt(market),
+      tutorialAvailableCash: cash,
+    }))
+    // 진행 조회의 잔액은 계약대로 늘 0이다 — 체결 흔적(evidence)만 바뀐다.
+    let steps: PracticeStepResponse[] = []
+    vi.mocked(getPracticeProgress).mockImplementation(async (market) =>
+      progress(market, { steps, attempt: { ...attempt(market), tutorialAvailableCash: 0 } }),
+    )
+    render(<Tutorial />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('attempt-flow')).toHaveTextContent('CRYPTO:1:1000000'),
+    )
+    expect(ensurePracticeAttempt).toHaveBeenCalledTimes(1)
+
+    // 매수 체결 — 자식이 새로고침하면 잔액이 따라와야 한다.
+    cash = 300_000
+    steps = [step({ buyTradeId: 77, buyQuantity: 0.5, remainingQuantity: 0.5 })]
+    fireEvent.click(screen.getByRole('button', { name: '진행만 새로고침' }))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('attempt-flow')).toHaveTextContent('CRYPTO:1:300000'),
+    )
+    expect(ensurePracticeAttempt).toHaveBeenCalledTimes(2)
+
+    // 손절 후 재진입 자리 — 매도 체결도 같은 방식으로 잡는다(실현손실이 반영된 값).
+    cash = 280_000
+    steps = [
+      step({
+        buyTradeId: 77,
+        sellTradeId: 78,
+        buyQuantity: 0.5,
+        sellQuantity: 0.5,
+        remainingQuantity: 0,
+      }),
+    ]
+    fireEvent.click(screen.getByRole('button', { name: '진행만 새로고침' }))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('attempt-flow')).toHaveTextContent('CRYPTO:1:280000'),
+    )
+  })
+
+  it('체결이 없는 tick은 잔액을 다시 읽지 않는다 — 3초 폴링이 쓰기가 되면 안 된다', async () => {
+    vi.mocked(getPracticeProgress).mockImplementation(async (market) =>
+      progress(market, {
+        steps: [step({ buyTradeId: 77, buyQuantity: 0.5, remainingQuantity: 0.5 })],
+      }),
+    )
+    render(<Tutorial />)
+    await screen.findByTestId('attempt-flow')
+    expect(ensurePracticeAttempt).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '진행만 새로고침' }))
+    await waitFor(() =>
+      expect(vi.mocked(getPracticeProgress).mock.calls.filter(([m]) => m === 'CRYPTO')).toHaveLength(2),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '진행만 새로고침' }))
+    await waitFor(() =>
+      expect(vi.mocked(getPracticeProgress).mock.calls.filter(([m]) => m === 'CRYPTO')).toHaveLength(3),
+    )
+    expect(ensurePracticeAttempt).toHaveBeenCalledTimes(1)
   })
 
   it('hides the stock entrance entirely for a user who never picked a stock instrument', async () => {

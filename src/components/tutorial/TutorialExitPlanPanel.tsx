@@ -66,10 +66,9 @@ export function TutorialExitPlanPanel({
   if (stageLocked) {
     return (
       <div className="rounded-2xl border border-line p-4">
-        <p className="text-sm font-medium text-ink">예약 매도</p>
+        <p className="text-sm font-medium text-ink">손절·익절 예약(자동 매도)</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
-          이 단계는 주문 방법을 배우는 자리라 예약 매도는 다음 단계에서 직접 걸어 봅니다. 지금은
-          시장가·지정가로 사고파는 것만 연습합니다.
+          지금은 주문 방법을 배우는 자리라, 팔 기준은 다음에 직접 정해 봅니다.
         </p>
       </div>
     )
@@ -80,7 +79,7 @@ export function TutorialExitPlanPanel({
       <div className="rounded-2xl border border-line p-4">
         <p className="text-sm font-medium text-ink">걸어 둔 예약</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
-          손절가·익절가 중 먼저 닿는 쪽으로 자동 매도되고, 나머지 하나는 자동 취소돼요.
+          먼저 닿는 쪽으로 자동 매도되고, 나머지 하나는 자동 취소돼요.
         </p>
         <div className="mt-3 rounded-xl bg-elevated p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -126,7 +125,7 @@ export function TutorialExitPlanPanel({
   if (holding && !canReserve) {
     return (
       <div className="rounded-2xl border border-line p-4">
-        <p className="text-sm font-medium text-ink">예약 매도</p>
+        <p className="text-sm font-medium text-ink">손절·익절 예약(자동 매도)</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
           {cancelledOnce
             ? '방금 예약을 취소했습니다. 예약은 한 번 산 것에 한 번만 걸 수 있어서, 이 진입에는 다시 걸 수 없어요.'
@@ -156,10 +155,9 @@ export function TutorialExitPlanPanel({
 
   return (
     <div className="rounded-2xl border border-line p-4">
-      <p className="text-sm font-medium text-ink">예약 매도</p>
+      <p className="text-sm font-medium text-ink">손절·익절 예약(자동 매도)</p>
       <p className="mt-1.5 text-xs leading-relaxed text-muted">
-        손절 비율·익절 비율 중 먼저 닿는 쪽으로 자동 매도되고, 나머지 하나는 자동 취소돼요. 여기서
-        거는 예약이 바로 손절과 익절을 겪는 자리입니다.
+        먼저 닿는 쪽으로 자동 매도되고, 나머지 하나는 자동 취소돼요.
       </p>
       {cancelledOnce && (
         <p className="mt-2 text-xs leading-relaxed text-loss">
@@ -180,9 +178,6 @@ export function TutorialExitPlanPanel({
           quantity={holdingQuantity ?? 0}
         />
       </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-muted">
-        가진 수량 전부에 걸립니다. 실전에서는 수량을 나눠 일부만 예약할 수도 있어요.
-      </p>
       <Button
         type="button"
         size="lg"

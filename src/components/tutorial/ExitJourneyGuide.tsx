@@ -1,6 +1,5 @@
-// 손절·익절을 "어디서 겪는지"를 화면이 계속 말해 주는 진행 안내 (사기 → 예약 걸기 → 기다리기 → 겪기)
+// 손절·익절을 "어디서 겪는지"를 화면이 계속 말해 주는 국면 안내 (사기 → 기준 정하기 → 기다리기 → 겪기)
 import { Button } from '../ui/Button'
-import { formatKRW } from '../../lib/format'
 import type { ExitExperience } from '../../services/tutorialExitPlan'
 import type { PracticeExitPlanSummary } from '../../services/tutorialTypes'
 
@@ -61,17 +60,6 @@ export function exitJourneyPhase({
   return hasTraded ? 'SOLD_WITHOUT_EXPERIENCE' : 'BEFORE_BUY'
 }
 
-const JOURNEY_STEPS = ['사기', '예약 걸기', '기다리기'] as const
-
-/** 지금 어느 칸에 서 있는가. 다 겪은 뒤(BOTH)에는 어디도 가리키지 않는다. */
-function currentStepIndex(phase: ExitJourneyPhase): number | null {
-  if (phase === 'HOLDING_NO_PLAN') return 1
-  if (phase === 'PLAN_PENDING') return 2
-  if (phase === 'BOTH') return null
-  // HOLDING_PLAN_SPENT는 이 진입에서 할 수 있는 게 없다 — 다음 할 일이 "정리하고 다시 사기"라 1번이다.
-  return 0
-}
-
 /**
  * 아직 안 겪은 쪽을 다음 목표로 말해 준다. 둘 다 안 겪었으면 굳이 고르지 않는다 — 어느 쪽을 먼저
  * 겪을지는 값의 움직임이 정하지, 화면이 정하는 것이 아니다.
@@ -82,9 +70,15 @@ function remainingGoalSentence(experience: ExitExperience): string | null {
   return null
 }
 
+/**
+ * 국면별 본문은 **각 한 문장**이다(2026-08-21 문안 정리). 예전에는 여덟 국면이 전부 2~3문장이라
+ * 한 시점에 읽어야 할 문장이 셋씩 있었고, 처음 온 사람은 그런 문단을 읽지 않는다.
+ *
+ * **가격 숫자를 쓰지 않는다.** 손절·익절선 가격의 정본은 차트 점선과 차트 요약 한 줄 둘뿐이다 —
+ * 예전에는 같은 가격이 화면 다섯 곳에 있었다.
+ */
 function phaseText(
   phase: ExitJourneyPhase,
-  plan: PracticeExitPlanSummary | null,
   experience: ExitExperience,
 ): { title: string; body: string; tone: 'urgent' | 'calm' | 'done' } {
   const remaining = remainingGoalSentence(experience)
@@ -92,60 +86,51 @@ function phaseText(
     case 'BEFORE_BUY':
       return {
         title: '먼저 삽니다',
-        body: '손절·익절은 산 뒤에 예약을 걸어야 겪을 수 있습니다. 아래에서 시장가나 지정가로 사 보세요.',
+        body: '손절·익절은 산 뒤에 예약을 걸어야 겪을 수 있습니다.',
         tone: 'calm',
       }
     case 'HOLDING_NO_PLAN':
       return {
         title: '지금 예약을 걸어야 손절·익절을 겪습니다',
-        body:
-          '샀지만 아직 팔 기준선이 없습니다. 값이 아무리 떨어지거나 올라도 저절로 정리되지 않아요. ' +
-          '아래 "예약 매도"에서 손절·익절 비율을 정해 걸어 주세요.' +
-          (remaining === null ? '' : ` ${remaining}`),
+        body: '아직 팔 기준선이 없어서, 값이 아무리 움직여도 저절로 정리되지 않아요.',
         tone: 'urgent',
       }
     case 'HOLDING_PLAN_SPENT':
       return {
         title: '이 진입에는 예약을 다시 걸 수 없습니다',
-        body:
-          '예약은 한 번 산 것에 한 번만 걸 수 있어요(취소한 예약도 그 한 번으로 칩니다). 지금 가진 것을 ' +
-          '직접 팔고 다시 사면, 새로 예약을 걸어 손절·익절을 겪어 볼 수 있습니다.' +
-          (remaining === null ? '' : ` ${remaining}`),
+        body: '지금 가진 것을 팔고 다시 사면 새로 걸 수 있습니다.',
         tone: 'calm',
       }
     case 'PLAN_PENDING':
       return {
         title: '예약을 걸었습니다. 이제 기다립니다.',
-        body:
-          plan === null
-            ? '값이 손절선에 먼저 닿으면 더 잃지 않도록, 익절선에 먼저 닿으면 이익을 챙기고 자동으로 정리됩니다.'
-            : `값이 손절선 ${formatKRW(plan.stopLossPrice)}에 먼저 닿으면 더 잃지 않도록 자동으로 정리되고, ` +
-              `익절선 ${formatKRW(plan.takeProfitPrice)}에 먼저 닿으면 이익을 챙기고 정리됩니다. ` +
-              '옆 차트의 점선 두 개가 그 선이에요.',
+        body: '옆 차트의 점선 두 개 중 먼저 닿는 쪽으로 자동으로 팔립니다.',
         tone: 'calm',
       }
     case 'SOLD_WITHOUT_EXPERIENCE':
       return {
-        title: '직접 팔아서 정리했습니다. 손절·익절은 아직 겪지 않았어요.',
-        body: '다시 사서 예약 매도를 걸어 두면, 값이 선에 닿는 순간 자동으로 정리되는 것을 겪어 볼 수 있습니다.',
+        title: '직접 팔아서 정리했습니다',
+        body: '다시 사서 예약을 걸어야 손절·익절을 겪어 볼 수 있습니다.',
         tone: 'calm',
       }
     case 'STOP_LOSS_ONLY':
       return {
-        title: '손절을 겪었습니다. 이제 익절을 겪어 볼 차례입니다.',
-        body: '다시 사서 예약을 걸면 이번엔 값이 올라 익절선에 닿는 쪽을 볼 수 있습니다. 여기서 그만두고 되돌아보기로 마무리해도 괜찮습니다.',
+        title: '손절을 겪었습니다',
+        body: remaining ?? '다시 사서 예약을 걸면 익절선에 닿는 쪽을 볼 수 있습니다.',
         tone: 'urgent',
       }
     case 'TAKE_PROFIT_ONLY':
       return {
-        title: '익절을 겪었습니다. 이제 손절을 겪어 볼 차례입니다.',
-        body: '다시 사서 예약을 걸면 값이 떨어져 손절선에 닿는 쪽을 볼 수 있습니다. 여기서 그만두고 되돌아보기로 마무리해도 괜찮습니다.',
+        title: '익절을 겪었습니다',
+        body: remaining ?? '다시 사서 예약을 걸면 손절선에 닿는 쪽을 볼 수 있습니다.',
         tone: 'urgent',
       }
     case 'BOTH':
       return {
-        title: '손절과 익절을 모두 겪었습니다.',
-        body: '이 연습에서 가장 중요한 두 가지를 다 겪었습니다. 되돌아보기에 한 줄 남기고 마무리해도 좋고, 더 해 봐도 좋습니다.',
+        title: '손절과 익절을 다 겪었습니다',
+        // 예전 문구는 "되돌아보기로 마무리해도 괜찮습니다"였는데, 그 안내를 따라간 사용자가 잠긴 탭을
+        // 만났다. 이제 이 자리에 실제로 누를 버튼이 있으므로 그 버튼을 가리킨다.
+        body: "아래 '지금 마무리하기'를 누르면 끝납니다.",
         tone: 'done',
       }
   }
@@ -156,6 +141,11 @@ interface Props extends ExitJourneyInput {
   cancelledOnce: boolean
   /** "예약 매도" 탭을 여는 경로. 지금 열 수 없는 상태면 null을 준다(버튼을 그리지 않는다). */
   onOpenReservation: (() => void) | null
+  /**
+   * 되돌아보기를 여는 경로. **두 목표를 다 겪은 국면(`BOTH`)에서만 쓴다** — 그 순간이 사용자가
+   * "이제 끝내도 된다"는 안내를 받는 유일한 자리인데, 예전에는 그 안내를 따라가도 누를 것이 없었다.
+   */
+  onFinish: () => void
 }
 
 export function ExitJourneyGuide({
@@ -166,10 +156,10 @@ export function ExitJourneyGuide({
   hasTraded,
   cancelledOnce,
   onOpenReservation,
+  onFinish,
 }: Props) {
   const phase = exitJourneyPhase({ holdingQuantity, plan, canReserve, experience, hasTraded })
-  const { title, body, tone } = phaseText(phase, plan, experience)
-  const stepIndex = currentStepIndex(phase)
+  const { title, body, tone } = phaseText(phase, experience)
   const toneClass =
     tone === 'urgent'
       ? 'border-loss/40 bg-loss/10'
@@ -179,25 +169,11 @@ export function ExitJourneyGuide({
 
   return (
     <section aria-label="손절·익절 학습 진행" className={`rounded-2xl border p-4 ${toneClass}`}>
-      <ol className="flex flex-wrap items-center gap-1.5 text-[11px]">
-        {JOURNEY_STEPS.map((label, index) => {
-          const current = stepIndex === index
-          return (
-            <li key={label} className="flex items-center gap-1.5">
-              <span
-                aria-current={current ? 'step' : undefined}
-                className={`rounded-full px-2 py-0.5 ${
-                  current ? 'bg-white/[0.12] font-medium text-ink' : 'text-muted'
-                }`}
-              >
-                {index + 1}. {label}
-              </span>
-              {index < JOURNEY_STEPS.length - 1 && <span className="text-muted/60">›</span>}
-            </li>
-          )
-        })}
-      </ol>
-      <p className="mt-2 text-sm font-medium text-ink">{title}</p>
+      {/*
+        자체 3칸("1. 사기 › 2. 예약 걸기 › 3. 기다리기")은 지웠다 — 이 화면에 있던 여섯 번째 번호
+        체계였고, 진행감은 상단의 목표 두 칸(`TutorialGoalRail`)이 전담한다.
+      */}
+      <p className="text-sm font-medium text-ink">{title}</p>
       <p className="mt-1 text-xs leading-relaxed text-muted">{body}</p>
       {/*
         `HOLDING_PLAN_SPENT`에는 붙이지 않는다 — 그 국면 본문이 이미 "취소한 예약도 그 한 번으로
@@ -208,33 +184,21 @@ export function ExitJourneyGuide({
           방금 예약을 취소했습니다. 지금 상태로는 값이 선에 닿아도 아무 일도 일어나지 않아요.
         </p>
       )}
-      {onOpenReservation !== null && (
-        <Button type="button" size="sm" className="mt-3" onClick={onOpenReservation}>
-          예약 매도 열기
-        </Button>
-      )}
       {/*
-        진행 표시 — 이번 실행에서 무엇을 겪었는지를 문구와 별개로 **계속** 보여준다. 문구는 상태가
-        바뀌면 사라지지만 이 두 칸은 남아서 "아직 익절은 못 겪었다"를 언제든 확인시켜 준다.
+        겪은 것을 세는 두 칸은 이제 화면 맨 위(`TutorialGoalRail`)에 있다 — 여기 묻어 두면 스크롤해야
+        보여서, 끝나는 조건이 화면에서 가장 늦게 읽혔다.
       */}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="이번 연습에서 겪은 것">
-        {(
-          [
-            ['손절 겪기', experience.stopLoss],
-            ['익절 겪기', experience.takeProfit],
-          ] as const
-        ).map(([label, done]) => (
-          <span
-            key={label}
-            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-              done ? 'border-gain/40 bg-gain/10 text-gain' : 'border-line bg-elevated text-muted'
-            }`}
-          >
-            {done ? '✓ ' : ''}
-            {label}
-          </span>
-        ))}
-      </div>
+      {phase === 'BOTH' ? (
+        <Button type="button" size="sm" className="mt-3" onClick={onFinish}>
+          지금 마무리하기
+        </Button>
+      ) : (
+        onOpenReservation !== null && (
+          <Button type="button" size="sm" className="mt-3" onClick={onOpenReservation}>
+            손절·익절 예약 열기
+          </Button>
+        )
+      )}
     </section>
   )
 }
