@@ -1,6 +1,7 @@
-// 게시글 본문에서 첫 URL을 찾아 도메인 미리보기 카드에 쓸 정보로 뽑아낸다
+// 게시글 본문에서 URL을 찾아 도메인 미리보기 카드나 하이퍼링크로 쓸 정보로 뽑아낸다
 // 한글은 공백 없이 URL 뒤에 바로 붙는 경우가 흔해(예: "https://example.com입니다") URL 문자 집합에서 제외한다.
-const URL_PATTERN = /https?:\/\/[^\s<>"'`ᄀ-ᇿ぀-ヿ㄰-㆏가-힣]+/
+const URL_PATTERN_SOURCE = 'https?://[^\\s<>"\'`ᄀ-ᇿ぀-ヿ㄰-㆏가-힣]+'
+const URL_PATTERN = new RegExp(URL_PATTERN_SOURCE)
 // 문장 부호로 감싸거나 마침표로 끝맺은 링크("(https://example.com)", "https://example.com.")에서
 // URL 이 아닌 꼬리 문자를 뗀다.
 const TRAILING_PUNCTUATION = /[)\]}>.,!?;:'"]+$/
@@ -23,4 +24,36 @@ export function extractLinkPreview(content: string): LinkPreview | null {
   } catch {
     return null
   }
+}
+
+/** 하이퍼링크로 그릴 조각(url 있음)과 그냥 텍스트로 그릴 조각(url 없음)이 섞인 배열. */
+export interface LinkifiedPart {
+  text: string
+  url?: string
+}
+
+/** content 를 순서대로 훑어 URL 부분과 나머지 텍스트 부분으로 나눈다. URL이 없으면 전체가 텍스트 한 조각이다. */
+export function linkifyContent(content: string): LinkifiedPart[] {
+  const parts: LinkifiedPart[] = []
+  let lastIndex = 0
+  for (const match of content.matchAll(new RegExp(URL_PATTERN_SOURCE, 'g'))) {
+    const start = match.index
+    const raw = match[0]
+    const trimmed = raw.replace(TRAILING_PUNCTUATION, '')
+    if (!trimmed) continue
+
+    let href: string | null = null
+    try {
+      href = new URL(trimmed).href
+    } catch {
+      href = null
+    }
+    if (!href) continue
+
+    if (start > lastIndex) parts.push({ text: content.slice(lastIndex, start) })
+    parts.push({ text: trimmed, url: href })
+    lastIndex = start + trimmed.length
+  }
+  if (lastIndex < content.length) parts.push({ text: content.slice(lastIndex) })
+  return parts.length > 0 ? parts : [{ text: content }]
 }

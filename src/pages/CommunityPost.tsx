@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { AttachedImage } from '../components/community/AttachedImage'
 import { TradeShareCard } from '../components/community/TradeShareCard'
 import { LikeButton } from '../components/community/LikeButton'
+import { LinkifiedText } from '../components/community/LinkifiedText'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -499,9 +500,10 @@ export function CommunityPost() {
                 )}
               </p>
 
-              <p className="mt-7 whitespace-pre-wrap text-[15px] leading-relaxed text-ink/90">
-                {post.content}
-              </p>
+              <LinkifiedText
+                text={post.content}
+                className="mt-7 whitespace-pre-wrap text-[15px] leading-relaxed text-ink/90"
+              />
 
               {/* 매매 카드와 사진은 한 게시물에 동시에 붙지 않는다(서로 배타적). */}
               {post.sharedTrade !== null ? (
