@@ -112,9 +112,14 @@ function EntryCard({ entry }: { entry: PracticeEntryResponse }) {
           </div>
           {/*
             대본을 쓰지 않는 실행은 서버가 이 값을 주지 않는다(priceAfterSell이 null이라 계산 자체가 없다).
-            그때는 칸을 통째로 뺀다 — 빈 칸을 남기면 "0원"이나 "계산 중"으로 읽힌다.
+            그때는 칸을 통째로 뺀다 — 빈 칸을 남기면 "0원"이나 "계산 중"으로 읽힌다. **2단계(ORDER_BASICS)
+            진입도 값이 와도 뺀다** — "안 팔았다면"은 손절·익절을 지켰어야 했다는 3단계 교훈용 비교이고,
+            2단계는 자동 청산 자체가 없어(049 ORDERBASICS-022) 이 비교가 가리키는 교훈이 성립하지 않는다.
+            그냥 사고파는 연습 한 번에 이 카드가 붙으면 "왜 여기서 손실 얘기가 나오지"로 헷갈린다
+            (2026-08-21 피드백).
           */}
-          {entry.unrealizedPnlIfHeld !== null && (
+          {entry.unrealizedPnlIfHeld !== null &&
+            entry.scenarioScriptId !== 'CRYPTO_ORDER_BASICS_V1' && (
             <div className="rounded-xl border border-dashed border-line px-3 py-2.5">
               <p className="text-[11px] text-muted">안 팔았다면</p>
               <p className={`mt-0.5 tabular text-lg font-semibold ${pnlTone(entry.unrealizedPnlIfHeld)}`}>

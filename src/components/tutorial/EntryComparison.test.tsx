@@ -84,6 +84,20 @@ describe('EntryComparison', () => {
     expect(screen.getByText('-15,860원')).toBeInTheDocument()
   })
 
+  it('2단계(ORDER_BASICS) 진입은 서버가 값을 줘도 "안 팔았다면" 칸을 뺀다', () => {
+    // 2단계는 자동 청산 자체가 없어(049 ORDERBASICS-022) 손절·익절을 안 지켰다는 비교가 성립하지
+    // 않는다 — 값이 와도 3단계 전용 교훈이라 보여주지 않는다(2026-08-21 피드백).
+    render(
+      <EntryComparison
+        layout="narrow"
+        entries={[entry({ scenarioScriptId: 'CRYPTO_ORDER_BASICS_V1', unrealizedPnlIfHeld: 38_200 })]}
+      />,
+    )
+
+    expect(screen.queryByText('안 팔았다면')).not.toBeInTheDocument()
+    expect(screen.getByText('실제 손익')).toBeInTheDocument()
+  })
+
   it('아직 팔지 않은 진입은 손익 대신 보유 중임을 말한다', () => {
     render(
       <EntryComparison

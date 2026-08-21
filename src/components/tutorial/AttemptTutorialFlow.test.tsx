@@ -558,6 +558,36 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText('350,000원')).toBeInTheDocument()
   })
 
+  it('금액을 입력하면 실전 화면(pages/Trade.tsx)과 같은 실제 매수 금액·수수료를 숫자로 보여준다', async () => {
+    // 100,000원 × 1.0005(수수료) = 100,050원이 1단위 비용이다 — 1,000,500원을 넣으면 수수료까지
+    // 딱 나눠떨어져 수량이 정수(10개)가 되고, 실제 매수 금액도 딱 떨어진 숫자(1,000,000원)가 된다.
+    vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+      ...chart,
+      candles: [{ date: '2026-08-14', open: 100000, high: 100000, low: 100000, close: 100000, current: true }],
+    })
+    renderFlow(attempt({ riskSnapshot: null, tutorialAvailableCash: 2_000_000 }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    fireEvent.change(screen.getByLabelText('주문 금액'), { target: { value: '1000500' } })
+
+    expect(screen.getByText('실제 매수 금액 (수수료 제외)')).toBeInTheDocument()
+    expect(screen.getByText('1,000,000원')).toBeInTheDocument()
+    expect(screen.getByText('수수료 (0.05%)')).toBeInTheDocument()
+    expect(screen.getByText('500원')).toBeInTheDocument()
+    expect(
+      screen.getByText(/입력한 1,000,500원 중 수수료를 뺀 1,000,000원만큼만 실제/),
+    ).toBeInTheDocument()
+  })
+
+  it('금액을 비우면 실제 매수 금액·수수료 박스를 렌더하지 않는다', async () => {
+    renderFlow(attempt({ riskSnapshot: null, tutorialAvailableCash: 2_000_000 }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.queryByText('실제 매수 금액 (수수료 제외)')).not.toBeInTheDocument()
+  })
+
   it('퍼센트 버튼을 누르면 가진 돈의 그 비율만큼 주문 금액을 채운다', async () => {
     renderFlow(attempt({ riskSnapshot: null, tutorialAvailableCash: 200_000 }), progress())
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
@@ -834,7 +864,29 @@ describe('AttemptTutorialFlow', () => {
       ).not.toBeInTheDocument()
     })
 
-    it('2단계에서는 프리셋 선택을 비활성으로 두고 다음 단계에서 다룬다고 알려준다', async () => {
+    it('시장가 왕복을 마쳤는데 지정가가 아직이면 시장가 토글을 잠그고 지정가 차례임을 알려준다', async () => {
+      // 자유 토글로 두면 시장가만 반복하고 지정가를 건너뛴 채 "다 했다"고 착각하기 쉽다(피드백).
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: false,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.getByRole('button', { name: '시장가' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: '지정가' })).toBeEnabled()
+      expect(
+        screen.getByText('시장가는 다 해 봤습니다. 이번엔 지정가로 사고팔아 볼 차례입니다.'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('지금 할 일 · 지정가로 사고팔아 보기')).toBeInTheDocument()
+    })
+
+    it('두 왕복을 모두 마치면 시장가·지정가 토글이 다시 둘 다 풀린다', async () => {
       vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
       renderFlow(
         attempt({ riskSnapshot: null }),
@@ -847,11 +899,120 @@ describe('AttemptTutorialFlow', () => {
       await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
       await flushPromises()
 
-      // 왕복을 다 마쳤어도 2단계 자체에서는 여전히 잠긴다 — 프리셋은 3단계 몫이다.
-      expect(screen.getByRole('button', { name: /보통.*-3%.*\+5%/s })).toBeDisabled()
+      expect(screen.getByRole('button', { name: '시장가' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: '지정가' })).toBeEnabled()
+      expect(screen.queryByText(/지금 할 일 ·/)).not.toBeInTheDocument()
+    })
+
+    it('"지금 할 일" 팝업은 그 차례에 한 번 뜨고, 닫으면 같은 차례 동안 다시 뜨지 않다가 다음 차례엔 다시 뜬다', async () => {
+      // 2026-08-21 피드백 — 상시 카드로 두면 진행 로드맵·체크리스트·주문 폼과 겹쳐 헷갈린다,
+      // 그 차례에 들어선 순간 한 번만 큰 팝업으로 띄우고 없애자.
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      const view = renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: false,
+          limitBuySellCompleted: false,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      const marketDialog = await screen.findByRole('dialog')
       expect(
-        screen.getByText(/이 단계는 주문 방법을 배우는 자리라 손절·익절은 다음 단계에서 다룹니다/),
+        within(marketDialog).getByRole('heading', { name: '지금 할 일 · 시장가로 사고팔아 보기' }),
       ).toBeInTheDocument()
+
+      fireEvent.click(within(marketDialog).getByRole('button', { name: '확인했어요' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      // 같은 차례(시장가 미완료)로 다시 렌더해도 이미 닫았으니 다시 뜨지 않는다.
+      view.rerender(
+        <MemoryRouter>
+          <AttemptTutorialFlow
+            market="CRYPTO"
+            attempt={attempt({ riskSnapshot: null })}
+            progress={progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+              marketBuySellCompleted: false,
+              limitBuySellCompleted: false,
+              exitPresetSelected: false,
+            })}
+            onAttemptChange={vi.fn()}
+            onRefresh={vi.fn().mockResolvedValue(undefined)}
+          />
+        </MemoryRouter>,
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      // 시장가 왕복이 끝나 지정가 차례로 바뀌면 새 차례라 다시 뜬다.
+      view.rerender(
+        <MemoryRouter>
+          <AttemptTutorialFlow
+            market="CRYPTO"
+            attempt={attempt({ riskSnapshot: null })}
+            progress={progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+              marketBuySellCompleted: true,
+              limitBuySellCompleted: false,
+              exitPresetSelected: false,
+            })}
+            onAttemptChange={vi.fn()}
+            onRefresh={vi.fn().mockResolvedValue(undefined)}
+          />
+        </MemoryRouter>,
+      )
+      const limitDialog = await screen.findByRole('dialog')
+      expect(
+        within(limitDialog).getByRole('heading', { name: '지금 할 일 · 지정가로 사고팔아 보기' }),
+      ).toBeInTheDocument()
+    })
+
+    it('2단계에서는 손절·익절 설명·프리셋 고르기 카드를 아예 그리지 않는다', async () => {
+      // 자동 청산 예약 자체가 백엔드에서 2단계엔 안 만들어진다(049 ORDERBASICS-022) — "값이 선에
+      // 닿으면 자동으로 팔립니다" 문구를 disabled로만 남겨 두면 사실과 다른 문장이 계속 보이고,
+      // "우리는 그냥 사고팔아 보는 거 아니었냐"는 혼란도 남는다(2026-08-21 피드백). 카드 자체를 뺀다.
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue(orderBasicsChart())
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.queryByRole('button', { name: /보통.*-3%.*\+5%/s })).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(/사는 순간의 값을 기준으로 팔 기준선 두 개/),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(/이 단계는 주문 방법을 배우는 자리라 손절·익절은 다음 단계에서 다룹니다/),
+      ).not.toBeInTheDocument()
+    })
+
+    it('3단계(스토리)로 넘어가면 손절·익절 설명·프리셋 고르기 카드가 다시 보인다', async () => {
+      vi.mocked(getPracticeAttemptChart).mockResolvedValue({
+        ...chart,
+        scenarioStage: 'ACT1',
+        scenarioProgressing: true,
+        causeStatus: 'NONE_KNOWN',
+        priceGuideRange: null,
+      })
+      renderFlow(
+        attempt({ riskSnapshot: null }),
+        progress(evidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, {
+          marketBuySellCompleted: true,
+          limitBuySellCompleted: true,
+          exitPresetSelected: false,
+        }),
+      )
+      await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+      await flushPromises()
+
+      expect(screen.getByRole('button', { name: /보통.*-3%.*\+5%/s })).toBeInTheDocument()
+      expect(screen.getByText(/사는 순간의 값을 기준으로 팔 기준선 두 개/)).toBeInTheDocument()
     })
 
     it('시장가·지정가 왕복을 모두 마치면 "3단계로 가기" 버튼이 뜬다', async () => {
@@ -1312,6 +1473,49 @@ describe('AttemptTutorialFlow', () => {
     ).toBeInTheDocument()
   })
 
+  it('진행 중인 실행의 되돌아보기는 좁은 탭이 아니라 큰 모달로 뜨고, ESC로 닫으면 주문 탭으로 돌아간다', async () => {
+    // 2026-08-21 피드백 — 옆 사이드 패널 탭은 가독성이 떨어진다, 큰 화면으로 띄우고 ESC로 나가게 해 달라.
+    const sold = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(sold))
+    await flushPromises()
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '되돌아보기' })).toBeInTheDocument()
+    expect(
+      within(dialog).getByLabelText('오늘 왜 그렇게 사고팔았는지 한 줄로 적어 주세요.'),
+    ).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '되돌아보기' })).toHaveAttribute('aria-pressed', 'false')
+
+    // 닫았다고 다시 볼 방법이 없어지면 안 된다 — 탭을 다시 누르면 모달이 다시 열린다.
+    fireEvent.click(screen.getByRole('button', { name: '되돌아보기' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('진행 중인 실행의 되돌아보기 모달은 X 버튼이나 바깥 클릭으로도 닫힌다', async () => {
+    const sold = evidence({
+      buyTradeId: 31, holdingId: 41, observationId: 51, buyQuantity: 2, sellQuantity: 2, remainingQuantity: 0,
+    })
+    renderFlow(attempt({ riskSnapshot: risk }), progress(sold))
+    await flushPromises()
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '되돌아보기' }))
+    const reopened = await screen.findByRole('dialog')
+    // 카드 자체를 눌러서는 안 닫힌다 — 카드를 감싼 어두운 배경(부모 엘리먼트)을 직접 눌러야 닫힌다.
+    fireEvent.click(reopened)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    fireEvent.click(reopened.parentElement as HTMLElement)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('지금 보유 중이면 대본이 안 끝났어도 "직전 진입이 정리됐다"는 재진입 안내를 보여주지 않는다 (실사용 재확인 중 발견)', async () => {
     // progress.entries에는 아직 안 판 진입(지금 보유 중인 것)도 함께 온다 — entries.length > 0만으로
     // "정리됐다"를 판단하면 지금 한창 보유 중일 때도 재진입 안내가 잘못 뜬다.
@@ -1437,8 +1641,8 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByRole('button', { name: '되돌아보기' })).toBeDisabled()
     expect(screen.getByText('직전 진입이 정리됐습니다. 다시 살 수 있어요.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
-    // "몇 단계인가"도 다시 2(구매하기)로 돌아가야 한다 — 4(판매하고 돌아보기)에 멈춰 있으면 안 된다.
-    expect(screen.getByText(/2단계 · 구매하기/)).toBeInTheDocument()
+    // "몇 단계인가"도 다시 2(사고팔아보기)로 돌아가야 한다 — 4(되돌아보기)에 멈춰 있으면 안 된다.
+    expect(screen.getByText(/2단계 · 사고팔아보기/)).toBeInTheDocument()
   })
 
   it('대본이 FINISHED에 닿은 뒤의 전량 매도는 진짜 끝이라 되돌아보기로 넘긴다', async () => {
@@ -1560,15 +1764,22 @@ describe('AttemptTutorialFlow', () => {
     renderFlow(attempt({ riskSnapshot: risk }), progress(reflectionReadyEvidence(), 'COMPLETED', 'COMPLETED'))
     await flushPromises()
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // 복기 입력 자체가 이제 모달(되돌아보기, eyebrow "실습 기록")로 뜬다 — role("dialog")만으로는
+    // 이 모달과 아래에서 확인할 축하 모달("실습 완료")을 구분할 수 없어 문구로 특정한다.
+    expect(screen.queryByText('실습 완료')).not.toBeInTheDocument()
     await saveReflection()
 
+    // rewardGranted가 true가 되는 순간 되돌아보기 모달은 닫히고 축하 모달만 남는다(둘이 겹치면
+    // role("dialog")가 두 개가 된다) — 그래서 findByRole('dialog')로 유일하게 잡힌다.
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText('코인 시장의 실습을 완료했습니다')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '실전 거래 시작하기' })).toHaveAttribute('href', '/trade')
 
     fireEvent.click(screen.getByRole('button', { name: '닫기' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // 축하 모달을 닫으면 되돌아보기 모달로 돌아간다 — CompletionCelebration 자체 주석대로("닫으면
+    // 되돌아보기 탭이 보이므로") 원래도 그 자리로 돌아가는 게 의도였고, 그 자리가 이제 모달이다.
+    expect(screen.queryByText('실습 완료')).not.toBeInTheDocument()
+    expect(screen.getByText('실습 기록')).toBeInTheDocument()
 
     // 백엔드 이슈 #432 — 복기 질문 문구는 서버 응답(`prompt`)이 아니라 클라이언트가 소유한다.
     // 저장된 답변 위에 그 문구가 실제로 그려지는지 고정한다(예전에는 렌더 결과를 단언하지 않아,
@@ -1593,7 +1804,8 @@ describe('AttemptTutorialFlow', () => {
 
     await saveReflection()
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // 되돌아보기 모달(복기 입력)은 여전히 떠 있어도 된다 — 뜨면 안 되는 건 축하 모달뿐이다.
+    expect(screen.queryByText('실습 완료')).not.toBeInTheDocument()
   })
 
   it('이미 완료된 화면에 새로 들어오면 축하 모달이 뜨지 않는다', async () => {
@@ -1697,8 +1909,8 @@ describe('AttemptTutorialFlow', () => {
     renderFlow(attempt({ riskSnapshot: null }), progress())
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
 
-    // 코인은 모의투자 화면과 같이 금액으로 산다 — 제목·입력 라벨이 함께 "얼마어치"여야 한다.
-    expect(screen.getByRole('heading', { name: '2. 얼마어치 구매할지 정합니다 (매수)' })).toBeInTheDocument()
+    // 코인은 모의투자 화면과 같이 금액으로 산다 — 제목이 "원하는 금액만큼"이어야 한다.
+    expect(screen.getByRole('heading', { name: '2. 원하는 금액만큼 구매합니다 (매수)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
     expect(screen.getByText('주문 금액')).toBeInTheDocument()
     // 모든 문장에 (매수)를 달면 읽기가 나빠진다 — 단계마다 처음 나오는 한 곳에만 병기한다.

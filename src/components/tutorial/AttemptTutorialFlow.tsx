@@ -1,10 +1,11 @@
 // 영속 attempt를 정본으로 종목 선택부터 완료 replay까지 단일 차트 실습 흐름을 제공하는 컴포넌트
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { CandleChart } from '../CandleChart'
 import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { Close } from '../ui/icons'
 import { CandleGuide } from './CandleGuide'
 import { CompletionCelebration, completionTitle, rewardSentenceParts } from './CompletionCelebration'
 import { EntryComparison, PRESET_LABEL } from './EntryComparison'
@@ -17,7 +18,7 @@ import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { formatDateTime, parseLocalDateTime, ratioToPercent } from '../../lib/datetime'
 import { isApiErrorCode, toUserMessage } from '../../lib/errorMessages'
 import { formatKRW, formatPercent, formatSignedKRW } from '../../lib/format'
-import { CRYPTO_QTY_DECIMALS, presetQuantity } from '../../lib/quantity'
+import { CRYPTO_QTY_DECIMALS, FEE_RATE, presetQuantity } from '../../lib/quantity'
 import { bumpTutorial } from '../../lib/tutorialPulse'
 import { ensureInstrumentCache, getCachedInstrument, loadInstruments } from '../../services/instrumentService'
 import {
@@ -93,7 +94,7 @@ interface FlowError {
 const chartSummaryId = 'tutorial-chart-summary'
 
 /** 이 화면이 사용자에게 약속하는 4단계. 서버 chain의 단계 번호와는 별개다(아래 uiStep 주석 참고). */
-const STEP_TITLES = ['고르기', '구매하기', '지켜보기', '판매하고 돌아보기'] as const
+const STEP_TITLES = ['종목 고르기', '사고팔아보기', '지켜보기', '되돌아보기'] as const
 
 const SELL_VERDICT_TEXT: Record<PracticeSellVerdict, string> = {
   ABOVE_TAKE_PROFIT: '익절선 위에서 파셨습니다.',
@@ -126,7 +127,7 @@ function tourQuantity(market: Market): SpotlightStep {
   return market === 'CRYPTO'
     ? {
         target: 'quantity',
-        title: '얼마어치 구매할지 정합니다',
+        title: '원하는 금액만큼 구매합니다',
         body: '바로 아래에 몇 개를 사게 되는지 나옵니다. 연습용 가짜 돈입니다.',
       }
     : {
@@ -313,20 +314,35 @@ function ErrorNote({ error, scope }: { error: FlowError | null; scope: ErrorScop
   return <p className="mt-3 text-sm text-loss">{error.message}</p>
 }
 
+/**
+ * 현재 단계만 글로 보여주면 남은 단계가 몇 개인지, 뭘 더 해야 끝인지 알 수 없다 — "어디까지
+ * 테스트해야 하는지 모르겠다"는 피드백(2026-08-21)으로 4단계 전체를 항상 한 줄에 함께 적는다.
+ * 지나간 단계는 옅게, 지금 단계는 굵게 남긴다.
+ */
 function StepRail({ current, tone }: { current: number; tone: string }) {
   return (
-    <div className="flex items-center gap-3">
-      <p className="text-xs font-medium text-ink">
-        4단계 중 {current}단계 · {STEP_TITLES[current - 1]}
-      </p>
-      <div className="flex gap-1" aria-hidden="true">
-        {STEP_TITLES.map((title, index) => (
-          <span
-            key={title}
-            className={`h-1.5 w-7 rounded-full ${index < current ? tone : 'bg-white/[0.08]'}`}
-          />
-        ))}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-3">
+        <p className="text-xs font-medium text-ink">
+          4단계 중 {current}단계 · {STEP_TITLES[current - 1]}
+        </p>
+        <div className="flex gap-1" aria-hidden="true">
+          {STEP_TITLES.map((title, index) => (
+            <span
+              key={title}
+              className={`h-1.5 w-7 rounded-full ${index < current ? tone : 'bg-white/[0.08]'}`}
+            />
+          ))}
+        </div>
       </div>
+      <p className="text-[11px] leading-relaxed text-muted">
+        {STEP_TITLES.map((title, index) => (
+          <span key={title} className={index + 1 === current ? 'font-medium text-ink' : undefined}>
+            {index > 0 ? ' · ' : ''}
+            {index + 1}. {title}
+          </span>
+        ))}
+      </p>
     </div>
   )
 }
@@ -403,6 +419,94 @@ function SaleCountdown({ remainingMs }: { remainingMs: number }) {
       <span className="tabular font-medium">{formatMmSs(remainingMs)}</span> 안에 파는 연습입니다.
       {urgent ? ' 이제 파는 게 좋습니다.' : ' 시간이 끝나면 이번 연습은 여기서 멈춥니다.'}
     </div>
+  )
+}
+
+/**
+ * 되돌아보기(진행 중 실행의 손익·복기 입력)를 좁은 사이드 패널 탭 대신 큰 화면으로 띄운다
+ * (2026-08-21 피드백 — "옆에만 뜨네ㅠㅠ", 가독성이 떨어진다). 완료 축하 모달(CompletionCelebration)과
+ * 같은 틀(어두운 배경·중앙 카드·ESC·바깥 클릭으로 닫기)을 그대로 따라 한 화면 안에서 낯설지 않다.
+ * replay(완료 기록 다시 보기)는 대상이 아니다 — 그쪽은 "결과 다시 보기" 버튼으로 여는
+ * CompletionCelebration이 이미 같은 역할을 한다.
+ */
+/**
+ * 튜토리얼 안에서 쓰는 모달 두 종류(되돌아보기·단계 안내 팝업)가 같은 틀을 쓴다 — 완료 축하 모달
+ * (CompletionCelebration)과도 같은 틀이다(어두운 배경·중앙 카드·ESC·바깥 클릭·X로 닫기).
+ */
+function TutorialModal({
+  eyebrow,
+  title,
+  onClose,
+  maxWidthClassName = 'max-w-lg',
+  children,
+}: {
+  eyebrow: string
+  title: string
+  onClose: () => void
+  maxWidthClassName?: string
+  children: ReactNode
+}) {
+  const titleId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialogRef.current?.focus({ preventScroll: true })
+    return () => previous?.focus({ preventScroll: true })
+  }, [])
+
+  return (
+    <div
+      // CompletionCelebration(z-[70])보다는 아래, ConfirmDialog(z-[60])·SpotlightTour(z-50)보다는 위다 —
+      // 셋 다 동시에 열릴 일은 없지만(완료 순간엔 다른 모달을 안 연다), 순서는 맞춰 둔다.
+      className="fixed inset-0 z-[65] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={`w-full outline-none ${maxWidthClassName}`}
+      >
+        <Card innerClassName="p-6">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[11px] font-medium tracking-eyebrow text-muted">{eyebrow}</p>
+            <button
+              type="button"
+              aria-label="닫기"
+              onClick={onClose}
+              className="-mr-1 -mt-1 rounded-full p-2 text-muted transition hover:bg-white/[0.06] hover:text-ink"
+            >
+              <Close width={16} height={16} />
+            </button>
+          </div>
+          <h2 id={titleId} className="mt-3 text-lg font-semibold leading-snug text-ink">
+            {title}
+          </h2>
+          <div className="mt-4">{children}</div>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function ReviewResultModal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <TutorialModal eyebrow="실습 기록" title="되돌아보기" onClose={onClose}>
+      {children}
+    </TutorialModal>
   )
 }
 
@@ -1216,6 +1320,18 @@ export function AttemptTutorialFlow({
    */
   const limitOrderStageLocked = scenarioStage !== null && !progress.tutorialStageProgress.marketBuySellCompleted
   /**
+   * 시장가 토글 잠금 — 2단계(ORDER_BASICS)에서 시장가 왕복을 마쳤는데 지정가는 아직이면, 시장가를
+   * 계속 눌러도 되는 자유 토글로 두지 않는다. 자유롭게 두면 시장가만 반복하고 지정가는 건너뛴 채
+   * "다 했다"고 착각하기 쉽다(2026-08-21 피드백 — 실사용 중 시장가를 계속 누를 수 있어 지정가
+   * 차례라는 걸 못 알아챘다). **3단계(스토리)에서는 걸지 않는다** — marketBuySellCompleted가 이미
+   * 참이라 자연히 안 걸리지만, `scenarioStage === 'ORDER_BASICS'`로 한 번 더 범위를 못박는다. 서버
+   * 쪽 강제는 없다(시장가 재주문 자체는 막을 이유가 없다) — 화면 전용 안내다.
+   */
+  const marketOrderStageLocked =
+    scenarioStage === 'ORDER_BASICS' &&
+    progress.tutorialStageProgress.marketBuySellCompleted &&
+    !progress.tutorialStageProgress.limitBuySellCompleted
+  /**
    * 잠긴 상태에서 지정가가 이미 골라져 있으면 시장가로 되돌린다 — 재시작은 `tutorialStageProgress`
    * 세 값을 전부 되돌리므로, 재시작 전에 지정가를 골라 뒀던 사용자가 재시작 뒤 "잠긴 채 선택된"
    * 상태로 보이는 걸 막는다.
@@ -1226,6 +1342,30 @@ export function AttemptTutorialFlow({
   useEffect(() => {
     if (limitOrderStageLocked && sellOrderType === 'LIMIT') setSellOrderType('MARKET')
   }, [limitOrderStageLocked, sellOrderType])
+  /** 시장가 차례가 지나 지정가 차례가 되면, 골라 둔 게 시장가여도 지정가로 밀어 준다(위와 대칭). */
+  useEffect(() => {
+    if (marketOrderStageLocked && buyOrderType === 'MARKET') setBuyOrderType('LIMIT')
+  }, [marketOrderStageLocked, buyOrderType])
+  useEffect(() => {
+    if (marketOrderStageLocked && sellOrderType === 'MARKET') setSellOrderType('LIMIT')
+  }, [marketOrderStageLocked, sellOrderType])
+  /**
+   * 2단계(ORDER_BASICS)의 "지금 할 일" 안내는 상시 카드로 두지 않는다 — 화면에 계속 붙어 있으면
+   * 위 진행 로드맵(1~4단계)과 아래 체크리스트·주문 폼까지 겹쳐 "2단계 정보가 여러 곳에 흩어져
+   * 헷갈린다"는 반응이 나왔다(2026-08-21 피드백). 그래서 그 차례에 들어선 순간 큰 팝업으로 한 번만
+   * 띄우고, 닫으면 그 차례 동안은 다시 띄우지 않는다 — `dismissedGuideStep`이 "이 차례는 이미 봤다"를
+   * 기억한다. 다음 차례(시장가 → 지정가)로 넘어가면 `guideStep`이 바뀌어 다시 한 번 뜬다.
+   */
+  const guideStep: 'market' | 'limit' | null =
+    scenarioStage !== 'ORDER_BASICS' || market !== 'CRYPTO'
+      ? null
+      : !progress.tutorialStageProgress.marketBuySellCompleted
+        ? 'market'
+        : marketOrderStageLocked
+          ? 'limit'
+          : null
+  const [dismissedGuideStep, setDismissedGuideStep] = useState<'market' | 'limit' | null>(null)
+  const showGuidePopup = guideStep !== null && dismissedGuideStep !== guideStep
   /** 진행 조회의 사건 목록은 완료 후에도 남는다 — 차트가 없는 순간에도 결과 모달이 쓸 수 있다. */
   const revealedEvents =
     chart !== null && chart.revealedEvents.length > 0 ? chart.revealedEvents : progress.revealedEvents
@@ -1638,7 +1778,7 @@ export function AttemptTutorialFlow({
         'buy',
         market === 'STOCK'
           ? '주식은 1주 단위입니다. 1 이상의 정수로 적어 주세요.'
-          : '얼마어치 구매할지 적어 주세요.',
+          : '원하는 금액을 적어 주세요.',
       )
       return
     }
@@ -2169,26 +2309,40 @@ export function AttemptTutorialFlow({
       {orderSide === 'BUY' ? (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-ink">
-            {amountMode ? '2. 얼마어치 구매할지 정합니다 (매수)' : '2. 몇 개 구매할지 정합니다 (매수)'}
+            {amountMode ? '2. 원하는 금액만큼 구매합니다 (매수)' : '2. 몇 개 구매할지 정합니다 (매수)'}
           </h2>
           <CurrentPriceBox price={latestPrice} note="3초마다 새로 불러옵니다." />
-          <p className="text-xs leading-relaxed text-muted">
-            {/* "팔라고 알려주는 선"은 매수 후 카드(RiskEducationCard)와 같은 실수를 하고 있었다 —
-                실제로는 값이 이 선에 닿는 순간 자동으로 팔린다(2026-08-20 실사용 중 발견). */}
-            사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 값이 이 선에
-            닿으면 그 순간 자동으로 팔립니다 — 손절선은 더 잃지 않도록, 익절선은 이익을 챙기도록
-            정리해 줘요. 아래에서 그 폭을 고를 수 있습니다.
-          </p>
-          <ExitPresetPicker
-            options={attempt.availableExitPresets}
-            selected={attempt.selectedExitPreset}
-            holdingLocked={attempt.exitPresetLocked}
-            stageLocked={exitPresetStageLocked}
-            saving={presetSaving}
-            activeClassName={`${activeRowTone} ${activeRowText}`}
-            onSelect={(preset) => void handleSelectPreset(preset)}
-          />
-          <ErrorNote error={flowError} scope="preset" />
+          {/*
+            손절·익절 설명·프리셋 고르기는 3단계(스토리) 몫이다 — 2단계(ORDER_BASICS)는 백엔드가
+            자동 청산 예약 자체를 만들지 않는다(049 ORDERBASICS-022, `automaticExitPlanAllowed`).
+            그런데 이 문단은 "값이 선에 닿으면 자동으로 팔립니다"라고 단정한다 — 2단계에서는 사실이
+            아닌 문장이 된다. 기준선(snapshot)만 계산돼 있을 뿐 자동 청산은 3단계부터다. 예전엔
+            "비활성 + 이유"로 카드는 남기고 눌리지만 않게 했는데, 그래도 카드 자체가 "지금 이걸 정할
+            차례"처럼 보여 "우리는 그냥 사고팔아 보는 거 아니었냐"는 혼란을 낳았다(2026-08-21 피드백).
+            그래서 2단계에서는 카드 자체를 아예 안 그린다 — "지금 할 일" 팝업(아래 렌더 트리, guideStep)이
+            이 자리를 대신한다.
+          */}
+          {scenarioStage !== 'ORDER_BASICS' && (
+            <>
+              <p className="text-xs leading-relaxed text-muted">
+                {/* "팔라고 알려주는 선"은 매수 후 카드(RiskEducationCard)와 같은 실수를 하고 있었다 —
+                    실제로는 값이 이 선에 닿는 순간 자동으로 팔린다(2026-08-20 실사용 중 발견). */}
+                사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 값이 이 선에
+                닿으면 그 순간 자동으로 팔립니다 — 손절선은 더 잃지 않도록, 익절선은 이익을 챙기도록
+                정리해 줘요. 아래에서 그 폭을 고를 수 있습니다.
+              </p>
+              <ExitPresetPicker
+                options={attempt.availableExitPresets}
+                selected={attempt.selectedExitPreset}
+                holdingLocked={attempt.exitPresetLocked}
+                stageLocked={exitPresetStageLocked}
+                saving={presetSaving}
+                activeClassName={`${activeRowTone} ${activeRowText}`}
+                onSelect={(preset) => void handleSelectPreset(preset)}
+              />
+              <ErrorNote error={flowError} scope="preset" />
+            </>
+          )}
           {market === 'CRYPTO' && (
             <>
               <div
@@ -2200,7 +2354,10 @@ export function AttemptTutorialFlow({
                     key={type}
                     type="button"
                     aria-pressed={buyOrderType === type}
-                    disabled={type === 'LIMIT' && limitOrderStageLocked}
+                    disabled={
+                      (type === 'LIMIT' && limitOrderStageLocked) ||
+                      (type === 'MARKET' && marketOrderStageLocked)
+                    }
                     onClick={() => setBuyOrderType(type)}
                     className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-40 ${
                       buyOrderType === type
@@ -2215,6 +2372,10 @@ export function AttemptTutorialFlow({
               {limitOrderStageLocked ? (
                 <p className="text-xs leading-relaxed text-muted">
                   시장가로 먼저 한 번 사고팔아 본 뒤에 지정가를 쓸 수 있습니다.
+                </p>
+              ) : marketOrderStageLocked ? (
+                <p className="text-xs leading-relaxed text-muted">
+                  시장가는 다 해 봤습니다. 이번엔 지정가로 사고팔아 볼 차례입니다.
                 </p>
               ) : (
                 <p className="text-xs leading-relaxed text-muted">
@@ -2293,6 +2454,32 @@ export function AttemptTutorialFlow({
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
                 코인은 개수가 아니라 금액으로 삽니다. 실전 화면도 같은 방식이에요.
               </p>
+              {/* 실전 화면(pages/Trade.tsx)과 같은 수수료 안내 — 입력한 금액 그대로 코인이 사지는
+                  게 아니라 수수료만큼 빠진 나머지로 산다는 걸 숫자로 바로 보여준다. */}
+              {buyAmountNumber > 0 && buyUnitPrice !== null && buyQuantityNumber > 0 && (
+                <div className="mt-3 space-y-1.5 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-amber-200/80">실제 매수 금액 (수수료 제외)</span>
+                    <span className="font-medium text-ink tabular">
+                      {formatKRW(buyUnitPrice * buyQuantityNumber)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-amber-200/80">
+                      수수료 ({(FEE_RATE.CRYPTO * 100).toFixed(2)}%)
+                    </span>
+                    <span className="text-ink tabular">
+                      {formatKRW(buyUnitPrice * buyQuantityNumber * FEE_RATE.CRYPTO)}
+                    </span>
+                  </div>
+                  <p className="pt-1 text-xs leading-relaxed text-amber-200/70">
+                    입력한 {formatKRW(buyAmountNumber)} 중 수수료를 뺀{' '}
+                    {formatKRW(buyUnitPrice * buyQuantityNumber)}만큼만 실제{' '}
+                    {selectedInstrument?.symbol ?? '코인'} 매수에 쓰여요. 그래서 최소 주문금액에 딱
+                    맞춰 입력하면 수수료만큼 모자라 주문이 안 될 수 있어요.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div>
@@ -2415,7 +2602,10 @@ export function AttemptTutorialFlow({
                     key={type}
                     type="button"
                     aria-pressed={sellOrderType === type}
-                    disabled={type === 'LIMIT' && limitOrderStageLocked}
+                    disabled={
+                      (type === 'LIMIT' && limitOrderStageLocked) ||
+                      (type === 'MARKET' && marketOrderStageLocked)
+                    }
                     onClick={() => setSellOrderType(type)}
                     className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-400 ease-spring disabled:cursor-default disabled:opacity-40 ${
                       sellOrderType === type
@@ -2857,8 +3047,13 @@ export function AttemptTutorialFlow({
                 </p>
               ) : (
                 <div data-tour="chart" className="mt-3 flex flex-col">
-                  {/* 폭에서 나오는 21:9 비율로 높이가 정해진다 — 바닥값을 둬서 좁은 창에서도 안 접힌다. */}
-                  <div className="flex aspect-[21/9] min-h-[240px] flex-col">
+                  {/*
+                    폭에서 나오는 16:9 비율로 높이가 정해진다 — 바닥값을 둬서 좁은 창에서도 안 접힌다.
+                    예전엔 21:9(옆으로 납작)라 차트가 시각적으로 덜 부각돼 보인다는 피드백으로 16:9로
+                    올렸다(2026-08-21). 실전 화면(pages/Trade.tsx)도 같은 비율로 함께 올렸다 — 둘이
+                    다른 비율을 쓰면 튜토리얼에서 익힌 화면이 실전에서 낯설어진다.
+                  */}
+                  <div className="flex aspect-[16/9] min-h-[240px] flex-col">
                     <CandleChart
                       candles={candles}
                       interval="1d"
@@ -2959,8 +3154,48 @@ export function AttemptTutorialFlow({
                   )
                 })}
               </div>
-              <div className="p-5">{panelTab === 'review' ? reviewPanelBody : orderPanelBody}</div>
+              {/*
+                진행 중인 실행의 되돌아보기(복기 입력)는 이 좁은 탭이 아니라 아래 큰 모달로 연다 —
+                replay(완료 기록 다시 보기)만 예외로 이 자리에 그대로 남긴다("결과 다시 보기" 버튼이
+                이미 CompletionCelebration으로 그 모달을 연다).
+              */}
+              <div className="p-5">
+                {panelTab === 'review' && replay ? reviewPanelBody : orderPanelBody}
+              </div>
             </Card>
+
+            {/* celebrating이면 완료 축하 모달(z-[70])이 대신 뜬다 — 둘이 겹치면 role="dialog"가
+                두 개가 되어 스크린리더도 테스트도 어느 쪽을 봐야 할지 알 수 없다. */}
+            {panelTab === 'review' && !replay && !celebrating && (
+              <ReviewResultModal onClose={() => setPanelTab('order')}>{reviewPanelBody}</ReviewResultModal>
+            )}
+
+            {/*
+              2단계(ORDER_BASICS) "지금 할 일" 팝업 — 그 차례에 들어선 순간 한 번만 뜬다. 되돌아보기
+              모달·축하 모달과 동시에 뜰 일은 실질적으로 없지만(둘 다 ORDER_BASICS를 벗어난 뒤의
+              상태다), 혹시 겹쳐도 role="dialog"가 하나만 남도록 같은 조건으로 가린다.
+            */}
+            {showGuidePopup && panelTab === 'order' && !celebrating && (
+              <TutorialModal
+                eyebrow="2단계 · 주문 방법 연습"
+                title={guideStep === 'market' ? '지금 할 일 · 시장가로 사고팔아 보기' : '지금 할 일 · 지정가로 사고팔아 보기'}
+                onClose={() => setDismissedGuideStep(guideStep)}
+                maxWidthClassName="max-w-sm"
+              >
+                <p className="text-sm leading-relaxed text-muted">
+                  {guideStep === 'market'
+                    ? '아래에서 시장가로 한 번 사고, 한 번 팔아 보세요. 다 팔면 이 항목이 끝납니다.'
+                    : '시장가는 다 했습니다. 이번엔 지정가로 한 번 사고, 한 번 팔아 보세요.'}
+                </p>
+                <Button
+                  type="button"
+                  className="mt-4 w-full"
+                  onClick={() => setDismissedGuideStep(guideStep)}
+                >
+                  확인했어요
+                </Button>
+              </TutorialModal>
+            )}
 
             {/*
               예약이 대기 목록에서 사라졌을 때 그 사실을 남긴다. 카드가 조용히 없어지면 사용자는

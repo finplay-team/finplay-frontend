@@ -1072,15 +1072,17 @@ export function Trade() {
               </div>
 
               {/*
-                차트는 flex-1 min-h-0 로 남는 세로 공간을 전부 가져가고, aspect-[21/9] 로 가로세로
+                차트는 flex-1 min-h-0 로 남는 세로 공간을 전부 가져가고, aspect-[16/9] 로 가로세로
                 비율을 고정한다 — 바닥 높이(min-h) 없이 창을 줄이면 이 비율을 유지한 채 그대로
                 작아진다(스크롤 대신 축소, 2026-08-19 피드백). CandleChart 내부는 h-full(퍼센트
                 높이)이 아니라 flex-1(그로우 기반)로 자기 몫을 채운다 — min-height 로 세운 flex
                 아이템 여러 겹을 거치는 퍼센트 높이는 크롬이 "정의된 높이"로 인정하지 않아 0으로
                 무너지는 버그가 있었다(2026-08-19 피드백 후속 수정 2). 그 덕에 여기서 바닥 높이를
-                없애도 차트가 사라지지 않고 그냥 작아지기만 한다.
+                없애도 차트가 사라지지 않고 그냥 작아지기만 한다. 비율은 예전엔 21:9(옆으로 납작)였는데
+                차트가 덜 부각돼 보인다는 피드백으로 16:9로 올렸다(2026-08-21) — 튜토리얼 화면과 같은
+                비율을 맞췄다.
               */}
-              <div className="mt-2 flex aspect-[21/9] min-h-0 flex-1 flex-col">
+              <div className="mt-2 flex aspect-[16/9] min-h-0 flex-1 flex-col">
                 <CandleChart
                   candles={candles}
                   interval={interval}
