@@ -5,6 +5,16 @@ const URL_PATTERN = new RegExp(URL_PATTERN_SOURCE)
 // 문장 부호로 감싸거나 마침표로 끝맺은 링크("(https://example.com)", "https://example.com.")에서
 // URL 이 아닌 꼬리 문자를 뗀다.
 const TRAILING_PUNCTUATION = /[)\]}>.,!?;:'"]+$/
+// 구분 공백 없이 두 링크를 붙여 쓰면("https://a.comhttps://b.com") 위 문자 집합만으로는 잘라낼 수
+// 없어, 첫 글자 다음부터 또 다른 프로토콜이 나오는 지점에서 끊는다.
+const EMBEDDED_PROTOCOL = /https?:\/\//i
+
+/** raw 매치에서 꼬리 구두점과, 공백 없이 이어 붙은 다음 URL을 잘라낸 실제 URL 문자열. */
+function trimUrlMatch(raw: string): string {
+  const embeddedIndex = raw.slice(1).search(EMBEDDED_PROTOCOL)
+  const cut = embeddedIndex === -1 ? raw : raw.slice(0, embeddedIndex + 1)
+  return cut.replace(TRAILING_PUNCTUATION, '')
+}
 
 /** OG 메타데이터를 가져올 백엔드가 없어, 본문에 적힌 URL과 호스트명만으로 만드는 단순 미리보기. */
 export interface LinkPreview {
@@ -16,7 +26,7 @@ export interface LinkPreview {
 export function extractLinkPreview(content: string): LinkPreview | null {
   const match = content.match(URL_PATTERN)
   if (!match) return null
-  const trimmed = match[0].replace(TRAILING_PUNCTUATION, '')
+  const trimmed = trimUrlMatch(match[0])
   if (!trimmed) return null
   try {
     const url = new URL(trimmed)
@@ -39,7 +49,7 @@ export function linkifyContent(content: string): LinkifiedPart[] {
   for (const match of content.matchAll(new RegExp(URL_PATTERN_SOURCE, 'g'))) {
     const start = match.index
     const raw = match[0]
-    const trimmed = raw.replace(TRAILING_PUNCTUATION, '')
+    const trimmed = trimUrlMatch(raw)
     if (!trimmed) continue
 
     let href: string | null = null

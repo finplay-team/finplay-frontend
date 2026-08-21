@@ -35,6 +35,13 @@ describe('extractLinkPreview', () => {
       host: 'example.com',
     })
   })
+
+  it('공백 없이 붙은 두 URL은 앞 링크만 뽑아낸다', () => {
+    expect(extractLinkPreview('연속 https://a.comhttps://b.com 링크')).toEqual({
+      url: 'https://a.com/',
+      host: 'a.com',
+    })
+  })
 })
 
 describe('linkifyContent', () => {
@@ -63,6 +70,15 @@ describe('linkifyContent', () => {
       { text: 'https://a.com', url: 'https://a.com/' },
       { text: ' 그리고 ' },
       { text: 'https://b.com', url: 'https://b.com/' },
+    ])
+  })
+
+  /** 구분 공백 없이 두 링크를 붙여 쓰면 하나로 뭉쳐 뒤 URL의 host까지 삼킬 수 있어, 앞 링크만 잘라내고 나머지는 텍스트로 남긴다. */
+  it('공백 없이 붙은 두 URL은 앞 링크만 잘라내고 뒤는 일반 텍스트로 남긴다', () => {
+    expect(linkifyContent('연속 https://a.comhttps://b.com 링크')).toEqual([
+      { text: '연속 ' },
+      { text: 'https://a.com', url: 'https://a.com/' },
+      { text: 'https://b.com 링크' },
     ])
   })
 })
