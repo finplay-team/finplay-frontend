@@ -63,4 +63,16 @@ describe('LinkPreviewCard', () => {
 
     expect(openSpy).toHaveBeenCalledWith('https://example.com/post', '_blank', 'noopener,noreferrer')
   })
+
+  /** 실제 <a> 는 Space 로 활성화되지 않는다 — Space 는 페이지 스크롤용으로 남겨둬야 한다. */
+  it('Space 키는 링크를 열지 않는다', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const user = userEvent.setup()
+
+    render(<LinkPreviewCard content="https://example.com/post" />)
+    screen.getByRole('link').focus()
+    await user.keyboard(' ')
+
+    expect(openSpy).not.toHaveBeenCalled()
+  })
 })

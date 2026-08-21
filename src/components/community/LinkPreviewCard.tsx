@@ -43,8 +43,10 @@ export function LinkPreviewCard({
     e.stopPropagation()
     window.open(link.url, '_blank', 'noopener,noreferrer')
   }
+  // 실제 <a> 는 Enter 로만 활성화된다 — Space 까지 반응하면 스페이스바로 페이지를 스크롤하려는
+  // 키보드 사용자의 동작을 가로채게 된다.
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') openLink(e)
+    if (e.key === 'Enter') openLink(e)
   }
 
   return (
