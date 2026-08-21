@@ -72,15 +72,16 @@ export function phaseText(
       }
     case 'PLAN':
       if (stock) return { title: '사보기', todo: '몇 개 살지 정하고 사 보세요' }
+      // 국면 이름이 **왜 하필 지금인지**를 말한다 — 값이 움직인 뒤에는 같은 사람이 다른 숫자를 고른다.
       return {
-        title: '팔 기준을 미리 정하기',
+        title: '흔들리기 전에 팔 기준 정하기',
         todo: options.holding
-          ? '얼마나 내려가면 팔지, 올라가면 팔지 정해서 예약하세요'
-          : '다시 사고, 얼마나 내려가면 팔지·올라가면 팔지 정해서 예약하세요',
+          ? '얼마나 내려가면 팔지, 올라가면 팔지 지금 정하세요'
+          : '다시 사고, 얼마나 내려가면 팔지·올라가면 팔지 지금 정하세요',
       }
     case 'WATCH':
       if (stock) return { title: '팔아보기', todo: '값이 움직이는 걸 보다가 팔아 보세요' }
-      return { title: '정한 기준이 지켜지는지 지켜보기', todo: '선에 닿을 때까지 기다립니다' }
+      return { title: '규칙이 대신 파는 것 지켜보기', todo: '선에 닿을 때까지 기다립니다' }
     case 'REVIEW':
       return { title: '되돌아보기', todo: '왜 그렇게 했는지 한 줄 적기' }
   }

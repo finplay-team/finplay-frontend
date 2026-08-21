@@ -28,12 +28,16 @@ export function ExitRuleIntroModal({
   return (
     <TutorialModal
       eyebrow="손절·익절 예약"
-      title="이 선에 닿으면 자동으로 팔립니다"
+      title="이 선에 닿으면 규칙이 대신 팝니다"
       onClose={onClose}
       maxWidthClassName="max-w-md"
     >
+      {/*
+        **왜 지금 정하는가**가 이 한 줄의 일이다. 값이 움직이기 시작한 뒤에는 같은 사람이 같은 숫자를
+        다르게 고른다 — 아직 아무 일도 일어나지 않은 지금이 판단을 미리 끝내 둘 수 있는 유일한 때다.
+      */}
       <p className="text-sm leading-relaxed text-ink">
-        손절선은 더 잃지 않으려고, 익절선은 욕심내지 않으려고 미리 정해 둔 값이에요.
+        값이 움직이는 동안 판단하지 않으려고, 아무 일도 없는 지금 미리 정해 두는 두 선이에요.
       </p>
 
       <details className="mt-4 rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/[0.08]">

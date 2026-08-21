@@ -16,6 +16,11 @@ export type ExitOutcomeCause = 'STOP_LOSS' | 'TAKE_PROFIT'
 
 export interface ExitOutcome {
   cause: ExitOutcomeCause
+  /**
+   * 그 진입에 걸려 있던 비율(%). **제목에 들어간다** — "손절선에 닿았다"는 시스템 로그지만
+   * "정해 둔 −3% 선에 닿았다"는 사용자가 자기 손으로 정한 숫자라, 규칙이 자기 것임을 말해 준다.
+   */
+  rate: number
   /** 그 진입의 실현 손익(원). 서버가 아직 계산 전이면 null이라 큰 숫자 자리를 비운다. */
   realizedPnl: number | null
   /** 팔지 않고 들고 있었다면의 평가손익(원). 대본이 없는 실행이면 null. */
@@ -82,7 +87,11 @@ export function ExitOutcomeModal({
   return (
     <TutorialModal
       eyebrow="자동 매도"
-      title={stopLoss ? '손절선에 닿아 자동으로 팔렸습니다' : '익절선에 닿아 자동으로 팔렸습니다'}
+      title={
+        stopLoss
+          ? `정해 둔 −${outcome.rate}% 선에 닿아 규칙이 대신 팔았습니다`
+          : `정해 둔 +${outcome.rate}% 선에 닿아 규칙이 대신 팔았습니다`
+      }
       onClose={onClose}
       maxWidthClassName="max-w-md"
     >
@@ -91,12 +100,14 @@ export function ExitOutcomeModal({
         {stopLoss && <BigNumber label="규칙이 없었다면" value={outcome.unrealizedPnlIfHeld} dashed />}
       </div>
 
+      {/*
+        제목이 "규칙이 무엇을 했는가"를 말했으니 이 줄은 **그때 사용자가 무엇을 하지 않았는가**를
+        말한다 — 이 튜토리얼이 가르치려는 것이 정확히 그 한 순간이다(2026-08-21 튜터 피드백).
+      */}
       <p className="mt-3 text-sm leading-relaxed text-ink">
-        {stopLoss
-          ? saved !== null && saved > 0
-            ? `규칙이 ${formatKRW(saved)}을 지켜줬습니다.`
-            : '정해 둔 선에 닿아 규칙이 대신 팔았습니다.'
-          : '정한 대로 지켰습니다.'}
+        {stopLoss && saved !== null && saved > 0
+          ? `당신이 판단하지 않는 사이 ${formatKRW(saved)}을 지켜줬습니다.`
+          : '그 순간 당신은 판단하지 않았습니다.'}
       </p>
 
       {/* 상단 목표 줄(`TutorialGoalRail`)과 같은 이름을 쓰면 같은 이름의 영역이 화면에 둘이 된다. */}

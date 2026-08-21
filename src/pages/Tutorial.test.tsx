@@ -265,7 +265,7 @@ describe('Tutorial attempt entry', () => {
     render(<Tutorial />)
     await screen.findByTestId('attempt-flow')
 
-    expect(screen.getByText(/한 번 사고, 팔아 보는 연습입니다/)).toBeInTheDocument()
+    expect(screen.getByText(/팔 기준을 미리 정해 두는 연습입니다/)).toBeInTheDocument()
     // 종목 목록이 왼쪽 컬럼으로 옮겨가면서 가리키는 방향도 바뀌었다.
     expect(screen.getByText('왼쪽 목록에서 종목을 하나 고르는 것부터 시작하세요.')).toBeInTheDocument()
     // 초보자가 모르는 내부 용어는 첫 화면에서 사라져야 한다.

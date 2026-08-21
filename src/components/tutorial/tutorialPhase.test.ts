@@ -35,15 +35,15 @@ describe('tutorialPhase', () => {
   it('C — 이야기 구간에서 보유 중이고 예약이 없으면 팔 기준을 정하는 자리다', () => {
     expect(tutorialPhase(input({ holding: true }))).toBe('PLAN')
     expect(phaseText('PLAN', { market: 'CRYPTO', holding: true })).toEqual({
-      title: '팔 기준을 미리 정하기',
-      todo: '얼마나 내려가면 팔지, 올라가면 팔지 정해서 예약하세요',
+      title: '흔들리기 전에 팔 기준 정하기',
+      todo: '얼마나 내려가면 팔지, 올라가면 팔지 지금 정하세요',
     })
   })
 
   it('D — 예약이 걸려 있으면 지켜보는 자리다', () => {
     expect(tutorialPhase(input({ holding: true, hasPlan: true }))).toBe('WATCH')
     expect(phaseText('WATCH', { market: 'CRYPTO', holding: true })).toEqual({
-      title: '정한 기준이 지켜지는지 지켜보기',
+      title: '규칙이 대신 파는 것 지켜보기',
       todo: '선에 닿을 때까지 기다립니다',
     })
   })
@@ -68,12 +68,12 @@ describe('tutorialPhase', () => {
     const afterStopLoss = input({ holding: false, hasPlan: false, goalsComplete: false })
     expect(tutorialPhase(afterStopLoss)).toBe('PLAN')
     expect(phaseText('PLAN', { market: 'CRYPTO', holding: false }).todo).toBe(
-      '다시 사고, 얼마나 내려가면 팔지·올라가면 팔지 정해서 예약하세요',
+      '다시 사고, 얼마나 내려가면 팔지·올라가면 팔지 지금 정하세요',
     )
   })
 
   it('주식은 예약이 없어 같은 국면이 사보기·팔아보기가 된다', () => {
-    // 예약 경로가 코인 전용이라 주식에서는 "팔 기준을 미리 정하기"가 영영 오지 않는다.
+    // 예약 경로가 코인 전용이라 주식에서는 "흔들리기 전에 팔 기준 정하기"가 영영 오지 않는다.
     expect(tutorialPhase(input({ supportsExitPlan: false, holding: false }))).toBe('PLAN')
     expect(tutorialPhase(input({ supportsExitPlan: false, holding: true }))).toBe('WATCH')
     expect(phaseText('PLAN', { market: 'STOCK', holding: false }).title).toBe('사보기')

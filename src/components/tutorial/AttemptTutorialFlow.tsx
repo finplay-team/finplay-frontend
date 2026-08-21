@@ -109,10 +109,14 @@ interface FlowError {
 
 const chartSummaryId = 'tutorial-chart-summary'
 
+/**
+ * 이 세 문장은 **직접 판 매도**에만 붙는다. "직접"을 넣는 것이 이번 문안의 전부다 — 규칙이 한 일이
+ * 아니라 사용자가 고른 순간이라는 사실만 말하고, 잘잘못은 말하지 않는다.
+ */
 const SELL_VERDICT_TEXT: Record<PracticeSellVerdict, string> = {
-  ABOVE_TAKE_PROFIT: '익절선 위에서 파셨습니다.',
-  BELOW_STOP_LOSS: '손절선 아래에서 파셨습니다.',
-  BETWEEN_LINES: '두 선 사이에서 파셨습니다.',
+  ABOVE_TAKE_PROFIT: '익절선 위에서 직접 파셨습니다.',
+  BELOW_STOP_LOSS: '손절선 아래에서 직접 파셨습니다.',
+  BETWEEN_LINES: '두 선 사이에서 직접 파셨습니다.',
 }
 
 const REFLECTION_CHIPS = [
@@ -311,19 +315,26 @@ function limitGapText(value: string, latestPrice: number | null): string | null 
  *
  * 비율이 응답에 없는 옛 실행에서는 기준선 가격에서 되돌려 계산한다(`EntryComparison`과 같은 폴백).
  */
+function autoExitRate(entry: PracticeEntryResponse, cause: 'STOP_LOSS' | 'TAKE_PROFIT'): number {
+  const stated = cause === 'STOP_LOSS' ? entry.stopLossRate : entry.takeProfitRate
+  if (stated !== undefined && stated !== null) return stated
+  const linePrice = cause === 'STOP_LOSS' ? entry.stopLossPrice : entry.takeProfitPrice
+  return entry.buyPrice > 0
+    ? Math.round((Math.abs(linePrice - entry.buyPrice) / entry.buyPrice) * 1000) / 10
+    : 0
+}
+
 function lastEntryOutcomeText(entries: PracticeEntryResponse[]): string {
   const sold = [...entries].reverse().find((entry) => entry.sellAt !== null)
   if (sold === undefined || sold.sellCause === null || sold.sellCause === 'MANUAL') {
-    return '직전 진입이 정리됐습니다. 다시 살 수 있어요.'
+    // 규칙이 한 일이 아니라는 것만 사실로 말한다 — 비난하지 않는다.
+    return '직전 진입은 직접 파셨습니다. 다시 살 수 있어요.'
   }
-  const rateFromPrices = (linePrice: number): number =>
-    sold.buyPrice > 0 ? Math.round((Math.abs(linePrice - sold.buyPrice) / sold.buyPrice) * 1000) / 10 : 0
+  // "자동으로 팔렸습니다"는 시스템 로그다. 이 화면이 하려는 말은 **규칙이 사람 대신 했다**는 것이다.
   if (sold.sellCause === 'STOP_LOSS') {
-    const rate = sold.stopLossRate ?? rateFromPrices(sold.stopLossPrice)
-    return `정해 둔 −${rate}% 선에 닿아서 자동으로 팔렸습니다.`
+    return `정해 둔 −${autoExitRate(sold, 'STOP_LOSS')}% 선에 닿아 규칙이 대신 팔았습니다.`
   }
-  const rate = sold.takeProfitRate ?? rateFromPrices(sold.takeProfitPrice)
-  return `정해 둔 +${rate}% 선에 닿아서 자동으로 팔렸습니다.`
+  return `정해 둔 +${autoExitRate(sold, 'TAKE_PROFIT')}% 선에 닿아 규칙이 대신 팔았습니다.`
 }
 
 /** 액션이 낸 오류를 그 액션 바로 아래에 그린다 — 페이지 맨 아래 한 곳에만 두면 아무도 못 본다. */
@@ -1075,16 +1086,16 @@ export function AttemptTutorialFlow({
     // 한 tick에 둘이 함께 정리되는 일은 없지만, 그래도 가장 최근 것 하나만 말한다.
     const latest = fresh[fresh.length - 1]
     const cause = latest.sellCause as 'STOP_LOSS' | 'TAKE_PROFIT'
+    const rate = autoExitRate(latest, cause)
+    // 원인·비율이 문장 안에 있고, 그 일을 **규칙이 대신 했다**가 드러나야 한다(2026-08-21 튜터 피드백).
     showToast({
       tone: cause === 'STOP_LOSS' ? 'warning' : 'success',
-      text:
-        cause === 'STOP_LOSS'
-          ? '손절선에 닿아 자동으로 매도됐습니다.'
-          : '익절선에 닿아 자동으로 매도됐습니다.',
+      text: `정해 둔 ${cause === 'STOP_LOSS' ? '−' : '+'}${rate}% 선에 닿아 규칙이 대신 팔았습니다.`,
       key: `tutorial-auto-exit-${latest.entrySequence}`,
     })
     setExitOutcome({
       cause,
+      rate,
       realizedPnl: latest.realizedPnl,
       unrealizedPnlIfHeld: latest.unrealizedPnlIfHeld,
     })
@@ -2853,8 +2864,8 @@ export function AttemptTutorialFlow({
                 holdingNow &&
                 !sellLocked && (
                   <p className="text-xs leading-relaxed text-muted">
-                    지금 팔면 직접 판 것이라 손절·익절은 겪지 않습니다. "예약 매도"로 걸어 두면 값이 선에
-                    닿는 순간 자동으로 정리되는 것을 겪어 볼 수 있어요.
+                    지금 누르면 규칙이 아니라 당신이 파는 것입니다. "예약 매도"로 걸어 두면 선에 닿는
+                    순간 규칙이 대신 팝니다.
                   </p>
                 )}
               <ErrorNote error={flowError} scope="sell" />
@@ -2976,8 +2987,13 @@ export function AttemptTutorialFlow({
           </button>
         ))}
       </div>
+      {/*
+        칩 셋이 전부 감정을 짚는데("불안했다"·"일찍 팔았다"·"궁금해서") 안내는 "한 줄이면 충분합니다"로
+        분량만 말하고 있었다. 무엇을 적으면 되는지를 칩과 같은 결로 말한다 — 마음이 규칙보다 먼저
+        움직인 대목. 공개되지 않는다는 약속은 그대로 둔다(그게 있어야 솔직하게 적는다).
+      */}
       <p className="text-xs leading-relaxed text-muted">
-        정답도 점수도 없고 누구에게도 공개되지 않습니다. 한 줄이면 충분합니다.
+        정답도 점수도 없고 누구에게도 공개되지 않습니다. 마음이 규칙보다 먼저 움직인 대목을 적으면 됩니다.
       </p>
       {/*
         복구가 도는 동안은 저장을 눌러도 PRACTICE_EVIDENCE_MISSING으로 반드시 실패한다 —
@@ -3431,7 +3447,7 @@ export function AttemptTutorialFlow({
       <ConfirmDialog
         open={exitPlanCancelTarget !== null}
         title="예약을 취소할까요?"
-        message="지금 산 것에는 예약을 다시 걸 수 없어요. 팔고 다시 사야 새로 걸 수 있습니다."
+        message="취소하면 이 진입은 규칙 없이 지켜보게 됩니다. 팔고 다시 사야 새로 정할 수 있어요."
         confirmLabel="예약 취소"
         busy={cancellingExitPlan}
         onConfirm={() => {

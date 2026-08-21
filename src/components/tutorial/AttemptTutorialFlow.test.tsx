@@ -693,9 +693,9 @@ describe('AttemptTutorialFlow', () => {
     renderFlow(attempt({ riskSnapshot: risk }), progress(holdingEvidence()))
     await flushPromises()
 
-    expect(screen.getByText('지금 예약을 걸어야 손절·익절을 겪습니다')).toBeInTheDocument()
+    expect(screen.getByText('아직 팔 기준이 없습니다')).toBeInTheDocument()
     expect(
-      screen.getByText('아직 팔 기준선이 없어서, 값이 아무리 움직여도 저절로 정리되지 않아요.'),
+      screen.getByText('값이 흔들리기 전인 지금이 가장 냉정하게 정할 수 있는 때입니다.'),
     ).toBeInTheDocument()
     // 자체 3칸("1. 사기 › 2. 예약 걸기 › 3. 기다리기")은 여섯 번째 번호 체계라 지웠다.
     expect(screen.queryByText('2. 예약 걸기')).not.toBeInTheDocument()
@@ -783,10 +783,10 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    expect(screen.getByText('예약을 걸었습니다. 이제 기다립니다.')).toBeInTheDocument()
+    expect(screen.getByText('이제 당신이 판단할 일은 없습니다')).toBeInTheDocument()
     // 가격 숫자는 차트 점선·차트 요약 둘만 말한다 — 안내 본문에서는 뺐다(같은 값이 다섯 곳에 있었다).
     expect(
-      screen.getByText('옆 차트의 점선 두 개 중 먼저 닿는 쪽으로 자동으로 팔립니다.'),
+      screen.getByText('옆 차트의 점선 두 개 중 먼저 닿는 쪽에서 규칙이 대신 팝니다.'),
     ).toBeInTheDocument()
     expect(screen.queryByText('3. 기다리기')).not.toBeInTheDocument()
     // "예상"이 아니라 확정선이다.
@@ -841,7 +841,7 @@ describe('AttemptTutorialFlow', () => {
     )
     await flushPromises()
 
-    expect(screen.getByText('이 진입에는 예약을 다시 걸 수 없습니다')).toBeInTheDocument()
+    expect(screen.getByText('기준은 들고 있는 동안 고치지 않습니다')).toBeInTheDocument()
     expect(screen.getByText(/방금 예약을 취소했습니다/)).toBeInTheDocument()
   })
 
@@ -858,7 +858,7 @@ describe('AttemptTutorialFlow', () => {
     })
     await flushPromises()
 
-    expect(screen.getByText('예약을 걸었습니다. 이제 기다립니다.')).toBeInTheDocument()
+    expect(screen.getByText('이제 당신이 판단할 일은 없습니다')).toBeInTheDocument()
     // 문자열 그대로 계산했다면 차트 기준선과 예약 카드의 금액이 통째로 망가진다.
     expect(screen.getByText('손절 -3% 9700')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '손절·익절 예약(자동 매도)' }))
@@ -876,16 +876,16 @@ describe('AttemptTutorialFlow', () => {
     })
     await flushPromises()
 
-    expect(screen.getByText('이 진입에는 예약을 다시 걸 수 없습니다')).toBeInTheDocument()
-    expect(screen.queryByText('지금 예약을 걸어야 손절·익절을 겪습니다')).not.toBeInTheDocument()
+    expect(screen.getByText('기준은 들고 있는 동안 고치지 않습니다')).toBeInTheDocument()
+    expect(screen.queryByText('아직 팔 기준이 없습니다')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '손절·익절 예약 열기' })).not.toBeInTheDocument()
     // 걸 수 없는 상태에서 "예약해 두면 겪을 수 있다"고 권하지도 않는다.
-    expect(screen.queryByText(/지금 팔면 직접 판 것이라/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/지금 누르면 규칙이 아니라 당신이 파는 것입니다/)).not.toBeInTheDocument()
 
     // 탭을 직접 열면 입력 칸 대신 이유가 보인다 — 눌리지 않는 폼을 남겨 두지 않는다.
     fireEvent.click(screen.getByRole('button', { name: '손절·익절 예약(자동 매도)' }))
     expect(screen.queryByLabelText('손절 비율 (−%)')).not.toBeInTheDocument()
-    expect(screen.getByText(/이 진입에는 이미 예약을 걸었던 적이 있어 다시 걸 수 없습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/그 자리를 막으려고 한 진입에 한 번만 걸리고/)).toBeInTheDocument()
   })
 
   it('예약 탭에서도 "예약하지 않고 지금 팔기"로 되돌아갈 수 있다 (길을 막지 않는다)', async () => {
@@ -905,7 +905,7 @@ describe('AttemptTutorialFlow', () => {
     })
     await flushPromises()
 
-    expect(screen.getByText('지금 예약을 걸어야 손절·익절을 겪습니다')).toBeInTheDocument()
+    expect(screen.getByText('아직 팔 기준이 없습니다')).toBeInTheDocument()
     // 남은 목표는 국면 본문이 아니라 상단 목표 두 칸이 말한다 — 한 국면의 문장은 하나다.
     const goalRail = screen.getByLabelText('오늘의 목표')
     expect(within(goalRail).getByText('✓ 손절 겪기')).toBeInTheDocument()
@@ -943,7 +943,7 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(
-      screen.getByText(/지금 팔면 직접 판 것이라 손절·익절은 겪지 않습니다/),
+      screen.getByText(/지금 누르면 규칙이 아니라 당신이 파는 것입니다/),
     ).toBeInTheDocument()
     // 강도 (b) — 안내만 하고 매도 버튼은 그대로 눌린다.
     expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeEnabled()
@@ -956,7 +956,7 @@ describe('AttemptTutorialFlow', () => {
     })
     await flushPromises()
 
-    expect(screen.queryByText(/지금 팔면 직접 판 것이라/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/지금 누르면 규칙이 아니라 당신이 파는 것입니다/)).not.toBeInTheDocument()
   })
 
   it('예약 없이 직접 팔고 나면 손절·익절을 아직 못 겪었다고 알려준다', async () => {
@@ -968,7 +968,7 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(
-      screen.getByText('직접 팔아서 정리했습니다'),
+      screen.getByText('규칙이 아니라 당신이 팔았습니다'),
     ).toBeInTheDocument()
     expect(screen.getByText('손절 겪기')).toBeInTheDocument()
     expect(screen.getByText('익절 겪기')).toBeInTheDocument()
@@ -1155,15 +1155,15 @@ describe('AttemptTutorialFlow', () => {
     vi.mocked(createPracticeExitPlan).mockResolvedValue(undefined as never)
     renderFlow(attempt({ riskSnapshot: risk }), progress(holdingEvidence()))
     await flushPromises()
-    expect(screen.queryByText('이 선에 닿으면 자동으로 팔립니다')).not.toBeInTheDocument()
+    expect(screen.queryByText('이 선에 닿으면 규칙이 대신 팝니다')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '손절·익절 예약(자동 매도)' }))
     fireEvent.click(screen.getByRole('button', { name: '예약 걸기' }))
     await flushPromises()
 
-    expect(await screen.findByText('이 선에 닿으면 자동으로 팔립니다')).toBeInTheDocument()
+    expect(await screen.findByText('이 선에 닿으면 규칙이 대신 팝니다')).toBeInTheDocument()
     expect(
-      screen.getByText('손절선은 더 잃지 않으려고, 익절선은 욕심내지 않으려고 미리 정해 둔 값이에요.'),
+      screen.getByText('값이 움직이는 동안 판단하지 않으려고, 아무 일도 없는 지금 미리 정해 두는 두 선이에요.'),
     ).toBeInTheDocument()
     // 승률 계산은 접힌 채로 둔다 — 이 순간에 읽을 문장은 한 줄이다.
     expect(screen.getByText('이 숫자는 왜 이렇게 정하나요?')).toBeInTheDocument()
@@ -1440,7 +1440,7 @@ describe('AttemptTutorialFlow', () => {
       await flushPromises()
 
       expect(screen.getByRole('button', { name: '손절·익절 예약(자동 매도)' })).toBeEnabled()
-      expect(screen.getByText('지금 예약을 걸어야 손절·익절을 겪습니다')).toBeInTheDocument()
+      expect(screen.getByText('아직 팔 기준이 없습니다')).toBeInTheDocument()
     })
 
     // 예전에는 사용자가 주문 컬럼 아래쪽 CTA를 찾아 눌러야 넘어갔다. 지정가 왕복을 끝낸 자리에서
@@ -1845,7 +1845,7 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText('산 값')).toBeInTheDocument()
     expect(screen.getByText('9,600원')).toBeInTheDocument()
     expect(screen.getByText('-400원')).toBeInTheDocument()
-    expect(screen.getByText('손절선 아래에서 파셨습니다.')).toBeInTheDocument()
+    expect(screen.getByText('손절선 아래에서 직접 파셨습니다.')).toBeInTheDocument()
     expect(screen.getByText(/손실이 났다고 잘못한 게 아닙니다/)).toBeInTheDocument()
   })
 
@@ -2013,7 +2013,7 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(screen.getByRole('button', { name: '가진 2개 전부 판매하기' })).toBeInTheDocument()
-    expect(screen.queryByText(/자동으로 팔렸습니다|직전 진입이 정리됐습니다/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/규칙이 대신 팔았습니다|직전 진입은 직접 파셨습니다/)).not.toBeInTheDocument()
   })
 
   it('재진입을 기다리는 전량 매도(IDLE_REENTRY)는 되돌아보기로 넘기지 않고 다시 매수 폼을 보여준다 (D35)', async () => {
@@ -2055,7 +2055,7 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByRole('button', { name: '되돌아보기' })).toBeDisabled()
     // 대신 주문 탭이 **왜 정리됐는지**와 함께 다시 매수 폼을 보여준다 — 비율과 원인이 문장 안에
     // 있어야 사용자가 자기 규칙이 작동했다는 걸 안다(예전엔 "직전 진입이 정리됐습니다"뿐이었다).
-    expect(screen.getByText('정해 둔 −3% 선에 닿아서 자동으로 팔렸습니다.')).toBeInTheDocument()
+    expect(screen.getByText('정해 둔 −3% 선에 닿아 규칙이 대신 팔았습니다.')).toBeInTheDocument()
     expect(screen.getByText('1번째 진입')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
   })
@@ -2099,11 +2099,11 @@ describe('AttemptTutorialFlow', () => {
 
     // ACT1이라 아직 IDLE_REENTRY가 아니지만, 대본이 안 끝났으면(FINISHED가 아니면) 여전히 재진입 대기다.
     expect(screen.getByRole('button', { name: '되돌아보기' })).toBeDisabled()
-    expect(screen.getByText('정해 둔 −3% 선에 닿아서 자동으로 팔렸습니다.')).toBeInTheDocument()
+    expect(screen.getByText('정해 둔 −3% 선에 닿아 규칙이 대신 팔았습니다.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
     // 국면 이름이 "팔 기준을 미리 정하기"로 **되돌아간다** — 그 되돌아감 자체가 "한 번 더 한다"는
     // 신호다. 전진만 하는 로드맵에서는 이 반복이 버그처럼 보였다.
-    expect(screen.getByText('팔 기준을 미리 정하기')).toBeInTheDocument()
+    expect(screen.getByText('흔들리기 전에 팔 기준 정하기')).toBeInTheDocument()
   })
 
   it('대본이 FINISHED에 닿은 뒤의 전량 매도는 진짜 끝이라 되돌아보기로 넘긴다', async () => {
@@ -2735,9 +2735,9 @@ describe('AttemptTutorialFlow', () => {
       await flushPromises()
 
       const phaseCard = screen.getByLabelText('지금 배우는 것')
-      expect(within(phaseCard).getByText('팔 기준을 미리 정하기')).toBeInTheDocument()
+      expect(within(phaseCard).getByText('흔들리기 전에 팔 기준 정하기')).toBeInTheDocument()
       expect(
-        within(phaseCard).getByText('얼마나 내려가면 팔지, 올라가면 팔지 정해서 예약하세요'),
+        within(phaseCard).getByText('얼마나 내려가면 팔지, 올라가면 팔지 지금 정하세요'),
       ).toBeInTheDocument()
     })
 
@@ -2749,7 +2749,7 @@ describe('AttemptTutorialFlow', () => {
       await flushPromises()
 
       const phaseCard = screen.getByLabelText('지금 배우는 것')
-      expect(within(phaseCard).getByText('정한 기준이 지켜지는지 지켜보기')).toBeInTheDocument()
+      expect(within(phaseCard).getByText('규칙이 대신 파는 것 지켜보기')).toBeInTheDocument()
       expect(within(phaseCard).getByText('선에 닿을 때까지 기다립니다')).toBeInTheDocument()
     })
 
@@ -2813,7 +2813,7 @@ describe('AttemptTutorialFlow', () => {
         pendingExitPlan: exitPlan,
       })
       await flushPromises()
-      expect(screen.queryByText('손절선에 닿아 자동으로 팔렸습니다')).not.toBeInTheDocument()
+      expect(screen.queryByText('정해 둔 −3% 선에 닿아 규칙이 대신 팔았습니다')).not.toBeInTheDocument()
 
       // 사용자가 누른 적이 없는 사건이다 — tick이 entries에 새 sellCause를 만든 순간에만 잡힌다.
       rerenderWith(view, {
@@ -2821,13 +2821,13 @@ describe('AttemptTutorialFlow', () => {
         entries: [entry({ sellCause: 'STOP_LOSS', realizedPnl: -600, unrealizedPnlIfHeld: -2000 })],
       })
 
-      expect(await screen.findByText('손절선에 닿아 자동으로 팔렸습니다')).toBeInTheDocument()
+      expect(await screen.findByText('정해 둔 −3% 선에 닿아 규칙이 대신 팔았습니다')).toBeInTheDocument()
       const dialog = screen.getByRole('dialog')
       expect(within(dialog).getByText('내 결과')).toBeInTheDocument()
       expect(within(dialog).getByText('규칙이 없었다면')).toBeInTheDocument()
       expect(within(dialog).getByText('-600원')).toBeInTheDocument()
       expect(within(dialog).getByText('-2,000원')).toBeInTheDocument()
-      expect(within(dialog).getByText('규칙이 1,400원을 지켜줬습니다.')).toBeInTheDocument()
+      expect(within(dialog).getByText('당신이 판단하지 않는 사이 1,400원을 지켜줬습니다.')).toBeInTheDocument()
       expect(within(dialog).getByText('하나 남았습니다.')).toBeInTheDocument()
 
       // 뺀 것들 — 이 순간에 필요 없는 정보로 숫자 두 개를 가리지 않는다.
@@ -2848,14 +2848,14 @@ describe('AttemptTutorialFlow', () => {
         entries: [entry({ sellCause: 'TAKE_PROFIT', realizedPnl: 1000, unrealizedPnlIfHeld: 3000 })],
       })
 
-      expect(await screen.findByText('익절선에 닿아 자동으로 팔렸습니다')).toBeInTheDocument()
+      expect(await screen.findByText('정해 둔 +5% 선에 닿아 규칙이 대신 팔았습니다')).toBeInTheDocument()
       const dialog = screen.getByRole('dialog')
       expect(within(dialog).getByText('내 결과')).toBeInTheDocument()
       expect(within(dialog).getByText('+1,000원')).toBeInTheDocument()
       // 숨기는 게 아니라 의미를 갖는 시점(대본 후반·완료 화면)으로 미루는 것이다.
       expect(within(dialog).queryByText('규칙이 없었다면')).not.toBeInTheDocument()
       expect(within(dialog).queryByText('+3,000원')).not.toBeInTheDocument()
-      expect(within(dialog).getByText('정한 대로 지켰습니다.')).toBeInTheDocument()
+      expect(within(dialog).getByText('그 순간 당신은 판단하지 않았습니다.')).toBeInTheDocument()
     })
 
     it('새로고침으로 들어와 지난 손절 기록이 이미 있으면 모달을 다시 띄우지 않는다', async () => {
@@ -2865,7 +2865,7 @@ describe('AttemptTutorialFlow', () => {
       })
       await flushPromises()
 
-      expect(screen.queryByText('손절선에 닿아 자동으로 팔렸습니다')).not.toBeInTheDocument()
+      expect(screen.queryByText('정해 둔 −3% 선에 닿아 규칙이 대신 팔았습니다')).not.toBeInTheDocument()
     })
 
     it('사용자가 직접 판 매도(MANUAL)는 자동 매도 모달을 띄우지 않는다', async () => {
@@ -2877,8 +2877,8 @@ describe('AttemptTutorialFlow', () => {
         entries: [entry({ sellCause: 'MANUAL' })],
       })
 
-      expect(screen.queryByText('손절선에 닿아 자동으로 팔렸습니다')).not.toBeInTheDocument()
-      expect(screen.queryByText('익절선에 닿아 자동으로 팔렸습니다')).not.toBeInTheDocument()
+      expect(screen.queryByText('정해 둔 −3% 선에 닿아 규칙이 대신 팔았습니다')).not.toBeInTheDocument()
+      expect(screen.queryByText('정해 둔 +5% 선에 닿아 규칙이 대신 팔았습니다')).not.toBeInTheDocument()
     })
 
     it('둘 다 겪은 뒤의 자동 매도 모달은 "되돌아보기 쓰기"로 마무리로 데려간다', async () => {
@@ -2897,7 +2897,7 @@ describe('AttemptTutorialFlow', () => {
         ],
       })
 
-      expect(await screen.findByText('익절선에 닿아 자동으로 팔렸습니다')).toBeInTheDocument()
+      expect(await screen.findByText('정해 둔 +5% 선에 닿아 규칙이 대신 팔았습니다')).toBeInTheDocument()
       expect(screen.getByText('둘 다 채웠습니다.')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: '되돌아보기 쓰기' }))
 
