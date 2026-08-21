@@ -148,12 +148,15 @@ export function CandleGuide() {
               오늘이 진행 중이라 이 막대만 3초마다 자랐다 줄었다 합니다. 왼쪽 막대들은 이미 끝난 날이라
               변하지 않습니다.
             </p>
+            {/*
+              이전에는 "알림이지 자동 주문이 아니다"라고 적어 놨었는데, 실제로는 산 순간 손절·익절
+              예약(OCO)이 같이 걸려 그 선에 닿는 순간 자동으로 팔린다(AttemptTutorialFlow.tsx의
+              RiskEducationCard와 같은 이유로 2026-08-20 수정, D43).
+            */}
             <p>
-              <strong className="font-medium text-ink">
-                점선 두 개는 알림이지 자동 주문이 아닙니다.
-              </strong>{' '}
-              가격이 이 선에 닿아도 자동으로 사고팔리지 않습니다. 팔고 싶으면 직접 매도 버튼을 눌러야
-              합니다.
+              <strong className="font-medium text-ink">점선 두 개는 손절·익절선입니다.</strong>{' '}
+              가격이 이 선에 닿으면 그 순간 자동으로 팔립니다. 닿기 전에 직접 매도 버튼을 눌러 먼저
+              팔 수도 있습니다.
             </p>
             <p className="text-xs">
               막대를 손가락으로 누르거나 마우스를 올리면 그날의 네 가지 값이 그대로 나옵니다.

@@ -32,6 +32,12 @@ const CAUSE_TONE: Record<PracticeSellCause, string> = {
   MANUAL: 'border-line bg-elevated text-muted',
 }
 
+/** 그 진입을 연 매수의 주문 유형(이슈 #505) — "이 진입은 시장가로 열었다"는 것만 말한다. */
+const ORDER_TYPE_LABEL: Record<PracticeEntryResponse['buyOrderType'], string> = {
+  MARKET: '시장가 매수',
+  LIMIT: '지정가 매수',
+}
+
 /** 코인은 소수 수량이 나온다 — 반올림해 "0개"라고 말하지 않도록 자리를 살린다. */
 function formatQuantity(value: number): string {
   return value.toLocaleString('ko-KR', { maximumFractionDigits: 8 })
@@ -57,6 +63,7 @@ function EntryCard({ entry }: { entry: PracticeEntryResponse }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-ink">{entry.entrySequence}번째 진입</p>
         <div className="flex flex-wrap gap-1.5">
+          <Chip tone="border-line bg-elevated text-muted">{ORDER_TYPE_LABEL[entry.buyOrderType]}</Chip>
           <Chip tone="border-line bg-elevated text-muted">{PRESET_LABEL[entry.exitPreset]}</Chip>
           {entry.sellCause !== null && (
             <Chip tone={CAUSE_TONE[entry.sellCause]}>{CAUSE_LABEL[entry.sellCause]}</Chip>

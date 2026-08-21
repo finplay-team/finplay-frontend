@@ -140,9 +140,12 @@ export interface PracticeAttemptResponse {
   riskSnapshot: PracticeRiskSnapshotResponse | null
   completedAt: LocalDateTimeString | null
   /**
-   * `PUT .../attempts/{market}`(진입)·`POST .../restart`(재시작) 응답만 그 트랜잭션의 실제 값을 채운다.
-   * 그 외 호출부(`PUT .../instrument`, `GET /api/education/practice`의 `attempt` 필드)는 계좌를 다시
-   * 조회하지 않아 세 필드 모두 `0`을 반환한다 — 화면은 이 값을 "지금 잔고"로 오해하면 안 된다.
+   * 이 응답을 돌려주는 **쓰기 경로 네 곳**(진입 `PUT .../attempts/{market}`·재시작 `POST .../restart`·
+   * 종목 선택 `PUT .../instrument`·프리셋 선택 `PUT .../exit-preset`, 이슈 #502)만 실제 값을 채운다.
+   * **`GET /api/education/practice`의 `attempt` 필드는 여전히 세 필드 모두 `0`이다** — 그 경로는 tick과
+   * 함께 폴링되느라 호출마다 계좌를 다시 읽지 않기 때문이며, `0`은 "잔고가 0"이 아니라 "이 응답은
+   * 계좌를 조회하지 않았다"는 뜻이다. 잔액이 필요한 화면은 반드시 위 네 응답에서 받은 값을 상태로 들고
+   * 있어야 하고, 진행 조회 응답의 이 세 필드로 잔액을 그리면 안 된다.
    */
   tutorialCashBalance: number
   tutorialAvailableCash: number
@@ -290,6 +293,12 @@ export interface PracticeEntryResponse {
   buyAt: LocalDateTimeString
   buyPrice: Decimal
   buyQuantity: Decimal
+  /**
+   * 그 진입을 **연** 매수의 주문 유형(이슈 #505). `buyQuantity`·`buyPrice`는 그 진입 구간의 매수를
+   * 전부 합산한 값이라 기준이 다르다 — "이 수량을 무슨 방식으로 샀는가"가 아니라 "이 진입을 어떻게
+   * 열었는가"로만 읽는다.
+   */
+  buyOrderType: OrderType
   stopLossPrice: Decimal
   takeProfitPrice: Decimal
   /** 매도 전이면 null. 수량 가중평균 단가다. */
@@ -302,6 +311,24 @@ export interface PracticeEntryResponse {
   realizedPnl: number | null
   /** 팔지 않고 들고 있었다면의 평가손익(원). 대본을 쓰지 않는 실행이면 null */
   unrealizedPnlIfHeld: number | null
+}
+
+/**
+ * 2단계(주문 방법) 판정(이슈 #503). **`null`이 되지 않는다** — attempt가 없는 경로·종목 미선택도
+ * 세 값 모두 `false`인 객체로 온다. 판정 범위는 **현재 실행 세대**라 재시작하면 셋 다 `false`로
+ * 돌아간다. **새로고침해도 서버가 다시 판정하므로, 화면은 이 값을 로컬로 세지 않고 그대로 그린다.**
+ *
+ * ⚠️ **`limitBuySellCompleted`는 주식(STOCK)에서 영원히 `false`다** — 지정가 주문 경로가 코인
+ * 전용이라 주식 튜토리얼에는 이 단계를 통과할 수단이 없다. 진행 표시를 시장 구분 없이 쓰면 주식에서
+ * 영원히 막힌 것처럼 보인다.
+ */
+export interface TutorialStageProgress {
+  /** 이 실행에 시장가 매수 체결이 있고, **사용자가 낸** 시장가 매도 체결도 있다. */
+  marketBuySellCompleted: boolean
+  /** 이 실행에 지정가 매수와 지정가 매도가 둘 다 있다. 주식은 항상 false. */
+  limitBuySellCompleted: boolean
+  /** 이 실행에서 프리셋을 직접 골랐는가(`PUT .../exit-preset` 호출 여부). */
+  exitPresetSelected: boolean
 }
 
 /** GET /api/education/practice?market=STOCK|CRYPTO */
@@ -336,4 +363,6 @@ export interface InvestmentPracticeResponse {
   revealedEvents: PracticeScenarioEventResponse[]
   /** attempt가 없는 기존 026 chain 사용자에게만 null이다. */
   attempt: PracticeAttemptResponse | null
+  /** 2단계 판정(이슈 #503). null이 되지 않는다 — 위 타입 설명을 반드시 먼저 읽는다. */
+  tutorialStageProgress: TutorialStageProgress
 }

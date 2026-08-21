@@ -49,6 +49,11 @@ function progress(
     priceAfterSell: null,
     revealedEvents: [],
     attempt: attempt(market),
+    tutorialStageProgress: {
+      marketBuySellCompleted: false,
+      limitBuySellCompleted: false,
+      exitPresetSelected: false,
+    },
     ...overrides,
   }
 }

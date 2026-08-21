@@ -15,7 +15,7 @@ import { SpotlightTour } from './SpotlightTour'
 import type { SpotlightStep } from './SpotlightTour'
 import { useIdempotencyKey } from '../../hooks/useIdempotencyKey'
 import { formatDateTime, parseLocalDateTime, ratioToPercent } from '../../lib/datetime'
-import { toUserMessage } from '../../lib/errorMessages'
+import { isApiErrorCode, toUserMessage } from '../../lib/errorMessages'
 import { formatKRW, formatPercent, formatSignedKRW } from '../../lib/format'
 import { CRYPTO_QTY_DECIMALS, presetQuantity } from '../../lib/quantity'
 import { bumpTutorial } from '../../lib/tutorialPulse'
@@ -46,6 +46,7 @@ import type {
   PracticeSellVerdict,
   PracticeTradeResultResponse,
   PracticeTutorialChartResponse,
+  TutorialStageProgress,
 } from '../../services/tutorialTypes'
 import type { Candle, Instrument, LimitOrderResponse, Market, OrderSide } from '../../services/types'
 
@@ -326,6 +327,60 @@ function DoneLine({ text }: { text: string }) {
     <p className="rounded-2xl border border-line bg-elevated/60 px-4 py-3 text-sm text-muted">
       <span className="text-gain">✓</span> {text}
     </p>
+  )
+}
+
+/**
+ * 2단계(주문 방법) 학습 체크리스트(이슈 #503). 서버가 실행 세대 단위로 판정한 값을 그대로 그린다 —
+ * **로컬로 세지 않는다.** 새로고침해도 서버가 다시 판정하므로 이 값만 그대로 받아 그리면 된다.
+ *
+ * 지정가 항목은 코인 전용이다 — `limitBuySellCompleted`는 주식(STOCK)에서 영원히 `false`라, 넣어
+ * 두면 주식 사용자에게는 평생 못 채우는 항목으로 보인다. 그래서 주식에서는 아예 뺀다.
+ */
+function StageProgressChecklist({
+  market,
+  progress,
+  autoStoppedThisRun,
+}: {
+  market: Market
+  progress: TutorialStageProgress
+  /**
+   * 이 실행에 손절·익절로 자동 정리된 매도가 이미 있는가. `marketBuySellCompleted`는 **사용자가 낸**
+   * 시장가 매도만 센다(문서 명시, "의도된 동작") — 자동 청산은 세지 않는다. 그런데 화면에는 그 이유를
+   * 말해 주는 데가 없어서 "샀다 팔렸는데 왜 체크가 안 되지"로 막힌다(2026-08-20 실사용 중 발견).
+   * 이 조건이 true면 항목 아래에 이유를 한 줄 붙인다.
+   */
+  autoStoppedThisRun: boolean
+}) {
+  const items: { key: string; label: string; done: boolean }[] = [
+    { key: 'market', label: '시장가 매매', done: progress.marketBuySellCompleted },
+  ]
+  if (market === 'CRYPTO') {
+    items.push({ key: 'limit', label: '지정가 매매', done: progress.limitBuySellCompleted })
+  }
+  items.push({ key: 'preset', label: '손절·익절 프리셋 선택', done: progress.exitPresetSelected })
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="주문 방법 학습 체크리스트">
+        {items.map((item) => (
+          <span
+            key={item.key}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+              item.done ? 'border-gain/40 bg-gain/10 text-gain' : 'border-line bg-elevated text-muted'
+            }`}
+          >
+            {item.done ? '✓ ' : ''}
+            {item.label}
+          </span>
+        ))}
+      </div>
+      {!progress.marketBuySellCompleted && autoStoppedThisRun && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+          손절·익절로 자동 정리된 매도는 "시장가 매매"로 세지 않습니다. 선에 닿기 전에 직접 매도
+          버튼을 눌러야 이 항목이 채워집니다.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -748,7 +803,16 @@ function RiskEducationCard({
         </div>
       </dl>
       <div className="mt-4 space-y-3 text-xs leading-relaxed text-muted">
-        <p className="text-ink">이 선에 닿아도 자동으로 팔리지는 않습니다. 팔지 말지는 직접 정하세요.</p>
+        {/*
+          예전에는 "닿아도 자동으로 안 팔린다"고 적어 놨었는데, 실제로는 산 순간 손절·익절 예약(OCO)이
+          같이 걸려서 매 tick마다 서버(PracticeOrderSettlementService)가 이 선을 넘었는지 검사해 자동으로
+          체결한다 — 문구가 실제 동작과 반대였다(2026-08-20 실사용 중 발견). 그 선에 닿기 전에 직접 파는
+          것도 물론 가능하다는 걸 함께 말해 둔다.
+        */}
+        <p className="text-ink">
+          이 선에 닿으면 자동으로 팔립니다. 직접 누르지 않아도 그 순간 손절 또는 익절로 정리돼요 — 물론
+          그 전에 직접 팔아도 됩니다.
+        </p>
         <p>
           <span className="font-medium text-ink">손절선</span>은 "여기까지 내려가면 더 버티지 않고
           팔겠다"고 미리 정해두는 값입니다. 손실을 확정하는 대신 더 큰 손실을 막는 행동입니다.{' '}
@@ -797,6 +861,28 @@ function pendingOutcomeText(outcome: PendingOutcome): string {
     return '예약을 취소했습니다. 체결되지 않았습니다.'
   }
   return '예약이 대기 목록에서 사라졌습니다. 체결됐는지 취소됐는지는 확인하지 못했습니다.'
+}
+
+/**
+ * 취소·정정하려던 주문이 그 사이 tick으로 이미 체결·취소돼 있으면 409(`ORDER_ALREADY_FILLED`·
+ * `ORDER_ALREADY_CANCELLED`)나 404(`NOT_FOUND`)가 온다 — 오류가 아니라 "결말이 이미 났다"는
+ * 뜻이다(실전 화면 `PendingOrders.tsx`의 `handleGone`과 같은 판단). 그런데 이 화면의 세 취소·정정
+ * 경로(취소·즉시체결·정정)는 전부 이 경우를 일반 오류로만 보여주고 `pendingOrder`를 지우지
+ * 않았다 — 카드가 "정한 값이 되기를 기다리는 중"에 영원히 멈춰, 다시 눌러도 같은 409만 반복됐다
+ * (2026-08-20 실사용 중 발견). 체결가는 지정가로 고정되므로 `ORDER_ALREADY_FILLED`는 결말을
+ * `FILLED`로 단정해도 된다.
+ */
+function pendingOrderGoneOutcome(error: unknown, pending: LimitOrderResponse): PendingOutcome | null {
+  if (isApiErrorCode(error, 'ORDER_ALREADY_FILLED')) {
+    return { status: 'FILLED', side: pending.side, quantity: pending.quantity, limitPrice: pending.limitPrice }
+  }
+  if (isApiErrorCode(error, 'ORDER_ALREADY_CANCELLED')) {
+    return { status: 'CANCELLED', side: pending.side, quantity: pending.quantity, limitPrice: pending.limitPrice }
+  }
+  if (isApiErrorCode(error, 'NOT_FOUND')) {
+    return { status: 'UNKNOWN', side: pending.side, quantity: pending.quantity, limitPrice: pending.limitPrice }
+  }
+  return null
 }
 
 /** 지금 값과 걸어둔 값의 관계로 "언제 체결되는지"를 말한다. 방향이 뒤집힌 경우를 지어내지 않는다. */
@@ -1066,6 +1152,18 @@ export function AttemptTutorialFlow({
    * **이 값으로 "대본 UI 없음"을 판정한다**(계약 명시). null이면 사건 패널을 아예 그리지 않는다.
    */
   const scenarioStage = chart?.scenarioStage ?? null
+  /**
+   * 대본이 끝나지 않은 동안의 전량 매도는 "끝"이 아니라 "다음 진입 전"이다(041, D35로 유보 해제·
+   * D44로 범위 정정). **`scenarioStage`는 매도로 옮겨가지 않는다** — `PracticeScenarioProgressService`
+   * 주석이 명시한다("표는 세 행뿐이고 매도는 어느 행에도 없다. 매도해도 커서를 옮기지 않는다"). ACT는
+   * 보유 여부와 무관하게 시간으로만 흐르므로(`scenarioProgressing`이 "미보유로 4막을 관전 중이어도
+   * true"), 손절·익절이 대본 커서보다 먼저 발동하면 `IDLE_REENTRY`에 닿기 한참 전(ACT1·ACT2 도중)에
+   * 전량 매도 상태가 된다. **처음엔 `=== 'IDLE_REENTRY'`로만 판정했다가, 실사용에서 바로 이 이른
+   * 손절 경로로 4단계(복기)에 떨어져 복기를 저장하면서 대본을 3·4막도 못 보고 조기 완료시키는 걸
+   * 확인했다** — 그래서 "지금 이 값인가"가 아니라 "대본이 끝났는가"로 넓혔다. `FINISHED`·`null`
+   * (대본 없음)이 아니면 전부 "아직 이야기가 안 끝났다"로 본다.
+   */
+  const awaitingReentry = scenarioStage !== null && scenarioStage !== 'FINISHED'
   /** 진행 조회의 사건 목록은 완료 후에도 남는다 — 차트가 없는 순간에도 결과 모달이 쓸 수 있다. */
   const revealedEvents =
     chart !== null && chart.revealedEvents.length > 0 ? chart.revealedEvents : progress.revealedEvents
@@ -1075,9 +1173,21 @@ export function AttemptTutorialFlow({
    * 이 화면이 사용자에게 보여 주는 4단계는 서버 chain의 단계 번호(progress.currentStep)와 대응하지
    * 않는다 — 서버 chain은 관심등록·매수의사까지 포함하지만 이 화면은 고르기·구매하기·지켜보기·
    * 판매하고 돌아보기로 다시 묶었다. 그래서 화면에 쓰는 번호는 attempt·evidence 상태에서 직접 만든다.
+   *
+   * **아래 두 조건은 orderSide·reviewReady(각각 뒤에서 정의)와 같은 판정을 미리 인라인으로 쓴 것이다**
+   * — 값을 두 곳에서 따로 계산하면 어긋날 수 있어(D44가 바로 그렇게 생겼다) 나중에 두 변수를 고치면
+   * 반드시 여기도 같이 고쳐야 한다. `replay || (fullySold && !awaitingReentry)`가 "끝"이고,
+   * `riskSnapshot && !fullySold`가 "보유 중"이다. 재진입을 기다리는 동안(끝이 아닌데 fullySold)은
+   * 다시 "구매하기"로 되돌아간다.
    */
   const uiStep =
-    attempt.status === 'SELECTING_INSTRUMENT' ? 1 : !attempt.riskSnapshot ? 2 : !fullySold ? 3 : 4
+    attempt.status === 'SELECTING_INSTRUMENT'
+      ? 1
+      : replay || (fullySold && !awaitingReentry)
+        ? 4
+        : attempt.riskSnapshot && !fullySold
+          ? 3
+          : 2
   const railTone = market === 'CRYPTO' ? 'bg-coin' : 'bg-brand'
   const rewardSentence = rewardSentenceParts(market)
 
@@ -1621,20 +1731,30 @@ export function AttemptTutorialFlow({
 
   const handleCancelPending = useCallback(async () => {
     if (!pendingOrder || cancellingPending) return
+    const pending = pendingOrder
     setCancellingPending(true)
     clearError()
     try {
-      await cancelLimitOrder(pendingOrder.orderId)
+      await cancelLimitOrder(pending.orderId)
       setPendingOutcome({
         status: 'CANCELLED',
-        side: pendingOrder.side,
-        quantity: pendingOrder.quantity,
-        limitPrice: pendingOrder.limitPrice,
+        side: pending.side,
+        quantity: pending.quantity,
+        limitPrice: pending.limitPrice,
       })
       setPendingOrder(null)
       setAmendOpen(false)
       await onRefresh()
     } catch (error) {
+      const gone = pendingOrderGoneOutcome(error, pending)
+      if (gone) {
+        // 취소하려는 사이에 이미 결말이 났다 — 오류가 아니다. 카드를 그 결말로 바꾸고 다시 읽는다.
+        setPendingOutcome(gone)
+        setPendingOrder(null)
+        setAmendOpen(false)
+        await onRefresh()
+        return
+      }
       showError('pending', toUserMessage(error))
     } finally {
       setCancellingPending(false)
@@ -1656,6 +1776,7 @@ export function AttemptTutorialFlow({
    */
   const handleAmendPending = useCallback(async () => {
     if (!pendingOrder || amending) return
+    const pending = pendingOrder
     const parsedPrice = Number(amendPrice)
     const parsedQuantity = Number(amendQuantity)
     if (!(parsedPrice > 0) || !(parsedQuantity > 0)) {
@@ -1665,7 +1786,7 @@ export function AttemptTutorialFlow({
     setAmending(true)
     clearError()
     try {
-      const updated = await amendLimitOrder(pendingOrder.orderId, {
+      const updated = await amendLimitOrder(pending.orderId, {
         limitPrice: amendPrice,
         quantity: amendQuantity,
       })
@@ -1673,13 +1794,17 @@ export function AttemptTutorialFlow({
       setAmendOpen(false)
       await onRefresh()
     } catch (error) {
-      showError(
-        'pending',
-        toUserMessage(error, {
-          ORDER_ALREADY_FILLED: '이미 체결된 주문이라 고칠 수 없습니다.',
-          ORDER_ALREADY_CANCELLED: '이미 취소된 주문이라 고칠 수 없습니다.',
-        }),
-      )
+      const gone = pendingOrderGoneOutcome(error, pending)
+      if (gone) {
+        // 고치려는 사이에 이미 결말이 났다 — 예전에는 메시지만 이름표를 달리 붙이고 카드를 그대로
+        // "기다리는 중"에 남겨 뒀다. 그러면 다시 눌러도 같은 409만 반복된다(2026-08-20 실사용 중 발견).
+        setPendingOutcome(gone)
+        setPendingOrder(null)
+        setAmendOpen(false)
+        await onRefresh()
+        return
+      }
+      showError('pending', toUserMessage(error))
     } finally {
       setAmending(false)
     }
@@ -1691,12 +1816,13 @@ export function AttemptTutorialFlow({
    */
   const handleFillPendingNow = useCallback(async () => {
     if (!pendingOrder || cancellingPending || attempt.instrumentId === null) return
-    const side = pendingOrder.side
-    const orderQuantity = String(pendingOrder.quantity)
+    const pending = pendingOrder
+    const side = pending.side
+    const orderQuantity = String(pending.quantity)
     setCancellingPending(true)
     clearError()
     try {
-      await cancelLimitOrder(pendingOrder.orderId)
+      await cancelLimitOrder(pending.orderId)
       setPendingOrder(null)
       setAmendOpen(false)
       await placeOrder(
@@ -1713,6 +1839,26 @@ export function AttemptTutorialFlow({
       bumpTutorial()
       await onRefresh()
     } catch (error) {
+      /**
+       * "지금 값에 바로 체결" 버튼은 정한 값에 영영 안 닿아 지친 사용자를 위한 탈출로다 — 그런데
+       * 취소를 부르는 그 사이에 진짜로 값이 닿아 서버가 먼저 체결시켜 버리면(정확히 그 버튼을
+       * 누르고 싶어지는 순간과 같은 순간이다) `ORDER_ALREADY_FILLED` 409가 온다. 이미 산 걸 또
+       * 사면 안 되므로 시장가 주문을 새로 넣지 않고, 이미 원하던 결과(체결)가 났다고 그대로 알린다
+       * (2026-08-20 실사용 중 발견 — 지정가 매수 뒤 이 버튼을 눌렀는데 화면이 "기다리는 중"에
+       * 멈춘 채 끝난 것으로 재현했다).
+       */
+      const gone = pendingOrderGoneOutcome(error, pending)
+      if (gone) {
+        setPendingOutcome(gone)
+        setPendingOrder(null)
+        setAmendOpen(false)
+        if (gone.status === 'FILLED') {
+          if (side === 'BUY') setBuyOrderType('MARKET')
+          else setSellOrderType('MARKET')
+        }
+        await onRefresh()
+        return
+      }
       showError('pending', toUserMessage(error))
     } finally {
       setCancellingPending(false)
@@ -1777,12 +1923,25 @@ export function AttemptTutorialFlow({
 
   /**
    * 되돌아보기는 팔고 난 뒤에야 할 일이 생긴다. 그전에는 탭을 잠그고, 전량 매도되는 순간 자동으로
-   * 넘어간다 — 안내형 흐름의 마지막 단계를 탭 뒤에 숨겨 두지 않기 위해서다.
+   * 넘어간다 — 안내형 흐름의 마지막 단계를 탭 뒤에 숨겨 두지 않기 위해서다. **재진입을 기다리는
+   * 전량 매도는 예외다** — 그 순간 복기 패널로 넘기면 되돌릴 수 없는 조기 완료를 유도하게 되므로
+   * (D35) 탭을 열지 않고 "주문" 탭에 남긴다. 거기서 orderSide가 다시 BUY로 바뀌어 재구매 폼을 보여준다.
    */
-  const reviewReady = replay || fullySold
+  const reviewReady = replay || (fullySold && !awaitingReentry)
   useEffect(() => {
-    if (reviewReady) setPanelTab('review')
-  }, [reviewReady])
+    if (reviewReady) {
+      setPanelTab('review')
+      return
+    }
+    /**
+     * 차트(scenarioStage)는 비동기로 늦게 도착한다 — 마운트 직후 한 틱 동안은 chart가 아직 null이라
+     * awaitingReentry가 일시적으로 false로 계산돼(evidence만 먼저 fullySold=true) reviewReady가
+     * 잠깐 true였다가 chart 로딩 후 false로 돌아오는 경우가 실제로 있다. 그때 위 분기가 이미
+     * "review"로 넘겨 버린 뒤라, 재진입 상태로 확정되면 명시적으로 다시 "order"로 되돌린다 —
+     * 안 그러면 잠금 풀린 적 없는 되돌아보기 탭 뒤에 사용자가 갇힌다.
+     */
+    if (awaitingReentry) setPanelTab('order')
+  }, [awaitingReentry, reviewReady])
 
   const pendingCard =
     pendingOrder === null ? null : (
@@ -1806,8 +1965,12 @@ export function AttemptTutorialFlow({
       />
     )
 
-  /** 지금 어느 쪽 주문을 하는 단계인지. 매수 전이면 매수, 산 뒤에는 매도다. */
-  const orderSide: OrderSide = attempt.riskSnapshot ? 'SELL' : 'BUY'
+  /**
+   * 지금 어느 쪽 주문을 하는 단계인지. 매수 전이면 매수, 산 뒤에는 매도다. **`riskSnapshot`은 전량
+   * 매도해도 null로 돌아가지 않는다** — 그대로 두면 재진입 순간에도 계속 매도 화면이 떠서 다시 살
+   * 방법이 없다(D35 이전까지의 실제 제약). 전량 매도된 상태(`fullySold`)에서는 다시 매수로 되돌린다.
+   */
+  const orderSide: OrderSide = attempt.riskSnapshot && !fullySold ? 'SELL' : 'BUY'
 
   const orderPanelBody = replay ? (
     <div className="space-y-3">
@@ -1836,6 +1999,30 @@ export function AttemptTutorialFlow({
     <div className="space-y-3">
       {/* 끝낸 단계를 지우지 않고 한 줄로 남긴다 — 방금 자기가 한 게 몇 번이었는지 확인시켜 준다. */}
       <DoneLine text={`1. 고르기 완료${selectedInstrument ? ` · ${selectedInstrument.name}` : ''}`} />
+
+      <StageProgressChecklist
+        market={market}
+        progress={progress.tutorialStageProgress}
+        autoStoppedThisRun={progress.entries.some(
+          (entry) => entry.sellCause === 'STOP_LOSS' || entry.sellCause === 'TAKE_PROFIT',
+        )}
+      />
+
+      {/*
+        재진입을 기다리는 전량 매도(D35) — "끝"이 아니라 "다음 진입 전"이라는 걸 먼저 말해 준다.
+        지난 진입 카드를 그대로 보여주면 방금 판 게 사라진 게 아니라 정리됐을 뿐이라는 게 눈에 보인다.
+        **`orderSide === 'BUY'`가 반드시 있어야 한다** — 없으면 지금 한창 보유 중일 때도 "직전 진입이
+        정리됐다"는 문구가 뜬다. `progress.entries`에는 아직 안 판 진입(현재 보유)도 들어 있어서
+        `entries.length > 0`만으로는 "정리됐다"를 보장하지 못한다(2026-08-20 실사용 재확인 중 발견).
+      */}
+      {orderSide === 'BUY' && awaitingReentry && progress.entries.length > 0 && (
+        <div className="rounded-2xl border border-line bg-elevated/60 p-4">
+          <p className="text-sm font-medium text-ink">직전 진입이 정리됐습니다. 다시 살 수 있어요.</p>
+          <div className="mt-3">
+            <EntryComparison entries={progress.entries} layout="narrow" />
+          </div>
+        </div>
+      )}
 
       {/*
         매수/매도 토글 — 모의투자 화면과 같은 자리·같은 모양이다. 다만 튜토리얼은 "사고 나서 판다"는
@@ -1872,9 +2059,11 @@ export function AttemptTutorialFlow({
           </h2>
           <CurrentPriceBox price={latestPrice} note="3초마다 새로 불러옵니다." />
           <p className="text-xs leading-relaxed text-muted">
-            사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 손절선은 값이
-            이만큼 떨어지면 더 잃지 않도록 팔라고 알려주는 선이고, 익절선은 이만큼 오르면 이익을 챙기고
-            팔라고 알려주는 선이에요. 아래에서 그 폭을 고를 수 있습니다.
+            {/* "팔라고 알려주는 선"은 매수 후 카드(RiskEducationCard)와 같은 실수를 하고 있었다 —
+                실제로는 값이 이 선에 닿는 순간 자동으로 팔린다(2026-08-20 실사용 중 발견). */}
+            사는 순간의 값을 기준으로 팔 기준선 두 개(손절·익절)가 자동으로 만들어집니다. 값이 이 선에
+            닿으면 그 순간 자동으로 팔립니다 — 손절선은 더 잃지 않도록, 익절선은 이익을 챙기도록
+            정리해 줘요. 아래에서 그 폭을 고를 수 있습니다.
           </p>
           <ExitPresetPicker
             options={attempt.availableExitPresets}
@@ -1932,12 +2121,19 @@ export function AttemptTutorialFlow({
             <div>
               {/*
                 라벨·placeholder를 모의투자 화면(pages/Trade.tsx)의 "주문 금액"과 똑같이 맞춘다.
-                "주문 가능" 잔액·퍼센트 버튼(10/25/50/75/최대)은 아직 붙이지 않는다 — 튜토리얼 계좌
-                잔액은 진입·재시작 응답에만 실제 값이 오고 종목 선택(PUT .../instrument) 이후로는
-                0으로 죽어 있어(TUTORIAL-CASH-ISOL-011), 이 시점엔 정확한 "최대"를 계산할 방법이
-                없다. 잘못된 잔액으로 버튼을 만드느니 안 만드는 게 낫다 — 백엔드에 넘긴다.
+                "주문 가능" 박스·퍼센트 버튼(10/25/50/75/최대)도 실전과 같은 자리·같은 비율이다
+                (이슈 #502로 해소, 9차 E 유보 해제). `attempt.tutorialAvailableCash`는 쓰기 응답
+                네 곳에서만 실값이 온다 — Tutorial.tsx가 그 값을 상태로 들고 있다가 이 prop으로
+                내려주므로, 여기서는 그대로 받아 쓰면 된다(로컬로 다시 조회하지 않는다).
               */}
-              <label htmlFor="tutorial-buy-amount" className="mb-1.5 block text-sm font-medium text-ink">
+              <p className="mb-1.5 text-sm font-medium text-ink">주문 가능</p>
+              <div className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] tabular">
+                <span className="text-ink">{formatKRW(attempt.tutorialAvailableCash)}</span>
+              </div>
+              <label
+                htmlFor="tutorial-buy-amount"
+                className="mb-1.5 mt-3 block text-sm font-medium text-ink"
+              >
                 주문 금액
               </label>
               <input
@@ -1951,6 +2147,27 @@ export function AttemptTutorialFlow({
                 }
                 className="w-full rounded-2xl border border-line bg-elevated px-4 py-3 text-right text-[15px] text-ink tabular outline-none transition-all duration-300 ease-spring focus:border-brand focus:ring-4 focus:ring-brand/15"
               />
+              <div
+                role="group"
+                aria-label="가진 돈의 비율로 금액 채우기"
+                className="mt-2 flex flex-wrap items-center justify-end gap-1.5"
+              >
+                {[0.1, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                  <button
+                    key={ratio}
+                    type="button"
+                    disabled={attempt.tutorialAvailableCash <= 0}
+                    onClick={() => {
+                      const amt =
+                        ratio >= 1 ? attempt.tutorialAvailableCash : attempt.tutorialAvailableCash * ratio
+                      setBuyAmount(String(Math.floor(amt)))
+                    }}
+                    className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-muted transition-colors hover:bg-white/[0.1] hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/[0.06] disabled:hover:text-muted"
+                  >
+                    {ratio < 1 ? `${ratio * 100}%` : '최대'}
+                  </button>
+                ))}
+              </div>
               <p className="mt-1.5 text-xs leading-relaxed text-muted">
                 코인은 개수가 아니라 금액으로 삽니다. 실전 화면도 같은 방식이에요.
               </p>

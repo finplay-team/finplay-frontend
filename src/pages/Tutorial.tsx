@@ -1,5 +1,5 @@
 // 사용자·시장별 영속 attempt를 진입 정본으로 사용하는 튜토리얼 페이지
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AttemptTutorialFlow } from '../components/tutorial/AttemptTutorialFlow'
 import { MarketTabs } from '../components/ui/MarketTabs'
 import { toUserMessage } from '../lib/errorMessages'
@@ -8,6 +8,21 @@ import { visibleTutorialMarkets } from '../lib/tutorialMarkets'
 import { ensurePracticeAttempt, getPracticeProgress } from '../services/tutorialService'
 import type { InvestmentPracticeResponse, PracticeAttemptResponse } from '../services/tutorialTypes'
 import type { Market } from '../services/types'
+
+/** 잔액 세 필드만 따로 뗀 것 — 진행 조회(GET) 응답이 이 세 필드를 늘 0으로 죽여 보내는 것과
+ *  섞이지 않도록 별도로 들고 있는다(이슈 #502, tutorialTypes.ts의 PracticeAttemptResponse 주석). */
+type TutorialBalance = Pick<
+  PracticeAttemptResponse,
+  'tutorialCashBalance' | 'tutorialAvailableCash' | 'tutorialRealizedPnl'
+>
+
+function pickBalance(attempt: PracticeAttemptResponse): TutorialBalance {
+  return {
+    tutorialCashBalance: attempt.tutorialCashBalance,
+    tutorialAvailableCash: attempt.tutorialAvailableCash,
+    tutorialRealizedPnl: attempt.tutorialRealizedPnl,
+  }
+}
 
 function StatusPill({
   label,
@@ -40,6 +55,7 @@ function StatusPill({
 
 const emptyAttempts: Record<Market, PracticeAttemptResponse | null> = { STOCK: null, CRYPTO: null }
 const emptyProgress: Record<Market, InvestmentPracticeResponse | null> = { STOCK: null, CRYPTO: null }
+const emptyBalances: Record<Market, TutorialBalance | null> = { STOCK: null, CRYPTO: null }
 
 export function Tutorial() {
   // 기본은 코인이다 — 주식 튜토리얼 입구를 닫아 둔 동안은 코인만 열려 있다(lib/tutorialMarkets.ts).
@@ -48,6 +64,13 @@ export function Tutorial() {
   const [progressByMarket, setProgressByMarket] = useState(emptyProgress)
   const [loadingMarket, setLoadingMarket] = useState<Market | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** 쓰기 응답 네 곳(진입·재시작·종목 선택·프리셋 선택)에서만 채우는 잔액. ref로도 들고 있어
+   *  refreshMarket이 최신 값을 클로저 갱신 없이 읽는다(관찰 tick의 observeStateRef와 같은 패턴). */
+  const [balances, setBalances] = useState(emptyBalances)
+  const balancesRef = useRef(balances)
+  useEffect(() => {
+    balancesRef.current = balances
+  }, [balances])
 
   const loadMarket = useCallback(async (targetMarket: Market) => {
     setLoadingMarket(targetMarket)
@@ -55,7 +78,12 @@ export function Tutorial() {
     try {
       const ensured = await ensurePracticeAttempt(targetMarket)
       const progress = await getPracticeProgress(targetMarket)
-      setAttempts((current) => ({ ...current, [targetMarket]: progress.attempt ?? ensured }))
+      const balance = pickBalance(ensured)
+      setBalances((current) => ({ ...current, [targetMarket]: balance }))
+      setAttempts((current) => ({
+        ...current,
+        [targetMarket]: progress.attempt ? { ...progress.attempt, ...balance } : ensured,
+      }))
       setProgressByMarket((current) => ({ ...current, [targetMarket]: progress }))
     } catch (loadError) {
       setError(toUserMessage(loadError))
@@ -68,8 +96,17 @@ export function Tutorial() {
     const progress = await getPracticeProgress(targetMarket)
     setProgressByMarket((current) => ({ ...current, [targetMarket]: progress }))
     if (progress.attempt) {
-      setAttempts((current) => ({ ...current, [targetMarket]: progress.attempt }))
+      const attempt = progress.attempt
+      const knownBalance = balancesRef.current[targetMarket] ?? pickBalance(attempt)
+      setAttempts((current) => ({ ...current, [targetMarket]: { ...attempt, ...knownBalance } }))
     }
+  }, [])
+
+  /** ensurePracticeAttempt 외의 쓰기 응답(종목 선택·프리셋 선택·재시작)이 부르는 공통 경로.
+   *  세 호출 모두 실제 잔액을 싣고 오므로(이슈 #502) 여기서 balances도 함께 갱신한다. */
+  const applyAttemptUpdate = useCallback((targetMarket: Market, next: PracticeAttemptResponse) => {
+    setBalances((current) => ({ ...current, [targetMarket]: pickBalance(next) }))
+    setAttempts((current) => ({ ...current, [targetMarket]: next }))
   }, [])
 
   const refreshCurrent = useCallback(() => refreshMarket(market), [market, refreshMarket])
@@ -165,9 +202,7 @@ export function Tutorial() {
               market={market}
               attempt={attempt}
               progress={progress}
-              onAttemptChange={(nextAttempt) =>
-                setAttempts((current) => ({ ...current, [market]: nextAttempt }))
-              }
+              onAttemptChange={(nextAttempt) => applyAttemptUpdate(market, nextAttempt)}
               onRefresh={refreshCurrent}
             />
           </div>
