@@ -4,10 +4,9 @@ import { Link } from 'react-router-dom'
 import { LinkButton } from '../ui/Button'
 import { AttachedImage } from '../community/AttachedImage'
 import { TradeShareCard } from '../community/TradeShareCard'
-import { LinkIcon } from '../ui/icons'
+import { LinkPreviewCard } from '../community/LinkPreviewCard'
 import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
-import { extractLinkPreview } from '../../lib/linkPreview'
 import { getPosts } from '../../services/communityService'
 import type { Post } from '../../services/types'
 
@@ -91,20 +90,9 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
                     />
                   )
                 )}
-                {post.sharedTrade === null &&
-                  post.imageId === null &&
-                  (() => {
-                    const link = extractLinkPreview(post.content)
-                    if (!link) return null
-                    return (
-                      <div className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-muted">
-                          <LinkIcon width={13} height={13} />
-                        </span>
-                        <span className="truncate text-xs text-muted">{link.host}</span>
-                      </div>
-                    )
-                  })()}
+                {post.sharedTrade === null && post.imageId === null && (
+                  <LinkPreviewCard content={post.content} compact className="mt-2" />
+                )}
                 <p className="mt-1.5 text-[10px] text-muted">
                   {post.authorNickname} · {formatDateTime(post.createdAt)}
                 </p>

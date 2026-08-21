@@ -3,6 +3,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent, type MouseEvent 
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { AttachedImage } from '../components/community/AttachedImage'
 import { TradeShareCard } from '../components/community/TradeShareCard'
+import { LinkPreviewCard } from '../components/community/LinkPreviewCard'
 import { LikeButton } from '../components/community/LikeButton'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -527,6 +528,10 @@ export function Community() {
                               className="mt-3 h-40 w-full rounded-2xl object-cover"
                             />
                           )
+                        )}
+                        {/* 매매 카드·사진이 없을 때만 본문 속 URL을 도메인 미리보기 카드로 보여준다. */}
+                        {post.sharedTrade === null && post.imageId === null && (
+                          <LinkPreviewCard content={post.content} background="elevated" className="mt-3" />
                         )}
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                           <p className="text-xs text-muted">
