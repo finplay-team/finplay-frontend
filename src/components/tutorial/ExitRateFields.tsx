@@ -8,6 +8,10 @@ import type { ExitRateBounds } from '../../services/tutorialTypes'
  * 서버가 `exitRateBounds`를 아직 안 내려줄 때만 쓰는 **폴백**이다 — 계약상 손절 2~5·익절 3~8이고
  * 기존 세 프리셋(2/3·3/5·5/8)의 최솟값·최댓값을 그대로 경계로 삼은 값이다. 서버가 범위를 바꾸면
  * 이 숫자는 틀리므로, 응답에 범위가 실려 오면 **언제나 응답 쪽이 이긴다**.
+ *
+ * ⚠️ **익절 하한 3을 임의로 낮추지 않는다.** 대략 1.8% 아래로 내려가면 041 대본 1막에서 익절이 먼저
+ * 터져 "손절을 먼저 겪는" 학습 순서가 깨진다(백엔드 전수 조사). 낮춰야 한다면 서버가 `exitRateBounds`로
+ * 내려주는 값을 바꾸는 것이 정본이고, 그때도 대본을 다시 훑어 본 뒤라야 한다.
  */
 export const FALLBACK_EXIT_RATE_BOUNDS: ExitRateBounds = {
   stopLossMin: 2,
@@ -21,6 +25,14 @@ export const FALLBACK_EXIT_RATE_BOUNDS: ExitRateBounds = {
  * 미선택 기본값이 손절 3·익절 5다. 응답에 값이 있으면 언제나 응답 쪽이 이긴다.
  */
 export const FALLBACK_EXIT_RATES = { stopLossRate: 3, takeProfitRate: 5 }
+
+/**
+ * ⚠️ **입력창의 placeholder로 범위의 하한을 제안하지 않는다.** 특히 익절 하한(3)은 여유가 얇다 —
+ * 백엔드가 041 대본을 0.1%p 간격 전수(1,581조합)로 훑어 본 결과, 구간 안에서는 손절·익절이 100%
+ * 도달하고 1막에서 익절이 먼저 터지는 조합이 하나도 없어 "손절을 먼저 겪는" 학습 순서가 보장되는데,
+ * **그 여유가 0.96%p뿐이다**(1막 고점 1.018 대 가장 좁은 익절선 1.02794). 화면이 하한 근처를 권하면
+ * 사용자를 그 얇은 가장자리로 몰게 된다. placeholder는 지금 저장된 값을 되비추는 데만 쓴다.
+ */
 
 /** 서버가 받는 정밀도. 소수 둘째 자리부터는 서버가 거부하므로 입력 단계에서 자른다. */
 const RATE_DECIMALS = 1
@@ -198,7 +210,7 @@ export function ExitRateFields({
             inputMode="decimal"
             autoComplete="off"
             disabled={locked}
-            placeholder={String(bounds.stopLossMin)}
+            placeholder={toRateInput(stopLossRate)}
             value={stopLossInput}
             onChange={(e) => setStopLossInput(cleanDecimal(e.target.value, RATE_DECIMALS))}
             className={`${inputClass} focus:border-loss focus:ring-4 focus:ring-loss/15`}
@@ -239,7 +251,7 @@ export function ExitRateFields({
             inputMode="decimal"
             autoComplete="off"
             disabled={locked}
-            placeholder={String(bounds.takeProfitMin)}
+            placeholder={toRateInput(takeProfitRate)}
             value={takeProfitInput}
             onChange={(e) => setTakeProfitInput(cleanDecimal(e.target.value, RATE_DECIMALS))}
             className={`${inputClass} focus:border-gain focus:ring-4 focus:ring-gain/15`}

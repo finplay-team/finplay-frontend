@@ -648,6 +648,17 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.queryByText('느긋하게')).not.toBeInTheDocument()
   })
 
+  it('입력창 placeholder로 범위의 하한을 제안하지 않는다', async () => {
+    // 익절 하한(3)은 학습 순서 여유가 0.96%p뿐이라(백엔드 전수 조사) 화면이 그 가장자리를 권하면
+    // 안 된다. placeholder는 하한(손절 2·익절 3)이 아니라 지금 저장된 값(3·5)을 되비춘다.
+    renderFlow(attempt({ riskSnapshot: null }), progress())
+    await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
+    await flushPromises()
+
+    expect(screen.getByLabelText('손절 비율 (−%)')).toHaveAttribute('placeholder', '3')
+    expect(screen.getByLabelText('익절 비율 (+%)')).toHaveAttribute('placeholder', '5')
+  })
+
   it('서버가 준 범위를 입력 안내로 그대로 보여준다 (숫자를 화면에 박아 두지 않는다)', async () => {
     renderFlow(attempt({ riskSnapshot: null }), {
       ...progress(),
