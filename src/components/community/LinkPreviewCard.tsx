@@ -1,5 +1,5 @@
 // 게시글 본문 속 URL을 도메인 미리보기 카드로 보여준다 — content 에 URL이 없으면 아무 것도 그리지 않는다
-import { useState } from 'react'
+import { useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { extractLinkPreview } from '../../lib/linkPreview'
 import { LinkIcon } from '../ui/icons'
 
@@ -34,8 +34,30 @@ export function LinkPreviewCard({
   const bg = background === 'elevated' ? 'bg-elevated' : 'bg-surface'
   const thumbnailHeight = compact ? 'h-24' : 'h-40'
 
+  /**
+   * 목록에서는 카드 전체가 게시글 상세로 가는 Link 라서, 이 안에 실제 <a> 를 또 넣으면
+   * 앵커 중첩(유효하지 않은 HTML)이 된다. 대신 클릭을 여기서 가로채 새 탭으로 직접 연다.
+   */
+  const openLink = (e: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    window.open(link.url, '_blank', 'noopener,noreferrer')
+  }
+  // 실제 <a> 는 Enter 로만 활성화된다 — Space 까지 반응하면 스페이스바로 페이지를 스크롤하려는
+  // 키보드 사용자의 동작을 가로채게 된다.
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter') openLink(e)
+  }
+
   return (
-    <div className={`overflow-hidden ${rounded} border border-line ${bg} ${className}`}>
+    <div
+      role="link"
+      tabIndex={0}
+      aria-label={`${link.host} 링크 새 탭에서 열기`}
+      onClick={openLink}
+      onKeyDown={handleKeyDown}
+      className={`cursor-pointer overflow-hidden ${rounded} border border-line ${bg} ${className}`}
+    >
       <div className={`flex items-center ${gap} ${padding}`}>
         <span
           className={`flex ${iconBoxSize} shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-muted`}

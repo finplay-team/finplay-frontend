@@ -6,6 +6,7 @@ import { AttachedImage } from '../components/community/AttachedImage'
 import { TradeShareCard } from '../components/community/TradeShareCard'
 import { LikeButton } from '../components/community/LikeButton'
 import { LinkifiedText } from '../components/community/LinkifiedText'
+import { LinkPreviewCard } from '../components/community/LinkPreviewCard'
 import { Button, LinkButton } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -504,6 +505,9 @@ export function CommunityPost() {
                 text={post.content}
                 className="mt-7 whitespace-pre-wrap text-[15px] leading-relaxed text-ink/90"
               />
+
+              {/* 본문 속 링크 미리보기는 매매 카드·사진과 별개다 — 함께 붙을 수 있다. */}
+              <LinkPreviewCard content={post.content} className="mt-4" />
 
               {/* 매매 카드와 사진은 한 게시물에 동시에 붙지 않는다(서로 배타적). */}
               {post.sharedTrade !== null ? (
