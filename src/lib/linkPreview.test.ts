@@ -11,6 +11,7 @@ describe('extractLinkPreview', () => {
     expect(extractLinkPreview('참고 자료: https://example.com/post?id=1 확인해 주세요')).toEqual({
       url: 'https://example.com/post?id=1',
       host: 'example.com',
+      thumbnailUrl: null,
     })
   })
 
@@ -19,6 +20,7 @@ describe('extractLinkPreview', () => {
     expect(extractLinkPreview('출처는 https://example.com입니다')).toEqual({
       url: 'https://example.com/',
       host: 'example.com',
+      thumbnailUrl: null,
     })
   })
 
@@ -26,6 +28,7 @@ describe('extractLinkPreview', () => {
     expect(extractLinkPreview('참고 (https://example.com) 링크입니다')).toEqual({
       url: 'https://example.com/',
       host: 'example.com',
+      thumbnailUrl: null,
     })
   })
 
@@ -33,6 +36,7 @@ describe('extractLinkPreview', () => {
     expect(extractLinkPreview('여기서 확인하세요. https://example.com.')).toEqual({
       url: 'https://example.com/',
       host: 'example.com',
+      thumbnailUrl: null,
     })
   })
 
@@ -40,6 +44,39 @@ describe('extractLinkPreview', () => {
     expect(extractLinkPreview('연속 https://a.comhttps://b.com 링크')).toEqual({
       url: 'https://a.com/',
       host: 'a.com',
+      thumbnailUrl: null,
+    })
+  })
+
+  it('youtu.be 링크는 영상 썸네일 URL을 함께 반환한다', () => {
+    expect(extractLinkPreview('뉴스 https://youtu.be/MeGhLeqsmws?si=ELOLwWfRbGuc55tG')).toEqual({
+      url: 'https://youtu.be/MeGhLeqsmws?si=ELOLwWfRbGuc55tG',
+      host: 'youtu.be',
+      thumbnailUrl: 'https://img.youtube.com/vi/MeGhLeqsmws/hqdefault.jpg',
+    })
+  })
+
+  it('끝에 슬래시가 붙은 youtu.be 링크도 첫 경로 조각만 영상 id로 쓴다', () => {
+    expect(extractLinkPreview('https://youtu.be/dQw4w9WgXcQ/')).toEqual({
+      url: 'https://youtu.be/dQw4w9WgXcQ/',
+      host: 'youtu.be',
+      thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    })
+  })
+
+  it('youtube.com/watch 링크도 영상 썸네일 URL을 반환한다', () => {
+    expect(extractLinkPreview('https://www.youtube.com/watch?v=abc123&t=10s')).toEqual({
+      url: 'https://www.youtube.com/watch?v=abc123&t=10s',
+      host: 'www.youtube.com',
+      thumbnailUrl: 'https://img.youtube.com/vi/abc123/hqdefault.jpg',
+    })
+  })
+
+  it('youtube.com/shorts 링크도 영상 썸네일 URL을 반환한다', () => {
+    expect(extractLinkPreview('https://youtube.com/shorts/xyz789')).toEqual({
+      url: 'https://youtube.com/shorts/xyz789',
+      host: 'youtube.com',
+      thumbnailUrl: 'https://img.youtube.com/vi/xyz789/hqdefault.jpg',
     })
   })
 })
