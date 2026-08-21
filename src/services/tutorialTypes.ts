@@ -161,8 +161,9 @@ export interface PracticeAttemptResponse {
    * 양수다** — 3%는 `3`이지 `0.03`이 아니고, 손절도 `-3`이 아니라 `3`으로 온다(부호는 이름이 정한다).
    * 미선택이면 서버 기본값(3·5)이 오므로 화면은 null 분기를 갖지 않는다.
    *
-   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 계약상 항상 non-null이지만 이 필드를 내려주는
-   * 백엔드가 아직 배포 전이라, 옛 서버에 붙으면 `undefined`가 온다. 배포를 확인하면 `?`를 뗀다.
+   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 계약상 항상 non-null이고(2026-08-21 백엔드
+   * 확인 완료), 미선택 실행에도 서버가 기본값 3·5를 채워 보낸다. 다만 이 필드를 내려주는 백엔드가
+   * 아직 **머지·배포 전**이라 옛 서버에 붙으면 `undefined`가 온다. 배포를 확인하면 `?`를 뗀다.
    */
   exitStopLossRate?: number
   exitTakeProfitRate?: number
@@ -170,6 +171,7 @@ export interface PracticeAttemptResponse {
    * **잠금 기준은 "최초 매수 여부"가 아니라 "지금 보유 중인가"다.** 매수 전과 포지션을 정리한 뒤(재진입
    * 대기)에는 몇 번이든 바꿀 수 있고, 보유 중에만 막힌다. 프리셋이 자유 입력으로 바뀐 뒤에도 같은
    * 제약이라 이름만 옛 것이고 그대로 쓴다(손실 중에 손절선을 내리는 사후 합리화를 막는 제약이다).
+   * **서버가 이 이름을 유지하기로 확정했다**(2026-08-21) — `exitRatesLocked` 같은 새 이름은 없다.
    */
   exitPresetLocked: boolean
 }
@@ -333,8 +335,9 @@ export interface PracticeEntryResponse {
    * 안에서도 재진입 사이에 비율을 다시 정할 수 있으므로 attempt의 현재 값과 다를 수 있고, 완료
    * 화면은 반드시 이 진입별 값을 써야 한다.
    *
-   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 이 필드를 채우는 백엔드가 아직 배포 전이라
-   * 옛 응답에는 없다. 없을 때 화면은 진입가와 기준선 가격에서 되돌려 계산한다(EntryComparison).
+   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 필드 이름과 "항상 non-null"은 2026-08-21에
+   * 백엔드로 확인했고, 아직 **머지·배포 전**이라 옛 응답에는 없다. 없을 때 화면은 진입가와 기준선
+   * 가격에서 되돌려 계산한다(EntryComparison). 배포를 확인하면 `?`와 그 폴백을 함께 뗀다.
    */
   stopLossRate?: number
   takeProfitRate?: number
@@ -389,8 +392,9 @@ export interface TutorialStageProgress {
   /** 이 실행에 지정가 매수와 지정가 매도가 둘 다 있다. 주식은 항상 false. */
   limitBuySellCompleted: boolean
   /**
-   * 이 실행에서 손절·익절 기준을 직접 정했는가. 프리셋이 자유 입력으로 바뀐 뒤에도 서버가 이 이름을
-   * 그대로 쓰며 `PUT .../exit-rates` 호출 여부로 판정한다(백엔드 확인 필요 — 미확인 가정이다).
+   * 이 실행에서 손절·익절 기준을 직접 정했는가. 프리셋이 자유 입력으로 바뀐 뒤에도 **이름·의미가
+   * 그대로다** — 판정만 넓어져 프리셋이든 자유 비율이든 한 번이라도 정하면 `true`이고,
+   * `PUT .../exit-rates` 호출로도 `true`가 된다(2026-08-21 백엔드 확인 완료, 개명 없음).
    */
   exitPresetSelected: boolean
 }
@@ -432,6 +436,10 @@ export interface InvestmentPracticeResponse {
   /**
    * 손절·익절 비율 입력의 허용 범위(2026-08-21 재설계). **아직 안 내려주는 서버가 있어 옵셔널이다** —
    * 없으면 화면이 `FALLBACK_EXIT_RATE_BOUNDS`로 대신 그린다.
+   *
+   * 서버는 같은 값을 `attempt` 안에도 싣는다(쓰기 경로 네 곳은 `PracticeAttemptResponse`만 돌려주기
+   * 때문이다). 화면은 **루트만 읽는다** — attempt가 없는 legacy 경로에서도 루트는 non-null이라
+   * 한 곳만 보면 되고, 두 곳을 다 읽으면 어느 쪽이 정본인지가 흐려진다(2026-08-21 백엔드 확인).
    */
   exitRateBounds?: ExitRateBounds
 }

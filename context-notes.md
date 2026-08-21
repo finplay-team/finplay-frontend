@@ -1315,22 +1315,34 @@ C(체험 직후 반사실 모달)는 백엔드 spec 작성 중이라 이번 범�
 뒀는데, 앞선 저장이 느릴 때 그 사이 고친 값이 조용히 버려져 (a)와 똑같은 어긋남이 남는다.
 순번 ref(`exitRatesSeqRef`)로 **마지막 요청의 응답만** 반영하는 방식으로 바꿨다.
 
-## D51. 서버 계약에서 확인하지 못한 것 (백엔드 배포 전이라 네트워크로 검증 못 함)
+## D51. 서버 계약 — 가정으로 붙였다가 백엔드 회신으로 전부 확정됐다
 
 `PUT /api/education/practice/attempts/{market}/exit-rates`에 `{stopLossRate, takeProfitRate}`를
 보낸다. **둘 다 퍼센트 수의 양수다** — 3%는 `3`이고 **손절도 `-3`이 아니라 `3`**이다(서버가 −로
-해석). 범위 숫자는 화면에 박지 않고 `exitRateBounds`를 그린다. 아래는 가정이고 백엔드 세션에
-질의해 뒀다.
+해석). 범위 숫자는 화면에 박지 않고 `exitRateBounds`를 그린다. 아래 네 가지를 가정으로 붙이고 백엔드
+세션에 질의해 뒀는데, **회신으로 전부 그대로 확정됐다**(2026-08-21). 고칠 코드는 없었다.
 
-- `exitStopLossRate`·`exitTakeProfitRate`를 `PracticeAttemptResponse`(진행 조회의 `attempt`,
-  PUT 응답과 같은 타입) 필드로 읽는다. 배포 전 서버 대비로 **옵셔널**이며 없으면
-  `FALLBACK_EXIT_RATES`(3·5)로 폴백한다 — 배포를 확인하면 `?`를 뗀다.
-- `exitRateBounds`는 진행 조회 응답 **루트**에서 읽고, 없으면 `FALLBACK_EXIT_RATE_BOUNDS`
-  (손절 2~5·익절 3~8)를 쓴다. 둘 다 이름에 폴백임이 드러나 있다.
-- **보유 중 잠금은 기존 `exitPresetLocked`를 그대로 쓴다** — 이름만 옛 것이고 의미("지금 보유
-  중인가")가 같다고 봤다. 서버가 이 필드를 새 이름으로 바꾸면 **화면이 조용히 안 잠긴다**.
-- `tutorialStageProgress.exitPresetSelected`가 새 엔드포인트 호출로도 true가 되는지 미확인.
-  체크리스트 문구만 "손절·익절 기준 정하기"로 바꿨다.
+- `exitStopLossRate`·`exitTakeProfitRate`는 `PracticeAttemptResponse`(진행 조회의 `attempt`,
+  PUT 응답과 같은 타입) 안에 있다 — **확정**. 항상 non-null이고 미선택이면 서버가 3·5를 채운다.
+- `exitRateBounds`는 진행 조회 응답 **루트**에 있다 — **확정**. 서버는 `attempt` 안에도 같은 값을
+  싣지만(쓰기 경로가 attempt만 돌려주므로) 화면은 루트만 읽는다. 루트는 attempt가 없는 legacy
+  경로에서도 non-null이라 한 곳만 보면 되고, 두 곳을 다 읽으면 정본이 흐려진다.
+- **보유 중 잠금은 기존 `exitPresetLocked` 그대로다** — **확정**. `exitRatesLocked` 같은 개명은
+  없고 자유 입력에도 같은 잠금이 걸린다.
+- `tutorialStageProgress.exitPresetSelected`도 이름·의미 그대로이고 `PUT .../exit-rates` 호출로
+  `true`가 된다 — **확정**. 체크리스트 문구만 "손절·익절 기준 정하기"로 바꿨다.
+
+**다만 두 rate 필드와 진입별 비율은 타입에서 옵셔널로 남겨 뒀다.** 계약이 아니라 배포 순서
+때문이다 — 백엔드가 구현은 마쳤지만 아직 머지·배포 전이라 옛 서버에 붙으면 `undefined`가 온다.
+배포를 확인하면 `?`와 폴백을 함께 떼는 것이 다음 사람의 일이다.
+
+**직렬화 함정 하나(백엔드가 알려 준 것, 실제로 확인했다).** 서버는 소수 자릿수를 값이 아니라
+**표기된 scale로** 판정한다 — `3.05`뿐 아니라 값이 같은 `3.00`도 400이고 `3`·`3.0`은 통과한다.
+지금 코드는 JS `number`를 그대로 실어 `JSON.stringify`가 `3`으로 직렬화하므로 안전하다.
+여기에 `toFixed(2)` 같은 걸 끼워 넣으면 멀쩡한 값이 거부된다 — `updateExitRates` 주석에 경고로
+남겼다. 겸사겸사 입력 검증의 `Math.round(v * 10) !== v * 10`이 부동소수점 때문에 2.1·3.3·4.7
+같은 값을 잘못 거부하지 않는지 node로 직접 확인했다(전부 정상 통과). 의심만 하고 넘기거나
+추측으로 고치지 않았다.
 
 ## D52. 완료 화면의 프리셋 이름 칩을 진입별 비율 표기로 바꿨다
 
@@ -1349,6 +1361,12 @@ C(체험 직후 반사실 모달)는 백엔드 spec 작성 중이라 이번 범�
 카드에 3번째 진입의 기준이 붙는다.
 
 **폴백.** 진입별 비율 필드는 배포 전 서버 대비로 옵셔널이며, 없으면 `rateFromPrices`로 진입가와
-기준선 가격에서 되돌려 계산한다(서버가 그 비율로 만든 가격이라 역산이 정확하다). 필드 이름은
-`riskSnapshot`과 같은 `stopLossRate`·`takeProfitRate`로 **가정**했다 — 백엔드가 다른 이름을 쓰면
-폴백만 계속 타면서 조용히 넘어가므로(값 자체는 맞다) 배포 뒤 응답을 한 번 눈으로 확인해야 한다.
+기준선 가격에서 되돌려 계산한다(서버가 그 비율로 만든 가격이라 역산이 정확하다). 필드 이름을
+`riskSnapshot`과 같은 `stopLossRate`·`takeProfitRate`로 가정했었는데 **백엔드 회신으로 그대로
+확정됐다**(항상 non-null, `entrySequence`·`exitPreset` 다음 자리). 배포 뒤 옵셔널과 폴백을 함께
+떼면 된다.
+
+덧붙여 `attempt.selectedExitPreset`·`riskSnapshot.exitPreset`도 커스텀 조합이면 `null`이 온다.
+둘 다 화면이 더 이상 읽지 않으므로(전자는 타입에서 뺐고, 후자는 비율만 쓴다) 영향은 없다.
+**열거형 밖의 값(`CUSTOM` 등)은 어느 필드에도 오지 않는다** — `CAUTIOUS|BALANCED|RELAXED|null`
+넷뿐이다.

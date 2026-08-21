@@ -67,6 +67,15 @@ export function selectPracticeInstrument(
  *
  * ⚠️ **두 값 모두 퍼센트 수의 양수다** — 3%는 `3`(`0.03` 아님)이고 **손절도 `-3`이 아니라 `3`으로
  * 보낸다**(서버가 −로 해석한다). 여기서 부호나 배율을 틀리면 100배·부호 반전이 조용히 난다.
+ *
+ * ⚠️ **숫자를 문자열로 만들어 보내지 않는다(특히 `toFixed`).** 서버는 소수 자릿수를 값이 아니라
+ * **표기된 scale로** 판정한다 — `3.05`는 물론 값이 같은 `3.00`도 400이고, `3`과 `3.0`은 통과한다.
+ * 지금은 JS `number`를 그대로 실어 `JSON.stringify`가 `3`으로 직렬화하므로 안전하다. 여기에
+ * `toFixed(2)` 같은 걸 끼워 넣으면 멀쩡한 값이 거부된다(2026-08-21 백엔드 확인).
+ *
+ * 거부 코드(백엔드 확정) — 보유 중이거나 attempt 없음 409 `PRACTICE_STEP_LOCKED`, 2단계 왕복
+ * 미완료 409 `PRACTICE_STAGE_LOCKED`(이 판정이 앞선다), 완료된 attempt 409
+ * `PRACTICE_ALREADY_COMPLETED`, 범위 밖·소수 둘째 자리·키 누락 400 `VALIDATION_ERROR`.
  */
 export function updateExitRates(
   market: Market,
