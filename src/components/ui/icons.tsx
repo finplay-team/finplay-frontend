@@ -27,6 +27,12 @@ export const ArrowRight = (props: IconProps) => (
   </svg>
 )
 
+export const LinkIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M9 15 15 9M10.5 6.5 12 5a4 4 0 0 1 5.66 5.66l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-5.66-5.66l1.5-1.5" />
+  </svg>
+)
+
 
 
 /**

@@ -2,8 +2,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LinkButton } from '../ui/Button'
+import { AttachedImage } from '../community/AttachedImage'
+import { TradeShareCard } from '../community/TradeShareCard'
+import { LinkIcon } from '../ui/icons'
 import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
+import { extractLinkPreview } from '../../lib/linkPreview'
 import { getPosts } from '../../services/communityService'
 import type { Post } from '../../services/types'
 
@@ -75,6 +79,32 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
               >
                 <p className="text-sm font-semibold text-ink">{post.title}</p>
                 <p className="mt-1 text-xs text-muted">{toExcerpt(post.content)}</p>
+                {/* 매매 카드와 사진은 한 게시물에 동시에 붙지 않는다(서로 배타적). */}
+                {post.sharedTrade !== null ? (
+                  <TradeShareCard trade={post.sharedTrade} compact className="mt-2" />
+                ) : (
+                  post.imageId !== null && (
+                    <AttachedImage
+                      imageId={post.imageId}
+                      alt={`${post.title} 첨부 사진`}
+                      className="mt-2 h-24 w-full rounded-lg object-cover"
+                    />
+                  )
+                )}
+                {post.sharedTrade === null &&
+                  post.imageId === null &&
+                  (() => {
+                    const link = extractLinkPreview(post.content)
+                    if (!link) return null
+                    return (
+                      <div className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-muted">
+                          <LinkIcon width={13} height={13} />
+                        </span>
+                        <span className="truncate text-xs text-muted">{link.host}</span>
+                      </div>
+                    )
+                  })()}
                 <p className="mt-1.5 text-[10px] text-muted">
                   {post.authorNickname} · {formatDateTime(post.createdAt)}
                 </p>
