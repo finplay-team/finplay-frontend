@@ -486,7 +486,9 @@ export function Portfolio() {
                                     variant="soft"
                                     size="sm"
                                     onClick={() =>
-                                      navigate('/community', { state: { sharedTradeId: trade.tradeId } })
+                                      navigate(`/community?instrumentId=${trade.instrumentId}`, {
+                                        state: { sharedTradeId: trade.tradeId },
+                                      })
                                     }
                                   >
                                     수익 인증 카드 만들기

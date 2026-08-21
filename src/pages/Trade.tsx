@@ -1664,7 +1664,9 @@ export function Trade() {
                             size="sm"
                             variant="ghost"
                             onClick={() =>
-                              navigate('/community', { state: { sharedTradeId: result.tradeId } })
+                              navigate(`/community?instrumentId=${result.instrumentId}`, {
+                                state: { sharedTradeId: result.tradeId },
+                              })
                             }
                           >
                             수익 인증 카드로 공유하기

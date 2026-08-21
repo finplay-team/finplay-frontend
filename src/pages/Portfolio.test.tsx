@@ -86,7 +86,7 @@ describe('Portfolio 체결 내역 — 수익 인증 카드 만들기', () => {
     fireEvent.click(shareButton)
 
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith('/community', { state: { sharedTradeId: 501 } }),
+      expect(mockNavigate).toHaveBeenCalledWith('/community?instrumentId=17', { state: { sharedTradeId: 501 } }),
     )
   })
 

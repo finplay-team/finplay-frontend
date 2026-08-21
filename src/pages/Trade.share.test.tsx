@@ -153,6 +153,6 @@ describe('Trade 매도 체결 결과 — 수익 인증 카드로 공유하기', 
     const shareButton = await screen.findByRole('button', { name: '수익 인증 카드로 공유하기' })
     fireEvent.click(shareButton)
 
-    expect(mockNavigate).toHaveBeenCalledWith('/community', { state: { sharedTradeId: 901 } })
+    expect(mockNavigate).toHaveBeenCalledWith('/community?instrumentId=17', { state: { sharedTradeId: 901 } })
   })
 })
