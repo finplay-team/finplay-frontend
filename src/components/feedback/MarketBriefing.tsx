@@ -56,9 +56,13 @@ function summaryCopy(
 export function MarketBriefing({ market }: Props) {
   const [data, setData] = useState<MarketBriefingResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** 목록을 5개로 접어 두는 기본값. "전체보기"를 누르면 펼친다 — 서버가 이미 받아온 목록이라
+   *  추가 요청 없이 그대로 더 보여주면 된다(2026-08-22 피드백). */
+  const [expanded, setExpanded] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
+    setExpanded(false)
     try {
       setData(await getMarketBriefing(market))
     } catch (e) {
@@ -71,6 +75,7 @@ export function MarketBriefing({ market }: Props) {
   }, [load])
 
   const copy = data === null ? '' : summaryCopy(data.status, data.originTradeDate, data.items.length, market)
+  const visibleItems = data === null ? [] : expanded ? data.items : data.items.slice(0, 5)
 
   return (
     <Card accent={market === 'CRYPTO' ? 'coin' : 'brand'}>
@@ -82,13 +87,23 @@ export function MarketBriefing({ market }: Props) {
               오늘 시장에서 확인된 소식
             </h3>
           </div>
-          <span className="text-[10px] text-muted">
-            {market === 'CRYPTO'
-              ? '최근 24시간 기준'
-              : data?.originTradeDate
-                ? `${formatOriginDate(data.originTradeDate)} 원본 거래일 기준`
-                : ''}
-          </span>
+          {/* 전체보기는 이 기준 문구 바로 밑, 오른쪽 정렬로 둔다 — 다시 불러오기는 카드 하단
+              원래 자리 그대로다(2026-08-22 피드백). */}
+          <div className="flex flex-col items-end gap-2">
+            <span className="text-[10px] text-muted">
+              {market === 'CRYPTO'
+                ? '최근 24시간 기준'
+                : data?.originTradeDate
+                  ? `${formatOriginDate(data.originTradeDate)} 원본 거래일 기준`
+                  : ''}
+            </span>
+            {/* 이미 받아온 목록이라 추가 요청 없이 그대로 펼친다 — API 재조회가 필요한 "더 불러오기"와 다르다. */}
+            {data && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)}>
+                {expanded ? '접기' : `전체보기 (${data.items.length})`}
+              </Button>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -117,7 +132,8 @@ export function MarketBriefing({ market }: Props) {
               )}
             </div>
 
-            {/* 목록은 요약 상태와 독립이다. EMPTY(브리핑 행 없음)·UNAVAILABLE 에서도 items 가 채워진다. */}
+            {/* 목록은 요약 상태와 독립이다. EMPTY(브리핑 행 없음)·UNAVAILABLE 에서도 items 가 채워진다.
+                한 화면에 너무 많이 쌓이면 어지러워 최대 5개만 보여준다(2026-08-22 피드백). */}
             {data.items.length > 0 && (
               <ul className="mt-4 space-y-2">
                 {/* items 에 id 가 없다. url + 발행시각을 key 로 쓴다. */}
@@ -126,7 +142,7 @@ export function MarketBriefing({ market }: Props) {
                   여러 종목에 태그되면 그대로 겹친다(브리핑에서 실제로 중복 key 경고가 났다).
                   목록이 재정렬되지 않으므로 인덱스를 섞어도 안전하다.
                 */}
-                {data.items.map((item, i) => (
+                {visibleItems.map((item, i) => (
                   <li
                     key={`${i}-${item.url}`}
                     className="rounded-xl border border-line p-3"
@@ -155,8 +171,9 @@ export function MarketBriefing({ market }: Props) {
             {/*
               전 종목 합산 단일 목록이라 상한 절단이 가장 세게 걸리는 자리다.
               서버가 공시를 먼저 확보한 뒤 뉴스를 채우므로 공시가 아래쪽에 몰린다 — 재정렬하지 않는다.
+              화면에 보이는 항목 기준으로만 안내한다 — 접혀서 안 보이는 공시 때문에 문구가 뜨면 안 된다.
             */}
-            {data.items.some((i) => i.type === 'DISCLOSURE') && (
+            {visibleItems.some((i) => i.type === 'DISCLOSURE') && (
               <p className="mt-3 text-[10px] leading-relaxed text-muted">
                 공시는 접수일자만 제공되어 목록 아래쪽에 모입니다.
               </p>
