@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { Nav } from './components/Nav'
 import { Footer } from './components/Footer'
+import { ToastViewport } from './components/ui/ToastViewport'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { Landing } from './pages/Landing'
 import { Signup } from './pages/Signup'
@@ -49,6 +50,7 @@ export default function App() {
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <Nav />
+      <ToastViewport />
       <main className="flex-1">
         <Routes>
           <Route path="/" element={<Landing />} />

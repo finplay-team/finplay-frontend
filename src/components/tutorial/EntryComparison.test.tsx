@@ -7,8 +7,12 @@ import type { PracticeEntryResponse } from '../../services/tutorialTypes'
 function entry(overrides: Partial<PracticeEntryResponse> = {}): PracticeEntryResponse {
   return {
     entrySequence: 1,
-    exitPreset: 'BALANCED',
+    // 자유 비율이 옛 프리셋과 일치하지 않으면 서버가 null을 준다 — 화면은 이 값을 쓰지 않는다.
+    exitPreset: null,
+    stopLossRate: 3,
+    takeProfitRate: 3,
     buyOrderType: 'MARKET',
+    scenarioScriptId: 'CRYPTO_STORY_V1',
     buyAt: '2026-08-20T11:00:00',
     buyPrice: 12400,
     buyQuantity: 40,
@@ -34,7 +38,8 @@ describe('EntryComparison', () => {
           entry(),
           entry({
             entrySequence: 2,
-            exitPreset: 'CAUTIOUS',
+            stopLossRate: 5,
+            takeProfitRate: 8,
             sellCause: 'TAKE_PROFIT',
             realizedPnl: 27_180,
             unrealizedPnlIfHeld: 19_440,
@@ -47,8 +52,11 @@ describe('EntryComparison', () => {
     expect(screen.getByText('2번째 진입')).toBeInTheDocument()
     expect(screen.getByText('손절로 팔림')).toBeInTheDocument()
     expect(screen.getByText('익절로 팔림')).toBeInTheDocument()
-    expect(screen.getByText('보통')).toBeInTheDocument()
-    expect(screen.getByText('조심스럽게')).toBeInTheDocument()
+    // 프리셋 이름이 아니라 그 진입에 실제로 적용된 비율을 진입별로 보여준다.
+    expect(screen.getByText('손절 −3% · 익절 +3%')).toBeInTheDocument()
+    expect(screen.getByText('손절 −5% · 익절 +8%')).toBeInTheDocument()
+    expect(screen.queryByText('보통')).not.toBeInTheDocument()
+    expect(screen.queryByText('조심스럽게')).not.toBeInTheDocument()
   })
 
   it('손익을 다시 계산하지 않고 서버 값을 그대로 그린다', () => {
@@ -83,6 +91,20 @@ describe('EntryComparison', () => {
     expect(screen.getByText('-15,860원')).toBeInTheDocument()
   })
 
+  it('2단계(ORDER_BASICS) 진입은 서버가 값을 줘도 "안 팔았다면" 칸을 뺀다', () => {
+    // 2단계는 자동 청산 자체가 없어(049 ORDERBASICS-022) 손절·익절을 안 지켰다는 비교가 성립하지
+    // 않는다 — 값이 와도 3단계 전용 교훈이라 보여주지 않는다(2026-08-21 피드백).
+    render(
+      <EntryComparison
+        layout="narrow"
+        entries={[entry({ scenarioScriptId: 'CRYPTO_ORDER_BASICS_V1', unrealizedPnlIfHeld: 38_200 })]}
+      />,
+    )
+
+    expect(screen.queryByText('안 팔았다면')).not.toBeInTheDocument()
+    expect(screen.getByText('실제 손익')).toBeInTheDocument()
+  })
+
   it('아직 팔지 않은 진입은 손익 대신 보유 중임을 말한다', () => {
     render(
       <EntryComparison
@@ -104,9 +126,56 @@ describe('EntryComparison', () => {
     expect(screen.queryByText(/실제 손익/)).not.toBeInTheDocument()
   })
 
+  it('2단계(ORDER_BASICS)에서 연 진입에만 "2단계 연습" 칩을 붙인다 (049 "5-A")', () => {
+    render(
+      <EntryComparison
+        layout="wide"
+        entries={[
+          entry({ entrySequence: 1, scenarioScriptId: 'CRYPTO_ORDER_BASICS_V1' }),
+          entry({ entrySequence: 2, scenarioScriptId: 'CRYPTO_STORY_V1' }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('2단계 연습')).toBeInTheDocument()
+    // 3단계(이야기) 진입은 매번 당연한 걸 말하지 않는다 — 칩이 하나뿐이어야 한다.
+    expect(screen.getAllByText('2단계 연습')).toHaveLength(1)
+  })
+
+  it('대본이 없는 실행(scenarioScriptId=null)은 대본 칩을 안 붙인다', () => {
+    render(<EntryComparison layout="narrow" entries={[entry({ scenarioScriptId: null })]} />)
+
+    expect(screen.queryByText('2단계 연습')).not.toBeInTheDocument()
+  })
+
   it('진입이 없으면 아무것도 그리지 않는다', () => {
     const { container } = render(<EntryComparison layout="narrow" entries={[]} />)
 
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('진입별 비율이 서로 달라도 각 카드가 자기 비율을 그린다 (attempt의 현재 값이 아니다)', () => {
+    // 재진입 사이에 기준을 다시 정할 수 있으므로 진입마다 값이 다르다.
+    render(
+      <EntryComparison
+        layout="wide"
+        entries={[entry({ stopLossRate: 2, takeProfitRate: 7 }), entry({ entrySequence: 2, stopLossRate: 4.5, takeProfitRate: 3 })]}
+      />,
+    )
+
+    expect(screen.getByText('손절 −2% · 익절 +7%')).toBeInTheDocument()
+    expect(screen.getByText('손절 −4.5% · 익절 +3%')).toBeInTheDocument()
+  })
+
+  it('진입별 비율이 아직 응답에 없으면 기준선 가격에서 되돌려 계산한다 (폴백)', () => {
+    // 12,400 → 손절 12,028 은 -3%, 익절 12,772 는 +3%다.
+    render(
+      <EntryComparison
+        layout="narrow"
+        entries={[entry({ stopLossRate: undefined, takeProfitRate: undefined })]}
+      />,
+    )
+
+    expect(screen.getByText('손절 −3% · 익절 +3%')).toBeInTheDocument()
   })
 })

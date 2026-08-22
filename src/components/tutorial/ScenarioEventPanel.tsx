@@ -1,8 +1,10 @@
 // 대본이 공개한 가상 사건을 왼쪽 컬럼 피드·차트 상태 줄·완료 요약 세 곳에 그리는 컴포넌트 모음
 import { useEffect, useRef, useState } from 'react'
 import { Coin, Check, ArrowUpRight, Handshake, Warning, ChatBubble, Newspaper } from '../ui/icons'
+import { formatKRW } from '../../lib/format'
 import type {
   PracticeScenarioEventResponse,
+  PriceGuideRangeResponse,
   ScenarioCauseStatus,
   ScenarioStage,
 } from '../../services/tutorialTypes'
@@ -126,6 +128,37 @@ export function ScenarioStatusLine({
         {cause !== null && !finished && <span className="text-muted"> · {cause}</span>}
       </p>
       <span className="flex-none text-[11px] text-muted">← 왼쪽에서 소식 확인</span>
+    </div>
+  )
+}
+
+/**
+ * 2단계(`ORDER_BASICS`) 전용 상태 줄 — `ScenarioStatusLine`과 같은 자리를 쓰지만 이 대본은 사건이
+ * 없어서(049) "지금 상태"를 말하는 대신 이 구간의 목적과 가격 안내 범위를 말한다
+ * (`frontend-reply-505.md` 결정 3). 점·모양은 `ScenarioStatusLine`과 맞춘다 — 같은 자리에서
+ * 다른 종류의 안내를 받는다는 게 시각적으로 튀면 안 된다. "← 왼쪽에서 소식 확인"은 뺀다 — 왼쪽에
+ * 볼 사건 자체가 없다.
+ */
+export function OrderBasicsStatusLine({
+  market,
+  priceGuideRange,
+}: {
+  market: Market
+  priceGuideRange: PriceGuideRangeResponse | null
+}) {
+  const accentDot = market === 'CRYPTO' ? 'bg-coin' : 'bg-brand'
+  return (
+    <div className="mt-4 flex items-center gap-2.5 rounded-2xl border border-line bg-elevated/60 px-3.5 py-3">
+      <span aria-hidden="true" className={`h-1.5 w-1.5 flex-none rounded-full ${accentDot}`} />
+      <p className="min-w-0 flex-1 text-sm text-ink">
+        지금은 주문 방법을 연습하는 자리입니다 — 사건은 없습니다
+        {priceGuideRange !== null && (
+          <span className="text-muted">
+            {' '}
+            · {formatKRW(priceGuideRange.low)}~{formatKRW(priceGuideRange.high)} 사이에서 움직입니다
+          </span>
+        )}
+      </p>
     </div>
   )
 }

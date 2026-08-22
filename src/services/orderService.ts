@@ -1,5 +1,6 @@
 // 주문 생성·수정·취소·조회 서비스 (시장가는 즉시 체결, 지정가는 코인 전용으로 PENDING 생성)
 import { api } from '../lib/apiClient'
+import { OrderStateUnknownError } from '../lib/errorMessages'
 import type {
   LimitOrderCreateRequest,
   LimitOrderResponse,
@@ -38,6 +39,10 @@ export function placeOrder(
  * 1) 호출부가 limitPrice 를 포함한 본문으로 키를 만든다 (hooks/useIdempotencyKey).
  * 2) 여기서 응답의 limitPrice·quantity 가 요청과 일치하는지 확인한다 — 어긋나면 조용한 replay 를
  *    맞은 것이므로 화면에 성공으로 보여주지 않는다. 409 보다 이 경우가 더 위험하다.
+ *
+ * ⚠️ 불일치는 **실패가 아니다** — 우리가 보낸 주문이 서버에 들어갔는지 알 수 없는 상태이므로
+ * `OrderStateUnknownError` 로 던진다. 맨 `Error` 로 던지면 `toUserMessage` 가 "알 수 없는 오류가
+ * 발생했습니다"로 뭉갠다(그 문구의 유일한 출처였다).
  */
 export async function placeLimitOrder(
   req: LimitOrderCreateRequest,
@@ -48,7 +53,7 @@ export async function placeLimitOrder(
   })
   // 문자열 비교 금지 — scale 이 엔드포인트마다 달라 "0.1" 과 0.10000000 이 함께 나온다.
   if (Number(res.limitPrice) !== Number(req.limitPrice) || Number(res.quantity) !== Number(req.quantity)) {
-    throw new Error('IDEMPOTENT_REPLAY_MISMATCH')
+    throw new OrderStateUnknownError()
   }
   return res
 }

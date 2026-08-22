@@ -650,3 +650,87 @@ Chrome 확장이 여전히 안 붙어서 **별도 Chrome 을 CDP(9333)로 띄워
 - [x] 완료 화면 진입 카드에 `buyOrderType` 칩 표시 (EntryComparison)
 - [x] 백엔드 회신 3건 결정 — docs/frontend-reply-505.md (D41)
 - [x] 신규/수정 테스트 10건 + 전체 스위트 228개 통과, `npm run build` 통과
+
+## 12. 백엔드 PR #516·#517·#521·#522 반영 — 2단계(ORDER_BASICS) 대본 완결 (2026-08-21, 이슈 #507)
+- [x] `ScenarioStage`에 `ORDER_BASICS` 추가, `PriceGuideRangeResponse`·`priceGuideRange` 추가,
+      `PracticeEntryResponse.scenarioScriptId` 추가
+- [x] `advancePracticeAttemptScript` 서비스 함수 (`POST .../advance-script`)
+- [x] 사건 UI(속보 자막·사건 피드·상태 줄)는 `ORDER_BASICS`를 `null`과 동일하게 취급 —
+      대신 `OrderBasicsStatusLine`(목적 설명 + 가격 안내 범위)을 그 자리에 둔다 (결정 3)
+- [x] 프리셋 선택: `ORDER_BASICS`에서는 무조건 잠그고("주문 방법을 배우는 자리"), 그 밖에는
+      시장가·지정가 왕복 미완료 시 잠근다 (결정 1) — 서버 409 `PRACTICE_STAGE_LOCKED` 실제 강제와 짝
+- [x] 지정가 토글: 시장가 왕복 전에는 잠그고 이유를 붙인다. 잠긴 채로 지정가가 골라져 있으면
+      시장가로 되돌린다(재시작 대응)
+- [x] "3단계로 가기" CTA — 시장가·지정가 왕복을 모두 마치고 보유 중이 아닐 때만 뜬다. 사용자
+      버튼으로만 호출(결정 2). 전환 성공 직후 tick을 한 번 더 불러 새 대본 커서를 즉시 반영
+- [x] 완료 화면 진입 카드에 "2단계 연습" 칩 (`scenarioScriptId === CRYPTO_ORDER_BASICS_V1`만)
+- [x] `errorMessages.ts`에 `PRACTICE_STAGE_LOCKED` 기본 문구 추가
+- [x] 신규 테스트 15건(093 소단원) + 전체 스위트 250개 통과, `tsc -b`·`npm run build` 통과
+- [x] 실제 백엔드(origin/dev, PR #516·517·521·522 반영 워크트리)로 종목 선택 →
+      2단계 목적 설명·가격 범위 확인 → 시장가 매수·매도(체크리스트 확인) → 지정가 매수·매도
+      (체크리스트 확인) → "3단계로 가기" 클릭 → 041 이야기 대본으로 실제 전환까지 전부 검증
+
+## 13. 손절·익절 프리셋 → 자유 입력 재설계 (2026-08-21, 제안 A)
+- [x] `ExitRateFields` 신설 — 실전 예약 매도 탭(OcoExitPlanPanel) 비율 모드를 그대로 본뜬 손절·익절
+      자유 입력 두 칸. 입력 정제(`cleanDecimal`)는 실전 것을 export 해서 재사용
+- [x] `ExitPresetPicker` 제거, `selectExitPreset`·`availableExitPresets`·`selectedExitPreset`·
+      `PracticeExitPresetOption`·`PRESET_LABEL` 사용처 정리(내 변경이 만든 orphan만)
+- [x] `updateExitRates` 서비스 함수 (`PUT .../exit-rates`, 손절도 양수 퍼센트 수로 전송)
+- [x] 범위는 `exitRateBounds`(진행 조회)로 그리고, 없으면 폴백 상수(이름에 FALLBACK 명시)
+- [x] 두 비율 독립 — 손절 5 + 익절 3 조합도 그대로 저장(테스트로 고정)
+- [x] 보유 중(`exitPresetLocked`)에는 입력 잠금 + 이유 표시(서버도 거부하는 제약)
+- [x] 수량 기준 예상 손익 금액 병기 유지 (042 EXITPRESET-006 취지)
+- [x] 폭의 뜻을 한 줄로 돌려주는 문구 — 경계 숫자가 아니라 범위 안 위치로 판정
+- [x] 차트에 손절·익절선 미리 그리기 — 매수 전 "예상" 어림선, 체결 후 서버 확정선, 2단계는 제외
+- [x] 디바운스 자동 저장 + 마지막 요청 응답만 반영(순번 ref)
+- [x] 신규/수정 테스트 8건, 전체 263개 통과 · `tsc -b --noEmit` · `npm run build` 통과
+- [x] 서버 계약 대조 — 가정 네 가지(rate·bounds 위치, `exitPresetLocked`·`exitPresetSelected`
+      이름 유지, 진입별 비율 필드명) 전부 백엔드 회신으로 확정, 고칠 코드 없었음
+- [ ] 실제 백엔드로 검증 — 백엔드가 구현은 마쳤으나 머지·배포 전이라 네트워크 호출은 못 해 봄
+- [x] placeholder가 범위 하한을 제안하던 것 수정 — 익절 하한은 학습 순서 여유가 0.96%p뿐이다
+      (백엔드 1,581조합 전수 조사). 회귀 테스트 1건 추가
+- [ ] **배포 확인 후 옵셔널(`?`)과 폴백 세 개를 한 번에 제거** — 셋 다 서버가 항상 non-null로
+      채워 보내는 것이 확정됐고, 지금 옵셔널인 이유는 계약이 아니라 머지·배포 순서뿐이다.
+      (1) `attempt.exitStopLossRate`·`exitTakeProfitRate` + `FALLBACK_EXIT_RATES`
+      (2) `PracticeEntryResponse.stopLossRate`·`takeProfitRate` + `rateFromPrices` 역산 폴백
+          — 042 이전 진입도 서버가 `exit_preset` → 기본값 3·5 순으로 해석해 채운다
+      (3) `InvestmentPracticeResponse.exitRateBounds` + `FALLBACK_EXIT_RATE_BOUNDS`
+          — 루트·`attempt` 양쪽, attempt가 없는 legacy 경로에서도 non-null이다
+- [x] 완료 화면 진입 카드의 프리셋 이름 칩 → 진입별 실제 비율 표기(`손절 −3% · 익절 +5%`)로 교체,
+      `exitPreset`은 화면에서 완전히 제거(타입도 nullable로 정정), 비율 필드가 없으면 기준선
+      가격에서 역산하는 폴백 — 테스트 2건 추가, 전체 265개 통과
+
+## 14. 예약 매도 수동화 — 손절·익절을 "겪는 자리"를 실전 순서로 되돌림 (2026-08-21, 제품 오너 지적)
+- [x] 매수 폼에서 손절·익절 입력을 완전히 제거(`ExitRateFields` 호출·설명 문단·`BuyRiskPreviewLine`)
+      — 3단계 매수는 시장가·지정가만 고른다(실전 매수 폼과 동일)
+- [x] 매도 화면 "예약 매도" 탭 활성화 — `TutorialExitPlanPanel`(실전 `OcoExitPlanPanel`을 재사용하지
+      않고 같은 모양으로 감싼다. 이유는 그 파일 상단 주석)
+- [x] `createPracticeExitPlan` 서비스 (`POST .../exit-plan`, 손절도 양수 퍼센트 수) · 취소는 실전과
+      같은 `DELETE /api/exit-plans/{id}`(`cancelExitPlan`) 재사용
+- [x] `ExitRateFields`를 제어 컴포넌트로 리팩터 — 디바운스 자동 저장 제거, 기준가를 현재가가 아니라
+      **평균 매수가**로 교체(예약은 산 값 기준으로 걸린다). 범위·의미 문구·예상 금액은 그대로 이동
+- [x] 학습 흐름 안내 `ExitJourneyGuide` — 사기 → 예약 걸기 → 기다리기 진행 레일 + 국면별 문구 +
+      "손절 겪기·익절 겪기" 진행 칩(상시 노출). 잠그지 않고 안내만 한다(강도 b)
+- [x] 차트 참고선이 예약을 따라간다 — 예약 있으면 확정선, 보유+미예약이면 입력값 기준 예상선,
+      매수 전에는 아무 선도 안 그림. `RiskEducationCard`·`ChartSummary` 기준선도 예약이 있을 때만
+- [x] 엣지 케이스 — 예약 없이 매도(버튼 아래 "지금 팔면 못 겪는다" 안내, 잠그지 않음) · 예약 취소
+      (다시 걸라는 안내 + 취소 사실 명시) · 손절만 겪고 재매수 안 함("이제 익절 차례" + 나가도 됨)
+- [x] 2단계(ORDER_BASICS)에서는 예약 탭 잠금 + 이유, 학습 안내 자체를 그리지 않음
+- [x] 주식(STOCK)에는 예약 탭·학습 안내 없음 — 걸 방법이 없는 화면에서 권하지 않는다
+- [x] `exitPresetSelected` 체크리스트 항목을 예약 생성·경험으로도 채움 — **백엔드가 서버 판정을
+      "이 실행에 예약이 하나라도 있으면 참(상태 무관)"으로 넓혔다**(2026-08-21). 서버 판정이 화면
+      판정보다 좁아지는 경우가 없으므로, 화면 OR는 배포 때까지만 남기는 폴백이다
+- [x] 테스트 21건 신규/개편(상태 전이 검증) · 전체 277개 통과 · `tsc -b --noEmit` · `npm run build`
+- [x] 진행 조회 계약 확정 반영 — `pendingExitPlan`(이름·null 규칙 그대로, 필드 3개 추가) ·
+      겪음 두 boolean은 `exitExperience` 객체 안으로 · `exitPlanCreatable` 신설
+- [x] **예약은 진입당 한 번(write-once)** — 취소해도 그 진입에서는 다시 못 건다. `exitPlanCreatable`을
+      정본으로 국면을 하나 더 만들고(`HOLDING_PLAN_SPENT`), 공용 `EXIT_PLAN_ALREADY_EXISTS` 문구
+      ("취소한 뒤 다시")를 이 화면에서만 덮었다
+- [x] BigDecimal이 문자열로 올 수 있어 `readPendingExitPlan()`에서 숫자로 강제 + 회귀 테스트
+- [ ] **배포 확인 후 제거** — `StageProgressChecklist`의 `exitPlanned` prop과 그 인자(서버
+      `exitPresetSelected`만 그리면 된다) · `readExitExperience`의 `entries[].sellCause` 폴백 ·
+      `readExitPlanCreatable`의 어림 폴백 · `estimateExitPlan`과 `localExitPlan` 상태.
+      §13의 폴백 세 개와 함께 한 번에 뗀다.
+      **배포 순서는 백엔드 먼저로 고정돼 있다**(백엔드 052 run-log "남은 것"에도 같은 내용) — 프론트가
+      먼저 떼면 옛 판정 서버에서 "손절·익절 기준 정하기"가 예약을 걸어도 안 채워지는 회귀가 난다
+- [ ] 실제 백엔드로 검증 — 로컬 8080이 인증 앞단에서 401을 돌려줘 라우트 존재 여부조차 확인 불가

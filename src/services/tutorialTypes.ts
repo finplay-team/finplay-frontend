@@ -98,20 +98,26 @@ export type PracticeAttemptMode = 'ACTIVE' | 'REPLAY'
 export type PracticeAttemptStatus = 'SELECTING_INSTRUMENT' | 'IN_PROGRESS' | 'EXPIRED' | 'COMPLETED'
 
 /**
- * 042(이슈 #477) 손절·익절 프리셋 3종. 표시 이름(조심스럽게·보통·느긋하게)은 서버가 주지 않는다 —
- * 서버가 쓰지 않는 문구를 열거형에 두지 않기로 정했으므로 화면이 갖는다.
+ * 042(이슈 #477) 손절·익절 프리셋 3종. **화면에서는 더 이상 고르지 않는다** — 2026-08-21 재설계로
+ * 프리셋 픽커가 자유 입력(`exitStopLossRate`·`exitTakeProfitRate`)으로 바뀌었다. 서버가 진입 기록
+ * (`PracticeEntryResponse.exitPreset`·`riskSnapshot.exitPreset`)에 아직 이 값을 실어 보내므로 타입만
+ * 남긴다. 표시 이름(조심스럽게·보통·느긋하게)은 함께 지웠다 — 사용자에게 없는 개념이다.
  */
 export type PracticeExitPreset = 'CAUTIOUS' | 'BALANCED' | 'RELAXED'
 
 /**
- * 고를 수 있는 프리셋 하나의 식별자와 비율. **비율은 퍼센트 수다**(3%는 `3`, `0.03`이 아니다) —
- * `exit_plans.stop_loss_rate`와 단위를 맞춘 것이고, 100으로 다시 나누면 100배 틀린 값이 조용히 나온다.
- * `stopLossRate`·`takeProfitRate` 모두 양수 크기이며 부호는 이름으로만 정해진다(손절은 −, 익절은 +).
+ * 손절·익절 비율의 허용 범위(2026-08-21 재설계). **퍼센트 수이고 양 끝을 포함한다**(손절 2~5,
+ * 익절 3~8이 서버 기본값). 손절도 양수 크기이며 부호는 이름으로만 정해진다.
+ *
+ * ⚠️ **화면이 이 숫자를 하드코딩하지 않는다** — 서버가 범위를 바꾸면 입력창만 옛 범위로 남아
+ * "저장은 되는데 화면이 막는" 상태가 된다. 서버가 아직 안 내려주는 동안만
+ * `FALLBACK_EXIT_RATE_BOUNDS`(ExitRateFields.tsx)로 대신한다.
  */
-export interface PracticeExitPresetOption {
-  preset: PracticeExitPreset
-  stopLossRate: number
-  takeProfitRate: number
+export interface ExitRateBounds {
+  stopLossMin: number
+  stopLossMax: number
+  takeProfitMin: number
+  takeProfitMax: number
 }
 
 export interface PracticeRiskSnapshotResponse {
@@ -141,7 +147,7 @@ export interface PracticeAttemptResponse {
   completedAt: LocalDateTimeString | null
   /**
    * 이 응답을 돌려주는 **쓰기 경로 네 곳**(진입 `PUT .../attempts/{market}`·재시작 `POST .../restart`·
-   * 종목 선택 `PUT .../instrument`·프리셋 선택 `PUT .../exit-preset`, 이슈 #502)만 실제 값을 채운다.
+   * 종목 선택 `PUT .../instrument`·손절익절 비율 `PUT .../exit-rates`, 이슈 #502)만 실제 값을 채운다.
    * **`GET /api/education/practice`의 `attempt` 필드는 여전히 세 필드 모두 `0`이다** — 그 경로는 tick과
    * 함께 폴링되느라 호출마다 계좌를 다시 읽지 않기 때문이며, `0`은 "잔고가 0"이 아니라 "이 응답은
    * 계좌를 조회하지 않았다"는 뜻이다. 잔액이 필요한 화면은 반드시 위 네 응답에서 받은 값을 상태로 들고
@@ -151,17 +157,23 @@ export interface PracticeAttemptResponse {
   tutorialAvailableCash: number
   tutorialRealizedPnl: number
   /**
-   * 현재 실행 세대의 선택값. **미선택이면 `null`이 아니라 `"BALANCED"`(기본 프리셋)로 온다** — 화면이
-   * null 분기를 갖지 않아도 되고, 보이는 값과 실제로 적용될 값이 항상 같다.
+   * 현재 실행 세대의 손절·익절 비율(2026-08-21 재설계, `PUT .../exit-rates`). **퍼센트 수이고 둘 다
+   * 양수다** — 3%는 `3`이지 `0.03`이 아니고, 손절도 `-3`이 아니라 `3`으로 온다(부호는 이름이 정한다).
+   * 미선택이면 서버 기본값(3·5)이 오므로 화면은 null 분기를 갖지 않는다.
+   *
+   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 계약상 항상 non-null이고(2026-08-21 백엔드
+   * 확인 완료), 미선택 실행에도 서버가 기본값 3·5를 채워 보낸다. 다만 이 필드를 내려주는 백엔드가
+   * 아직 **머지·배포 전**이라 옛 서버에 붙으면 `undefined`가 온다. 배포를 확인하면 `?`를 뗀다.
    */
-  selectedExitPreset: PracticeExitPreset
+  exitStopLossRate?: number
+  exitTakeProfitRate?: number
   /**
    * **잠금 기준은 "최초 매수 여부"가 아니라 "지금 보유 중인가"다.** 매수 전과 포지션을 정리한 뒤(재진입
-   * 대기)에는 몇 번이든 바꿀 수 있고, 보유 중에만 막힌다.
+   * 대기)에는 몇 번이든 바꿀 수 있고, 보유 중에만 막힌다. 프리셋이 자유 입력으로 바뀐 뒤에도 같은
+   * 제약이라 이름만 옛 것이고 그대로 쓴다(손실 중에 손절선을 내리는 사후 합리화를 막는 제약이다).
+   * **서버가 이 이름을 유지하기로 확정했다**(2026-08-21) — `exitRatesLocked` 같은 새 이름은 없다.
    */
   exitPresetLocked: boolean
-  /** 고정 3개. 비율만 오고 표시 이름은 화면이 붙인다. */
-  availableExitPresets: PracticeExitPresetOption[]
 }
 
 /**
@@ -198,6 +210,12 @@ export interface PracticeOrderResponse {
  *
  * 대본을 쓰지 않는 실행(주식 튜토리얼·완료 replay)은 `null`이라, 화면은 `scenarioStage === null`로
  * "대본 UI 없음"을 판정한다.
+ *
+ * **(049, 이슈 #507) `ORDER_BASICS`는 2단계(주문 방법 학습) 대본의 유일한 구간이다.** 사건이 없고
+ * (`causeStatus`는 항상 `NONE_KNOWN`, `revealedEvents`는 항상 빈 배열) 대기 구간도 없다 — 진행
+ * 구간 하나뿐이다. `frontend-reply-505.md`의 결정대로 **사건 UI(속보 자막·사건 피드·상태 줄) 판정에서는
+ * `null`과 똑같이 취급한다** — `scenarioStage !== null && scenarioStage !== 'ORDER_BASICS'`로
+ * "이야기 UI를 그린다"를 판정하고, `ORDER_BASICS`에서는 그 자리에 목적 설명 한 줄만 남긴다.
  */
 export type ScenarioStage =
   | 'IDLE_ENTRY'
@@ -207,6 +225,7 @@ export type ScenarioStage =
   | 'ACT3'
   | 'ACT4'
   | 'FINISHED'
+  | 'ORDER_BASICS'
 
 /**
  * **두 값뿐이고 그게 의도다.** 미공개 사건이 있는 구간도 `NONE_KNOWN`이라 "아직 안 밝혀졌다"와
@@ -240,6 +259,16 @@ export interface PracticeTutorialCandleResponse {
   current: boolean
 }
 
+/**
+ * 대본이 안내하는 가격 변동 범위(049 ORDERBASICS-009~011, 이슈 #507). 극값에서 폭의 5%만큼
+ * 안쪽으로 물린 뒤 안내 단위로 안쪽 반올림한 값이라 **차트에 실제로 찍히는 값보다 살짝 좁다** —
+ * "대략 이 사이"라는 안내이지 정확한 상한·하한이 아니다.
+ */
+export interface PriceGuideRangeResponse {
+  low: Decimal
+  high: Decimal
+}
+
 export interface PracticeTutorialChartResponse {
   attemptId: number
   runNumber: number
@@ -256,6 +285,12 @@ export interface PracticeTutorialChartResponse {
   scenarioProgressing: boolean | null
   causeStatus: ScenarioCauseStatus | null
   revealedEvents: PracticeScenarioEventResponse[]
+  /**
+   * **사건이 하나라도 있는 대본(041 이야기)은 항상 `null`이다** — 041의 폭락 극값을 미리 알려주면
+   * 사건 공개 게이트를 뚫는다. 대본을 쓰지 않는 실행도 `null`. 그 대본 전체에 대한 고정값이라
+   * tick으로 커서가 움직여도 값이 바뀌지 않는다.
+   */
+  priceGuideRange: PriceGuideRangeResponse | null
   candles: PracticeTutorialCandleResponse[]
 }
 
@@ -289,7 +324,23 @@ export type PracticeSellCause = 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL'
 export interface PracticeEntryResponse {
   /** 실행 세대 안의 몇 번째 진입인가(1부터). 손절 후 재매수하면 2다. */
   entrySequence: number
-  exitPreset: PracticeExitPreset
+  /**
+   * ⚠️ **화면에서 쓰지 않는다.** 자유 비율이 옛 프리셋 3개 중 하나와 **정확히 일치할 때만** 그
+   * 식별자가 오고 그 밖에는 `null`이다(2026-08-21 재설계, 백엔드 확정). 이 값으로 이름을 그리면
+   * 사용자가 고른 대부분의 조합에서 빈 칩이 된다 — 완료 화면은 아래 두 비율을 정본으로 읽는다.
+   */
+  exitPreset: PracticeExitPreset | null
+  /**
+   * **그 진입에 실제로 적용된** 손절·익절 비율(퍼센트 수, 둘 다 양수). 진입별로 고정된다 — 한 실행
+   * 안에서도 재진입 사이에 비율을 다시 정할 수 있으므로 attempt의 현재 값과 다를 수 있고, 완료
+   * 화면은 반드시 이 진입별 값을 써야 한다.
+   *
+   * ⚠️ **옵셔널인 이유는 계약이 아니라 배포 순서다** — 필드 이름과 "항상 non-null"은 2026-08-21에
+   * 백엔드로 확인했고, 아직 **머지·배포 전**이라 옛 응답에는 없다. 없을 때 화면은 진입가와 기준선
+   * 가격에서 되돌려 계산한다(EntryComparison). 배포를 확인하면 `?`와 그 폴백을 함께 뗀다.
+   */
+  stopLossRate?: number
+  takeProfitRate?: number
   buyAt: LocalDateTimeString
   buyPrice: Decimal
   buyQuantity: Decimal
@@ -311,6 +362,13 @@ export interface PracticeEntryResponse {
   realizedPnl: number | null
   /** 팔지 않고 들고 있었다면의 평가손익(원). 대본을 쓰지 않는 실행이면 null */
   unrealizedPnlIfHeld: number | null
+  /**
+   * 이 진입이 열릴 때 attempt가 쓰던 대본(049 ORDERBASICS-023, 이슈 #512 "5-A"). **진입별로
+   * 고정된다** — 2→3단계 전환(`advance-script`)은 같은 실행 세대 안에서 대본만 갈아끼우므로,
+   * 전환 전에 연 진입과 전환 후에 연 진입이 같은 `entries[]`에 섞이고 서로 다른 값을 가질 수 있다.
+   * 대본을 쓰지 않는 실행(생성기 버전 1·legacy)은 `null`이다.
+   */
+  scenarioScriptId: 'CRYPTO_ORDER_BASICS_V1' | 'CRYPTO_STORY_V1' | null
 }
 
 /**
@@ -321,13 +379,23 @@ export interface PracticeEntryResponse {
  * ⚠️ **`limitBuySellCompleted`는 주식(STOCK)에서 영원히 `false`다** — 지정가 주문 경로가 코인
  * 전용이라 주식 튜토리얼에는 이 단계를 통과할 수단이 없다. 진행 표시를 시장 구분 없이 쓰면 주식에서
  * 영원히 막힌 것처럼 보인다.
+ *
+ * **(049 ORDERBASICS-015~017, 이슈 #507) 이제 판정뿐 아니라 강제도 한다.** 대본을 쓰는 CRYPTO
+ * 실행에서 시장가 왕복 전에 지정가 주문을 내거나, 지정가 왕복 전에 프리셋을 고르면 서버가 409
+ * `PRACTICE_STAGE_LOCKED`로 거부한다 — 거부 본문에 이유가 안 실리므로(그 정보는 이미 이 값에 있다)
+ * 화면이 이 값으로 미리 판단해 버튼을 잠그거나 이유를 붙여야 한다. 강제 대상은 대본을 쓰는 CRYPTO
+ * 실행뿐이고 STOCK·시장가 주문은 항상 통과한다.
  */
 export interface TutorialStageProgress {
   /** 이 실행에 시장가 매수 체결이 있고, **사용자가 낸** 시장가 매도 체결도 있다. */
   marketBuySellCompleted: boolean
   /** 이 실행에 지정가 매수와 지정가 매도가 둘 다 있다. 주식은 항상 false. */
   limitBuySellCompleted: boolean
-  /** 이 실행에서 프리셋을 직접 골랐는가(`PUT .../exit-preset` 호출 여부). */
+  /**
+   * 이 실행에서 손절·익절 기준을 직접 정했는가. 프리셋이 자유 입력으로 바뀐 뒤에도 **이름·의미가
+   * 그대로다** — 판정만 넓어져 프리셋이든 자유 비율이든 한 번이라도 정하면 `true`이고,
+   * `PUT .../exit-rates` 호출로도 `true`가 된다(2026-08-21 백엔드 확인 완료, 개명 없음).
+   */
   exitPresetSelected: boolean
 }
 
@@ -365,4 +433,70 @@ export interface InvestmentPracticeResponse {
   attempt: PracticeAttemptResponse | null
   /** 2단계 판정(이슈 #503). null이 되지 않는다 — 위 타입 설명을 반드시 먼저 읽는다. */
   tutorialStageProgress: TutorialStageProgress
+  /**
+   * 손절·익절 비율 입력의 허용 범위(2026-08-21 재설계). **아직 안 내려주는 서버가 있어 옵셔널이다** —
+   * 없으면 화면이 `FALLBACK_EXIT_RATE_BOUNDS`로 대신 그린다.
+   *
+   * 서버는 같은 값을 `attempt` 안에도 싣는다(쓰기 경로 네 곳은 `PracticeAttemptResponse`만 돌려주기
+   * 때문이다). 화면은 **루트만 읽는다** — 한 곳만 보면 되고, 두 곳을 다 읽으면 어느 쪽이 정본인지가
+   * 흐려진다. 루트·`attempt` 양쪽 모두, 그리고 attempt가 아예 없는 legacy 경로(즐겨찾기만·미착수·
+   * 042 이전 chain)에서도 **항상 non-null**이다(2026-08-21 백엔드 확인). 따라서 이 `?`와
+   * `FALLBACK_EXIT_RATE_BOUNDS`도 배포 확인 뒤에는 두 rate·진입별 비율과 **함께** 뗄 수 있다.
+   */
+  exitRateBounds?: ExitRateBounds
+  /**
+   * 지금 걸려 있는 PENDING 예약 매도(2026-08-21 수동 예약 재설계, 백엔드 확정). **예약이 없으면
+   * 필드 자체가 `null`이다** — 빈 껍데기 객체가 오지 않는다. 판정 범위는 현재 실행 세대라,
+   * 재시작하면 `null`로 돌아간다.
+   *
+   * 화면은 이 필드를 직접 읽지 않고 `services/tutorialExitPlan.ts`의 `readPendingExitPlan()`만
+   * 쓴다 — 배포 전 서버(필드 없음)를 그 한 곳에서 흡수하기 위해서다.
+   */
+  pendingExitPlan?: PracticeExitPlanSummary | null
+  /**
+   * 지금 새 예약을 걸 수 있는가(백엔드 확정, 항상 boolean). `POST .../exit-plan`이 201을 줄 조건과
+   * 같은 산출식이다.
+   *
+   * ⚠️ **"보유 중이고 예약이 없다"와 같지 않다.** 예약은 **한 진입에 한 번만** 걸 수 있어
+   * (write-once), 걸었다가 취소한 진입에서는 보유 중이고 예약도 없는데 이 값이 `false`다.
+   * 그 상태에서 다시 걸면 409 `EXIT_PLAN_ALREADY_EXISTS`다 — 화면이 이 값을 안 보고 "다시 걸어
+   * 주세요"라고 말하면 누를 때마다 실패하는 안내가 된다.
+   */
+  exitPlanCreatable?: boolean
+  /**
+   * 이번 실행 세대에서 손절/익절을 실제로 겪었는가(백엔드 확정, 항상 non-null 객체).
+   * 읽는 자리는 `readExitExperience()` 한 곳뿐이고, 이 필드가 없는 서버에서는 그 함수가
+   * `entries[].sellCause`로 같은 판정을 만들어 낸다 — 그래서 배포 전에도 화면이 동작한다.
+   */
+  exitExperience?: PracticeExitExperienceResponse
+}
+
+/**
+ * 사용자가 직접 건 예약 매도 한 건(2026-08-21 재설계, 백엔드 확정). 실전 `ExitPlanResponse`의
+ * 부분집합이며, 취소는 실전과 같은 `DELETE /api/exit-plans/{exitPlanId}`를 쓴다.
+ */
+export interface PracticeExitPlanSummary {
+  /**
+   * 취소 경로 변수. **서버 응답에서는 항상 non-null**이고, `null`은 화면이 배포 전 서버에서
+   * 스스로 만들어 든 어림 예약(`estimateExitPlan`)일 때뿐이다 — 그때는 취소 버튼을 숨긴다.
+   */
+  exitPlanId: number | null
+  /** 퍼센트 수이고 둘 다 양수다(손절도 `3`) — `exit-rates`와 완전히 같은 규칙이다. */
+  stopLossRate: number
+  takeProfitRate: number
+  stopLossPrice: Decimal
+  takeProfitPrice: Decimal
+  /** 그 진입의 체결가 — 예약선이 이 값에서 만들어진다. 화면의 "기준가(평균 매수가)"가 이것이다. */
+  entryPrice?: Decimal
+  /** 예약된 수량과 예약 시각. 지금 화면은 "가진 수량 전부"라고만 말해서 읽지 않는다. */
+  quantity?: Decimal
+  reservedAt?: LocalDateTimeString
+}
+
+/** `recommendedNext`는 `entries[].sellCause`와 같은 어휘다(백엔드 확정) — 먼저 겪은 쪽의 반대. */
+export interface PracticeExitExperienceResponse {
+  stopLossExperienced: boolean
+  takeProfitExperienced: boolean
+  bothExperienced: boolean
+  recommendedNext: 'STOP_LOSS' | 'TAKE_PROFIT' | null
 }

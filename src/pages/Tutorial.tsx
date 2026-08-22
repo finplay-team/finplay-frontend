@@ -24,6 +24,32 @@ function pickBalance(attempt: PracticeAttemptResponse): TutorialBalance {
   }
 }
 
+/**
+ * 잔액이 움직였는지를 진행 조회만으로 알아내는 지문. 튜토리얼 현금은 **매수·매도가 체결될 때** 움직이고,
+ * 그 체결 흔적은 단계별 evidence(체결 id·수량)에 남는다.
+ *
+ * 왜 필요한가 — 진행 조회는 잔액 세 필드를 늘 `0`으로 준다(이슈 #502. `0`은 "잔고가 0"이 아니라 "이
+ * 응답은 계좌를 조회하지 않았다"는 뜻이라 그대로 그리면 안 된다). 실제 잔액은 쓰기 경로 네 곳에서만
+ * 오는데, 그중 `ensurePracticeAttempt`는 멱등이라 다시 불러도 되지만 tick마다(3초) 부르면 폴링이
+ * 쓰기가 된다. 그래서 **체결이 실제로 생긴 tick에서만** 한 번 더 부른다.
+ */
+function tradeFingerprint(progress: InvestmentPracticeResponse): string {
+  const trades = progress.steps
+    .map(({ evidence }) =>
+      [
+        evidence.buyTradeId,
+        evidence.sellTradeId,
+        evidence.buyQuantity,
+        evidence.sellQuantity,
+        evidence.remainingQuantity,
+      ].join(':'),
+    )
+    .join('|')
+  // 재시작·완료는 evidence를 통째로 갈아 끼우지만, 세대와 상태도 같이 넣어 두면 흔적이 우연히 같아지는
+  // 자리에서도 잔액을 새로 읽는다.
+  return `${progress.attempt?.runNumber ?? '-'}#${progress.attempt?.status ?? '-'}#${trades}`
+}
+
 function StatusPill({
   label,
   progress,
@@ -71,6 +97,21 @@ export function Tutorial() {
   useEffect(() => {
     balancesRef.current = balances
   }, [balances])
+  /** 잔액을 마지막으로 읽었을 때의 체결 지문. 이게 바뀐 tick에서만 잔액을 다시 읽는다. */
+  const fingerprintRef = useRef<Record<Market, string | null>>({ STOCK: null, CRYPTO: null })
+
+  /** 실잔액을 싣고 오는 쓰기 경로를 한 번 불러 balances·ref를 함께 올린다. 실패는 삼킨다 —
+   *  잔액 갱신 때문에 진행 폴링이 오류 화면으로 덮이면 안 되고, 지문을 안 올려 두면 다음 tick에 다시 시도한다. */
+  const readBalance = useCallback(async (targetMarket: Market): Promise<TutorialBalance | null> => {
+    try {
+      const balance = pickBalance(await ensurePracticeAttempt(targetMarket))
+      balancesRef.current = { ...balancesRef.current, [targetMarket]: balance }
+      setBalances((current) => ({ ...current, [targetMarket]: balance }))
+      return balance
+    } catch {
+      return null
+    }
+  }, [])
 
   const loadMarket = useCallback(async (targetMarket: Market) => {
     setLoadingMarket(targetMarket)
@@ -79,6 +120,7 @@ export function Tutorial() {
       const ensured = await ensurePracticeAttempt(targetMarket)
       const progress = await getPracticeProgress(targetMarket)
       const balance = pickBalance(ensured)
+      fingerprintRef.current[targetMarket] = tradeFingerprint(progress)
       setBalances((current) => ({ ...current, [targetMarket]: balance }))
       setAttempts((current) => ({
         ...current,
@@ -92,15 +134,33 @@ export function Tutorial() {
     }
   }, [])
 
-  const refreshMarket = useCallback(async (targetMarket: Market) => {
-    const progress = await getPracticeProgress(targetMarket)
-    setProgressByMarket((current) => ({ ...current, [targetMarket]: progress }))
-    if (progress.attempt) {
+  const refreshMarket = useCallback(
+    async (targetMarket: Market) => {
+      const progress = await getPracticeProgress(targetMarket)
+      setProgressByMarket((current) => ({ ...current, [targetMarket]: progress }))
+      if (!progress.attempt) return
       const attempt = progress.attempt
-      const knownBalance = balancesRef.current[targetMarket] ?? pickBalance(attempt)
-      setAttempts((current) => ({ ...current, [targetMarket]: { ...attempt, ...knownBalance } }))
-    }
-  }, [])
+
+      /**
+       * 매수·매도가 체결된 tick이면 잔액을 다시 읽는다. 예전에는 진행 조회의 `0`을 무시하고 마지막으로
+       * 알려진 값을 그대로 들고 있기만 해서(이슈 #502), 사고팔아도 "주문 가능" 금액이 진입 시점 그대로
+       * 멈춰 있었다 — 그 숫자로 채우는 "최대" 버튼이 수수료·실현손실만큼 초과 주문을 만들어 서버가
+       * 거절했다. `0`을 무시하는 규칙은 그대로 두고(진행 조회는 여전히 계좌를 안 읽는다), 체결이 생긴
+       * 자리에서만 실값을 새로 받아 온다.
+       */
+      const fingerprint = tradeFingerprint(progress)
+      let balance = balancesRef.current[targetMarket] ?? pickBalance(attempt)
+      if (fingerprint !== fingerprintRef.current[targetMarket]) {
+        const refreshed = await readBalance(targetMarket)
+        if (refreshed) {
+          balance = refreshed
+          fingerprintRef.current[targetMarket] = fingerprint
+        }
+      }
+      setAttempts((current) => ({ ...current, [targetMarket]: { ...attempt, ...balance } }))
+    },
+    [readBalance],
+  )
 
   /** ensurePracticeAttempt 외의 쓰기 응답(종목 선택·프리셋 선택·재시작)이 부르는 공통 경로.
    *  세 호출 모두 실제 잔액을 싣고 오므로(이슈 #502) 여기서 balances도 함께 갱신한다. */
@@ -169,10 +229,16 @@ export function Tutorial() {
             "손절선·익절선이 자동으로 그려진다"는 문장은 뺐다 — 매수 단계(2단계)의 안내 문구와
             산 뒤에 뜨는 "내가 팔 기준선" 카드가 같은 말을 이미 하고 있어, 여기 있으면 셋이 겹친다.
             이 자리에는 여기서만 말하는 것(실제 돈이 아니다·보상 금액)만 남긴다(2026-08-20 피드백).
+
+            첫 문장은 **무엇을 배우는가**를 말한다(2026-08-21 튜터 피드백). "한 번 사고 팔아 보는
+            연습"은 조작만 말해서, 이 튜토리얼의 목표(감정이 아니라 규칙으로 판다)가 화면 어디에도
+            없었다. 주식은 예약 경로가 없어 그 목표가 성립하지 않으므로 시장별로 갈라 쓴다.
           */}
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted">
-            가짜 돈으로 {market === 'CRYPTO' ? '코인' : '주식'}을 한 번 사고, 팔아 보는 연습입니다. 실제
-            돈은 한 푼도 들지 않습니다.{' '}
+            {market === 'CRYPTO'
+              ? '값이 흔들릴 때 감정으로 팔지 않도록, 팔 기준을 미리 정해 두는 연습입니다.'
+              : '가짜 돈으로 주식을 한 번 사고, 팔아 보는 연습입니다.'}{' '}
+            실제 돈은 한 푼도 들지 않습니다.{' '}
             {rewardAmount === null
               ? '한 시장을 처음 끝내면 연습용 투자금이 한 번 지급됩니다.'
               : `한 시장을 처음 끝내면 연습용 투자금 ${formatManEok(rewardAmount)}원이 한 번 지급됩니다.`}

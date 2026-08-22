@@ -170,6 +170,7 @@ describe('CompletionCelebration', () => {
       entrySequence: 1,
       exitPreset: 'BALANCED',
       buyOrderType: 'MARKET',
+      scenarioScriptId: 'CRYPTO_STORY_V1',
       buyAt: '2026-08-20T11:00:00',
       buyPrice: 12400,
       buyQuantity: 40,

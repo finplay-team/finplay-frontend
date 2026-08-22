@@ -20,8 +20,12 @@ interface Props {
   onChanged: () => void
 }
 
-/** 8자리 초과·음수·중복 소수점을 입력 단계에서 잘라낸다 (서버는 400을 낸다). */
-function cleanDecimal(raw: string, maxFractionDigits = QTY_DECIMALS): string {
+/**
+ * 8자리 초과·음수·중복 소수점을 입력 단계에서 잘라낸다 (서버는 400을 낸다).
+ * 튜토리얼의 손절·익절 비율 입력(tutorial/ExitRateFields.tsx)도 같은 규칙을 써야 해서 export 한다 —
+ * 실전과 튜토리얼이 서로 다르게 입력을 받으면 여기서 익힌 조작이 실전에서 달라진다.
+ */
+export function cleanDecimal(raw: string, maxFractionDigits = QTY_DECIMALS): string {
   let cleaned = raw.replace(/[^0-9.]/g, '')
   const firstDot = cleaned.indexOf('.')
   if (firstDot !== -1) {

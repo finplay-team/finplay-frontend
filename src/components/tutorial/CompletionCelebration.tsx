@@ -177,10 +177,18 @@ export function CompletionCelebration({
             </p>
           )}
 
+          {/*
+            진입별 표는 넓고 촘촘해서 완료 순간에 기본으로 펼쳐 두면 축하와 보상 금액을 밀어낸다.
+            **접어 두되 지우지는 않는다** — 손절 때 미뤄 둔 반사실("안 팔았다면")을 여기서 볼 수 있어야
+            한다(`ExitOutcomeModal` 주석 참고). 그 값이 의미를 갖는 시점이 바로 여기다.
+          */}
           {wide && (
-            <div className="mt-5">
-              <EntryComparison entries={entries} layout="wide" />
-            </div>
+            <details className="mt-5">
+              <summary className="cursor-pointer text-sm text-muted">진입별로 자세히 보기</summary>
+              <div className="mt-3">
+                <EntryComparison entries={entries} layout="wide" />
+              </div>
+            </details>
           )}
           {wide && revealedEvents.length > 0 && (
             <div className="mt-5">
