@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { CandleChart } from '../components/CandleChart'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { Eyebrow } from '../components/ui/Eyebrow'
 import { HelpTooltip } from '../components/ui/HelpTooltip'
 import { MarketTabs } from '../components/ui/MarketTabs'
 import { JournalEditor } from '../components/journal/JournalEditor'
@@ -788,12 +789,28 @@ export function Trade() {
           계속 어색하다는 피드백을 받고 원래 자리(차트 컬럼 맨 위)로 되돌아가 있다 — 헤더 정렬과는
           이제 무관하다.
         */}
-        <header className="shrink-0 pb-3 pt-3 text-center">
+        <header className="shrink-0 pb-3 pt-1.5 text-center">
           {/*
-            "모의투자" 라벨은 최종적으로 뺀다 — 붙였다 뗐다 하다가 없는 쪽으로 확정됐다
-            (2026-08-19 피드백). 다시 붙이지 않는다.
+            "모의투자" Eyebrow 배지는 2026-08-19 피드백으로 한 번 뺐다가 2026-08-22 피드백으로
+            다시 붙였다 — 제목(h1)만으로는 이 화면이 실제 거래가 아니라는 게 안 드러난다는 이유.
+            제목은 "주식 시장가 매매"처럼 주문 유형을 못 박지 않는다, 지금은 지정가도 지원한다.
+            탭 크기는 포트폴리오와 맞춰 기본(md)으로 — 큰 탭이 제목 자리를 대신하던 시절의
+            size="lg" 는 뗀다.
+
+            배지는 메뉴바~제목 사이 여백 정중앙(위아래 18px씩)에서 시작했다가, 메뉴바에 붙어
+            떠 보인다는 피드백으로 6px 아래로 내렸다(위 12px·아래 24px). 제목의 화면상 위치는
+            배지를 넣기 전과 정확히 같다(h1 top 좌표 그대로), 여백 총량을 늘리지 않고 그 안에서
+            배지 위치만 옮긴 것(2026-08-22 피드백: "공백을 더 추가하지 말고"). -mt-1.5 로 header
+            패딩 밖(메뉴바 쪽)까지 배지를 끌어올리고, h1의 mt-3 로 그만큼을 보정해 제목 좌표를
+            되돌린다 — 둘 중 하나만 건드리면 즉시 어긋난다.
           */}
-          <MarketTabs market={market} onChange={setMarket} size="lg" />
+          <div className="-mt-1.5">
+            <Eyebrow>모의투자</Eyebrow>
+          </div>
+          <h1 className="mt-3 font-display text-[26px] font-semibold text-ink">
+            {isCrypto ? '코인 매매' : '주식 매매'}
+          </h1>
+          <MarketTabs market={market} onChange={setMarket} className="mt-3" />
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             {isCrypto ? (

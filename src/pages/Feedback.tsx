@@ -72,12 +72,12 @@ export function Feedback() {
       <div aria-hidden className="orb -right-24 top-20 h-72 w-72 animate-float-orb" />
 
       <div className="relative mx-auto max-w-5xl">
-        <header>
+        <header className="text-center">
           <Eyebrow>AI 복기</Eyebrow>
-          <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
+          <h1 className="mt-4 font-display text-[26px] font-semibold text-ink">
             그 매매, 어땠나
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             투자일기와는 별개입니다. 언제 사서 언제 팔았는지·얼마를 벌거나 잃었는지 같은 원장 수치와,
             보유하는 동안 가격이 움직인 이유를 묶어 서버가 만든 복기입니다. 직접 적을 것은 없습니다.
           </p>
@@ -85,7 +85,7 @@ export function Feedback() {
             왜 매도만 있는지, 왜 일부 항목이 바로 안 채워지는지 미리 밝힌다 — 없는 것을 찾게 만들지 않는다.
             게이트 시각이 시장마다 다르다: 주식은 그 거래일 장 마감(15:30), 코인은 장이 없어 KST 자정이다.
           */}
-          <p className="mt-2 text-xs leading-relaxed text-muted">
+          <p className="mx-auto mt-2 max-w-2xl text-xs leading-relaxed text-muted">
             매도 체결에만 생깁니다. 매도 후 흐름과 반사실 비교는{' '}
             {market === 'STOCK'
               ? '그 체결이 일어난 거래일의 장 마감(15:30)'

@@ -94,7 +94,9 @@ export function Nav() {
         <div className="hidden items-center gap-3 lg:flex">
           <div className="flex items-center gap-1">
             {navLinks.map((l) => {
-              const active = location.pathname.startsWith(l.to)
+              // startsWith만 쓰면 "/trades"가 "/trade"의 접두사라 모의투자 탭이 잘못 켜진다
+              // (2026-08-22 피드백) — 경로 경계(정확히 일치하거나 다음이 '/')까지 확인한다.
+              const active = location.pathname === l.to || location.pathname.startsWith(`${l.to}/`)
               const nudge = showTutorialNudge && l.to === '/tutorial'
               return (
                 <Link

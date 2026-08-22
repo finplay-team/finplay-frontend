@@ -38,16 +38,16 @@ export function News() {
       <div aria-hidden className="orb -left-24 top-16 h-72 w-72 animate-float-orb" />
 
       <div className="relative mx-auto max-w-5xl">
-        <header>
+        <header className="text-center">
           <Eyebrow>뉴스</Eyebrow>
-          <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
+          <h1 className="mt-4 font-display text-[26px] font-semibold text-ink">
             무슨 일이 있었나
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+          <MarketTabs market={market} onChange={setMarket} className="mt-4" />
+          <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-muted">
             시장 전체 소식을 먼저 보고, 종목을 고르면 그 종목의 뉴스와 요약이 이어집니다. 주식은
             재생 중인 원본 거래일 기준이고 코인은 최근 24시간 기준입니다.
           </p>
-          <MarketTabs market={market} onChange={setMarket} className="mt-5" />
         </header>
 
         {/* 1. 시장 단위 브리핑 */}
