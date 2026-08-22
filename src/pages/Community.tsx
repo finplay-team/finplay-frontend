@@ -3,6 +3,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent, type MouseEvent 
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { AttachedImage } from '../components/community/AttachedImage'
 import { TradeShareCard } from '../components/community/TradeShareCard'
+import { LinkPreviewCard } from '../components/community/LinkPreviewCard'
 import { LikeButton } from '../components/community/LikeButton'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -528,6 +529,8 @@ export function Community() {
                             />
                           )
                         )}
+                        {/* 본문 속 링크 미리보기는 매매 카드·사진과 별개다 — 함께 붙을 수 있다. */}
+                        <LinkPreviewCard content={post.content} background="elevated" className="mt-3" />
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                           <p className="text-xs text-muted">
                             <span className="text-ink/80">{post.authorNickname}</span>

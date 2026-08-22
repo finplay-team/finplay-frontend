@@ -48,8 +48,8 @@ interface CandleChartProps {
   onReachOldest?: () => void
 }
 
-/** right 는 가격축, bottom 은 시간축 + 거래량 영역을 담는다. */
-const PAD = { top: 10, right: 58, bottom: 22, left: 8 }
+/** right 는 가격축 최소 여백(가격 자릿수에 따라 더 늘어난다), bottom 은 시간축 + 거래량 영역을 담는다. */
+const PAD = { top: 10, right: 34, bottom: 22, left: 8 }
 /** 거래량이 차트 높이에서 차지하는 비율. 가격 흐름을 가리지 않을 만큼만 둔다. */
 const VOLUME_RATIO = 0.18
 /** 이 폭 아래에서는 차트를 낮추고 봉 수를 줄인다 (모바일). */
@@ -318,11 +318,6 @@ export function CandleChart({
   const windowEnd = candles.length - clampedOffset
   const bars = candles.slice(Math.max(0, windowEnd - visibleBars), windowEnd)
   const n = bars.length
-  const plotW = width - PAD.left - PAD.right
-  const fullH = chartH - PAD.top - PAD.bottom
-  // 거래량을 감추면 그 높이(구분 여백 6px 포함)를 캔들에 그대로 돌려준다.
-  const volH = showVolume ? Math.round(fullH * VOLUME_RATIO) : 0
-  const plotH = showVolume ? fullH - volH - 6 : fullH
 
   if (n === 0) {
     return (
@@ -362,6 +357,34 @@ export function CandleChart({
   lo += clampedPriceShift
   hi += clampedPriceShift
 
+  // 가격축 4단. 두 개(고·저)만 있으면 중간 가격을 눈으로 못 읽는다.
+  const levels = [0, 1, 2, 3].map((k) => hi - ((hi - lo) / 3) * k)
+  const last = bars[n - 1]
+  const first = bars[0]
+
+  /**
+   * 오른쪽 여백은 가격 라벨 폭에 맞춰 늘어난다 — 기본 34px은 4~5자리 원화에 맞춘 값이라
+   * BTC처럼 억 단위(9자리+콤마)로 넘어가면 라벨이 캔들에 겹치고, 마지막 종가 칩도 같은 폭을
+   * 써서 초과분이 어두운 배경 위로 흘러나가 "잘린 것처럼" 보였다(2026-08-22 피드백). 반대로
+   * 도지코인처럼 자릿수가 적으면 고정폭이 헐렁해 보여, 위아래 모두 라벨 폭에 맞춰 움직인다.
+   */
+  const priceLabelWidth = (text: string) => {
+    let w = 0
+    for (const ch of text) w += ch === ',' ? 3.4 : 6.2 // fontSize 10, tabular-nums
+    return w
+  }
+  const maxPriceLabelWidth = Math.max(
+    ...levels.map((v) => priceLabelWidth(won(v))),
+    priceLabelWidth(won(last.close)),
+  )
+  const padRight = Math.max(PAD.right, Math.ceil(maxPriceLabelWidth) + 14)
+
+  const plotW = width - PAD.left - padRight
+  const fullH = chartH - PAD.top - PAD.bottom
+  // 거래량을 감추면 그 높이(구분 여백 6px 포함)를 캔들에 그대로 돌려준다.
+  const volH = showVolume ? Math.round(fullH * VOLUME_RATIO) : 0
+  const plotH = showVolume ? fullH - volH - 6 : fullH
+
   const y = (p: number) => PAD.top + ((hi - p) / (hi - lo)) * plotH
   const barW = plotW / n
   const x = (i: number) => PAD.left + (i + 0.5) * barW
@@ -376,10 +399,6 @@ export function CandleChart({
   /** 십자선·터치 판정이 닿는 아래 끝. 거래량을 감추면 캔들 영역 바닥이 곧 끝이다. */
   const plotBottom = showVolume ? volTop + volH : PAD.top + plotH
 
-  // 가격축 4단. 두 개(고·저)만 있으면 중간 가격을 눈으로 못 읽는다.
-  const levels = [0, 1, 2, 3].map((k) => hi - ((hi - lo) / 3) * k)
-  const last = bars[n - 1]
-  const first = bars[0]
   const lastUp = last.close >= first.open
   // 라벨에 연도를 붙일지 판단한다. 주봉·월봉은 흔히 여러 해에 걸친다.
   const multiYear =
@@ -542,10 +561,10 @@ export function CandleChart({
       {/*
         확대·축소·이동 — 차트 위 휠·좌클릭 드래그, 모바일 두 손가락 핀치, 버튼까지 함께 지원한다.
         세로는 봉 주기(분/일/주/월) 버튼 줄과 같은 가로 라인(-top-8). 가로는 스크린샷에 노란색으로
-        표시해 준 지점 — 가격축 라벨("274,940" 등)이 시작되는 경계선, 즉 PAD.right(58px) 만큼
-        플롯 영역 오른쪽 끝에 맞춘다(2026-08-19 피드백).
+        표시해 준 지점 — 가격축 라벨("274,940" 등)이 시작되는 경계선, 즉 padRight(가격 자릿수에
+        따라 늘고 줄어듦) 만큼 플롯 영역 오른쪽 끝에 맞춘다(2026-08-19 피드백).
       */}
-      <div className="absolute right-[58px] -top-8 z-10 flex items-center gap-1">
+      <div className="absolute -top-8 z-10 flex items-center gap-1" style={{ right: padRight }}>
         {isModified && (
           <button
             type="button"
@@ -764,7 +783,7 @@ export function CandleChart({
         <rect
           x={PAD.left + plotW + 2}
           y={y(last.close) - 8}
-          width={PAD.right - 6}
+          width={padRight - 6}
           height={16}
           rx={4}
           fill="currentColor"

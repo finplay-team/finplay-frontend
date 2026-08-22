@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LinkButton } from '../ui/Button'
+import { AttachedImage } from '../community/AttachedImage'
+import { TradeShareCard } from '../community/TradeShareCard'
+import { LinkPreviewCard } from '../community/LinkPreviewCard'
 import { formatDateTime } from '../../lib/datetime'
 import { toUserMessage } from '../../lib/errorMessages'
 import { getPosts } from '../../services/communityService'
@@ -75,6 +78,20 @@ export function CommunityPreview({ instrumentId, instrumentName }: Props) {
               >
                 <p className="text-sm font-semibold text-ink">{post.title}</p>
                 <p className="mt-1 text-xs text-muted">{toExcerpt(post.content)}</p>
+                {/* 매매 카드와 사진은 한 게시물에 동시에 붙지 않는다(서로 배타적). */}
+                {post.sharedTrade !== null ? (
+                  <TradeShareCard trade={post.sharedTrade} compact className="mt-2" />
+                ) : (
+                  post.imageId !== null && (
+                    <AttachedImage
+                      imageId={post.imageId}
+                      alt={`${post.title} 첨부 사진`}
+                      className="mt-2 h-24 w-full rounded-lg object-cover"
+                    />
+                  )
+                )}
+                {/* 본문 속 링크 미리보기는 매매 카드·사진과 별개다 — 함께 붙을 수 있다. */}
+                <LinkPreviewCard content={post.content} compact className="mt-2" />
                 <p className="mt-1.5 text-[10px] text-muted">
                   {post.authorNickname} · {formatDateTime(post.createdAt)}
                 </p>

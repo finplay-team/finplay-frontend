@@ -1,0 +1,121 @@
+// 본문에서 첫 URL을 뽑아내는 extractLinkPreview, 본문을 텍스트·링크 조각으로 나누는 linkifyContent 를 검증하는 테스트
+import { describe, expect, it } from 'vitest'
+import { extractLinkPreview, linkifyContent } from './linkPreview'
+
+describe('extractLinkPreview', () => {
+  it('URL이 없으면 null', () => {
+    expect(extractLinkPreview('오늘도 좋은 하루였습니다.')).toBeNull()
+  })
+
+  it('본문 속 URL을 찾아 host와 정규화된 url을 반환한다', () => {
+    expect(extractLinkPreview('참고 자료: https://example.com/post?id=1 확인해 주세요')).toEqual({
+      url: 'https://example.com/post?id=1',
+      host: 'example.com',
+      thumbnailUrl: null,
+    })
+  })
+
+  /** 한글 조사가 공백 없이 URL 뒤에 바로 붙는 흔한 문장 — 조사까지 host에 섞여 들어가면 안 된다. */
+  it('URL 뒤에 공백 없이 붙은 한글 조사는 URL에서 제외한다', () => {
+    expect(extractLinkPreview('출처는 https://example.com입니다')).toEqual({
+      url: 'https://example.com/',
+      host: 'example.com',
+      thumbnailUrl: null,
+    })
+  })
+
+  it('괄호로 감싼 링크는 닫는 괄호를 떼어낸다', () => {
+    expect(extractLinkPreview('참고 (https://example.com) 링크입니다')).toEqual({
+      url: 'https://example.com/',
+      host: 'example.com',
+      thumbnailUrl: null,
+    })
+  })
+
+  it('마침표로 끝맺은 문장의 링크는 마침표를 떼어낸다', () => {
+    expect(extractLinkPreview('여기서 확인하세요. https://example.com.')).toEqual({
+      url: 'https://example.com/',
+      host: 'example.com',
+      thumbnailUrl: null,
+    })
+  })
+
+  it('공백 없이 붙은 두 URL은 앞 링크만 뽑아낸다', () => {
+    expect(extractLinkPreview('연속 https://a.comhttps://b.com 링크')).toEqual({
+      url: 'https://a.com/',
+      host: 'a.com',
+      thumbnailUrl: null,
+    })
+  })
+
+  it('youtu.be 링크는 영상 썸네일 URL을 함께 반환한다', () => {
+    expect(extractLinkPreview('뉴스 https://youtu.be/MeGhLeqsmws?si=ELOLwWfRbGuc55tG')).toEqual({
+      url: 'https://youtu.be/MeGhLeqsmws?si=ELOLwWfRbGuc55tG',
+      host: 'youtu.be',
+      thumbnailUrl: 'https://img.youtube.com/vi/MeGhLeqsmws/hqdefault.jpg',
+    })
+  })
+
+  it('끝에 슬래시가 붙은 youtu.be 링크도 첫 경로 조각만 영상 id로 쓴다', () => {
+    expect(extractLinkPreview('https://youtu.be/dQw4w9WgXcQ/')).toEqual({
+      url: 'https://youtu.be/dQw4w9WgXcQ/',
+      host: 'youtu.be',
+      thumbnailUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    })
+  })
+
+  it('youtube.com/watch 링크도 영상 썸네일 URL을 반환한다', () => {
+    expect(extractLinkPreview('https://www.youtube.com/watch?v=abc123&t=10s')).toEqual({
+      url: 'https://www.youtube.com/watch?v=abc123&t=10s',
+      host: 'www.youtube.com',
+      thumbnailUrl: 'https://img.youtube.com/vi/abc123/hqdefault.jpg',
+    })
+  })
+
+  it('youtube.com/shorts 링크도 영상 썸네일 URL을 반환한다', () => {
+    expect(extractLinkPreview('https://youtube.com/shorts/xyz789')).toEqual({
+      url: 'https://youtube.com/shorts/xyz789',
+      host: 'youtube.com',
+      thumbnailUrl: 'https://img.youtube.com/vi/xyz789/hqdefault.jpg',
+    })
+  })
+})
+
+describe('linkifyContent', () => {
+  it('URL이 없으면 전체가 텍스트 한 조각이다', () => {
+    expect(linkifyContent('오늘도 좋은 하루였습니다.')).toEqual([{ text: '오늘도 좋은 하루였습니다.' }])
+  })
+
+  it('본문 속 URL을 앞뒤 텍스트와 분리된 링크 조각으로 만든다', () => {
+    expect(linkifyContent('영상은 https://youtu.be/abc123 여기 있어요')).toEqual([
+      { text: '영상은 ' },
+      { text: 'https://youtu.be/abc123', url: 'https://youtu.be/abc123' },
+      { text: ' 여기 있어요' },
+    ])
+  })
+
+  it('URL 뒤에 공백 없이 붙은 한글 조사는 링크에서 제외하고 다음 텍스트 조각에 남긴다', () => {
+    expect(linkifyContent('출처는 https://example.com입니다')).toEqual([
+      { text: '출처는 ' },
+      { text: 'https://example.com', url: 'https://example.com/' },
+      { text: '입니다' },
+    ])
+  })
+
+  it('본문에 여러 URL이 있으면 모두 링크 조각이 된다', () => {
+    expect(linkifyContent('https://a.com 그리고 https://b.com')).toEqual([
+      { text: 'https://a.com', url: 'https://a.com/' },
+      { text: ' 그리고 ' },
+      { text: 'https://b.com', url: 'https://b.com/' },
+    ])
+  })
+
+  /** 구분 공백 없이 두 링크를 붙여 쓰면 하나로 뭉쳐 뒤 URL의 host까지 삼킬 수 있어, 앞 링크만 잘라내고 나머지는 텍스트로 남긴다. */
+  it('공백 없이 붙은 두 URL은 앞 링크만 잘라내고 뒤는 일반 텍스트로 남긴다', () => {
+    expect(linkifyContent('연속 https://a.comhttps://b.com 링크')).toEqual([
+      { text: '연속 ' },
+      { text: 'https://a.com', url: 'https://a.com/' },
+      { text: 'https://b.com 링크' },
+    ])
+  })
+})

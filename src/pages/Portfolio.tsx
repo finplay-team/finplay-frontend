@@ -198,7 +198,7 @@ export function Portfolio() {
             <div aria-hidden />
             <div className="text-center">
               <Eyebrow>포트폴리오</Eyebrow>
-              <h1 className="mt-4 font-display text-3xl font-semibold text-ink md:text-4xl">
+              <h1 className="mt-4 font-display text-[26px] font-semibold text-ink">
                 {isCrypto ? '내 코인 계좌' : '내 주식 계좌'}
               </h1>
               <MarketTabs market={market} onChange={setMarket} className="mt-5" />
@@ -486,7 +486,9 @@ export function Portfolio() {
                                     variant="soft"
                                     size="sm"
                                     onClick={() =>
-                                      navigate('/community', { state: { sharedTradeId: trade.tradeId } })
+                                      navigate(`/community?instrumentId=${trade.instrumentId}`, {
+                                        state: { sharedTradeId: trade.tradeId },
+                                      })
                                     }
                                   >
                                     수익 인증 카드 만들기

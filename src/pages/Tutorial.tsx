@@ -210,11 +210,12 @@ export function Tutorial() {
     <div className="relative flex h-[100dvh] flex-col overflow-hidden px-8 pb-8 pt-20 md:pt-24">
       <div className="orb -top-24 right-1/4 h-72 w-72 animate-float-orb" aria-hidden />
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* 헤더 구성(가운데 정렬 · 큰 시장 탭 · 상태 배지 한 줄 · 설명 한 문단)도 모의투자 화면을 따른다. */}
+        {/* 헤더 구성(가운데 정렬 · 시장 탭 · 상태 배지 한 줄 · 설명 한 문단)도 모의투자 화면을 따른다.
+            탭 크기는 다른 화면과 통일해 기본(md) — size="lg" 는 뗀다(2026-08-22 피드백). */}
         <header className="shrink-0 pb-3 pt-3 text-center">
           {/* 주식 튜토리얼 입구를 닫은 동안에도 이미 주식을 진행 중인 사용자에겐 탭을 남긴다. */}
           {showBothMarkets && (
-            <MarketTabs market={market} onChange={setMarket} markets={markets} size="lg" />
+            <MarketTabs market={market} onChange={setMarket} markets={markets} />
           )}
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
