@@ -54,15 +54,11 @@ export function getPrice(instrumentId: number): Promise<PriceResponse> {
   return api.get<PriceResponse>(`/instruments/${instrumentId}/price`)
 }
 
-/** 캔들 응답이 과거 방향 커서 페이지네이션 봉투로 바뀐 뒤의 형태(finplay-backend #473). */
+/** 캔들 응답의 과거 방향 커서 페이지네이션 봉투(finplay-backend #473). */
 interface CandlePageResponse {
   content: Candle[]
   nextCursor: string | null
   hasNext: boolean
-}
-
-function isCandlePageResponse(data: Candle[] | CandlePageResponse): data is CandlePageResponse {
-  return !Array.isArray(data)
 }
 
 /**
@@ -71,20 +67,15 @@ function isCandlePageResponse(data: Candle[] | CandlePageResponse): data is Cand
  *
  * 응답은 어떤 interval 이든 최대 200개다. 주식 `1m` 은 미마감 분봉을 제외하지만
  * 집계(`1d`·`1w`·`1M`)는 진행 중 버킷을 포함한다 — 정반대이므로 화면 문구를 하나로 쓰면 안 된다.
- *
- * **과도기 호환(finplay-backend #473·#496)**: 백엔드가 응답을 맨 배열에서
- * `{ content, nextCursor, hasNext }` 봉투로 바꾸는 배포 중이다. 두 형태를 모두 받아 항상
- * `Candle[]`로 풀어 돌려준다 — 호출부(`useCandles.loadOlder` 등)는 이 함수 하나만 거치므로
- * 바뀔 일이 없다. 백엔드 배포가 안정화되면(#496) 이 함수를 봉투 전용으로 좁히고 이 폴백을 지운다.
  */
 export function getCandles(
   instrumentId: number,
   p?: { interval?: CandleInterval; from?: string; to?: string; signal?: AbortSignal },
 ): Promise<Candle[]> {
   return api
-    .get<Candle[] | CandlePageResponse>(`/instruments/${instrumentId}/candles`, {
+    .get<CandlePageResponse>(`/instruments/${instrumentId}/candles`, {
       query: { interval: p?.interval ?? '1m', from: p?.from, to: p?.to },
       signal: p?.signal,
     })
-    .then((data) => (isCandlePageResponse(data) ? data.content : data))
+    .then((data) => data.content)
 }

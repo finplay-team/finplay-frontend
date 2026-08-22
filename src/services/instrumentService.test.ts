@@ -1,4 +1,4 @@
-// getCandles가 배열 응답과 봉투({content,nextCursor,hasNext}) 응답을 모두 Candle[]로 풀어내는지 검증한다
+// getCandles가 페이지네이션 봉투({content,nextCursor,hasNext}) 응답에서 content를 풀어내는지 검증한다
 import { describe, expect, it, vi } from 'vitest'
 import { api } from '../lib/apiClient'
 import { getCandles } from './instrumentService'
@@ -19,15 +19,7 @@ const candle: Candle = {
   volume: 12345,
 }
 
-describe('getCandles response envelope compatibility', () => {
-  it('returns the array as-is when the backend still responds with a bare array', async () => {
-    vi.mocked(api.get).mockResolvedValue([candle] as never)
-
-    const result = await getCandles(1)
-
-    expect(result).toEqual([candle])
-  })
-
+describe('getCandles', () => {
   it('unwraps content when the backend responds with the paginated envelope', async () => {
     vi.mocked(api.get).mockResolvedValue({
       content: [candle],
@@ -46,14 +38,6 @@ describe('getCandles response envelope compatibility', () => {
       nextCursor: null,
       hasNext: false,
     } as never)
-
-    const result = await getCandles(1)
-
-    expect(result).toEqual([])
-  })
-
-  it('returns an empty array when the bare-array response is empty', async () => {
-    vi.mocked(api.get).mockResolvedValue([] as never)
 
     const result = await getCandles(1)
 
