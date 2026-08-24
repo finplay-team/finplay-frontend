@@ -2346,6 +2346,21 @@ export function AttemptTutorialFlow({
               (entry) => entry.sellCause === 'STOP_LOSS' || entry.sellCause === 'TAKE_PROFIT',
             )}
           />
+        ) : market === 'CRYPTO' && (phase === 'PLAN' || phase === 'WATCH') ? (
+          /*
+            "지금 안 끝내도 되나요?"에 답한다(2026-08-24 피드백 — 시장가·지정가를 마친 사람만
+            선택적으로 손절·익절 단계를 진행할 수 있으면 좋겠다는 요청). 실제로 건너뛸 방법을 새로
+            만들 필요는 없었다 — 시세는 이 컴포넌트가 살아있는 동안만 3초 tick으로 움직이므로
+            (handleAdvanceScript/tickPracticeAttempt), 다른 화면으로 가면 그 자리에서 그대로 멈추고
+            attempt도 서버에 남아 있어 돌아오면 정확히 이어진다. 그래서 여기서는 상태를 건드리지
+            않고 그 사실만 말한다 — 완료·보상 조건(goalsComplete)은 그대로 둬서, 손절·익절을 실제로
+            겪어야 한다는 요구는 그대로 유지된다.
+          */
+          <p className="text-xs leading-relaxed text-muted">
+            지금 끝내지 않아도 괜찮아요 — 다른 화면으로 이동해도 진행 상황은 그대로 저장되고,
+            다시 들어오면 정확히 여기서 이어집니다. 다만 이 시장의 튜토리얼을 끝내고 보상을 받으려면
+            손절과 익절을 한 번씩은 실제로 겪어야 해요.
+          </p>
         ) : undefined}
       </TutorialPhaseCard>
 

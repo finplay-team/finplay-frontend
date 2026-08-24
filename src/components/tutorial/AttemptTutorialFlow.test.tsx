@@ -2742,6 +2742,19 @@ describe('AttemptTutorialFlow', () => {
       expect(
         within(phaseCard).getByText('얼마나 내려가면 팔지, 올라가면 팔지 지금 정하세요'),
       ).toBeInTheDocument()
+      // 시장가·지정가를 마친 뒤에도 손절·익절 단계를 지금 당장 끝내지 않아도 된다는 것과, 그래도
+      // 완료·보상에는 결국 필요하다는 것을 함께 말한다(2026-08-24 피드백).
+      expect(within(phaseCard).getByText(/지금 끝내지 않아도 괜찮아요/)).toBeInTheDocument()
+      expect(within(phaseCard).getByText(/손절과 익절을 한 번씩은 실제로 겪어야/)).toBeInTheDocument()
+    })
+
+    it('국면 — 주식은 손절·익절 개념이 없어 "지금 끝내지 않아도" 안내를 보여주지 않는다', async () => {
+      renderFlow(attempt({ market: 'STOCK', riskSnapshot: risk }), progress(holdingEvidence()))
+      await flushPromises()
+
+      const phaseCard = screen.getByLabelText('지금 배우는 것')
+      expect(within(phaseCard).getByText('팔아보기')).toBeInTheDocument()
+      expect(within(phaseCard).queryByText(/지금 끝내지 않아도 괜찮아요/)).not.toBeInTheDocument()
     })
 
     it('D 국면 — 예약을 걸면 지켜보는 자리로 이름이 바뀐다', async () => {
