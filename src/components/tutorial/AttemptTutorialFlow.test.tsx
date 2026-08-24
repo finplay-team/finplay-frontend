@@ -2767,6 +2767,9 @@ describe('AttemptTutorialFlow', () => {
       const phaseCard = screen.getByLabelText('지금 배우는 것')
       expect(within(phaseCard).getByText('규칙이 대신 파는 것 지켜보기')).toBeInTheDocument()
       expect(within(phaseCard).getByText('선에 닿을 때까지 기다립니다')).toBeInTheDocument()
+      // PLAN뿐 아니라 WATCH(예약을 걸고 지켜보는 중)에도 같은 안내가 남아 있어야 한다 — 이
+      // 국면에서도 굳이 지금 지켜보지 않고 나중에 와도 된다는 사실은 똑같다.
+      expect(within(phaseCard).getByText(/지금 끝내지 않아도 괜찮아요/)).toBeInTheDocument()
     })
 
     it('E 국면 — 목표 두 칸을 채우면 되돌아보기 탭이 실제로 열리고 마무리 버튼이 생긴다', async () => {
