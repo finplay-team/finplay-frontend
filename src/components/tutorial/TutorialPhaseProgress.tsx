@@ -22,7 +22,7 @@ export function TutorialPhaseProgress({ market, phase }: { market: Market; phase
         const label = phaseText(value, { market, holding: false }).title
         return (
           <li key={value} className="flex items-center gap-2">
-            {index > 0 && <span className="text-line" aria-hidden>›</span>}
+            {index > 0 && <span className="text-muted" aria-hidden>›</span>}
             <span
               aria-current={current ? 'step' : undefined}
               className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
