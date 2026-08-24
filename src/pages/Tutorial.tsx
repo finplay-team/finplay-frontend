@@ -205,9 +205,12 @@ export function Tutorial() {
     null
 
   return (
-    // 껍데기는 모의투자 화면(pages/Trade.tsx)과 같다 — 화면 높이를 꽉 채우고 페이지 자체는
-    // 스크롤하지 않으며, 안쪽 컬럼이 각자 스크롤한다.
-    <div className="relative flex h-[100dvh] flex-col overflow-hidden px-8 pb-8 pt-20 md:pt-24">
+    // 껍데기는 모의투자 화면(pages/Trade.tsx)과 같다 — lg 이상에서는 화면 높이를 꽉 채우고
+    // 페이지 자체는 스크롤하지 않으며 안쪽 컬럼이 각자 스크롤한다. lg 미만에서는 h-[100dvh]가
+    // 고정 높이로 굳어 목록→차트→주문이 한 컬럼으로 쌓일 때 실제 콘텐츠 높이를 담지 못해 종목
+    // 목록이 통째로 안 보이는 문제가 있었다(Trade.tsx와 같은 원인, 2026-08-24) — min-h로 바꿔
+    // 다른 화면들처럼 자연 높이 + 페이지 스크롤을 쓰게 하고, 고정 셸은 lg부터만 켠다.
+    <div className="relative flex min-h-[100dvh] flex-col overflow-hidden px-8 pb-8 pt-20 md:pt-24 lg:h-[100dvh]">
       <div className="orb -top-24 right-1/4 h-72 w-72 animate-float-orb" aria-hidden />
       <div className="relative flex min-h-0 flex-1 flex-col">
         {/* 헤더 구성(가운데 정렬 · 시장 탭 · 상태 배지 한 줄 · 설명 한 문단)도 모의투자 화면을 따른다.
@@ -259,9 +262,9 @@ export function Tutorial() {
         </header>
 
         {loadingMarket === market && (!attempt || !progress) ? (
-          <div className="mt-5 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]">
-            <div className="skeleton min-h-0" />
-            <div className="skeleton min-h-0" />
+          <div className="mt-5 grid min-h-0 flex-1 gap-5 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]">
+            <div className="skeleton min-h-24 lg:min-h-0" />
+            <div className="skeleton min-h-64 lg:min-h-0" />
           </div>
         ) : attempt && progress ? (
           <div className="mt-5 flex min-h-0 flex-1 flex-col">

@@ -3102,9 +3102,13 @@ export function AttemptTutorialFlow({
       {/*
         고른 뒤에는 목록이 좌측 20%를 계속 차지할 이유가 없다 — 고른 것 외에는 눌리지도 않는 행이
         셋 남아 있었다. 접고 그만큼의 폭을 차트로 넘긴다. 사건 피드는 그대로 좌측에 남는다.
+
+        grid-rows-[minmax(0,1fr)]는 lg부터만 켠다 — 이게 항상 켜져 있으면 모바일(<lg)에서 목록·
+        차트·주문이 한 컬럼으로 쌓일 때 두 번째 칸(차트+주문)의 자연 높이가 뷰포트를 넘는 순간
+        목록 칸의 몫이 0으로 계산돼 종목 목록이 안 보인다(pages/Trade.tsx와 같은 원인, 2026-08-24).
       */}
       <div
-        className={`grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 ${
+        className={`grid min-h-0 flex-1 gap-5 lg:grid-rows-[minmax(0,1fr)] ${
           instrumentListOpen
             ? 'lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]'
             : 'lg:grid-cols-[minmax(0,13fr)_minmax(0,75fr)]'
@@ -3202,7 +3206,7 @@ export function AttemptTutorialFlow({
           </div>
         </Card>
 
-        <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,38fr)_minmax(0,30fr)]">
+        <div className="grid h-full min-h-0 gap-5 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,38fr)_minmax(0,30fr)]">
           {/* 2. 차트 */}
           <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
             {/*
