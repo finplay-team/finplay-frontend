@@ -158,6 +158,30 @@ export function Nav() {
         </div>
 
         {/*
+          모바일(<lg)에서 로그인 상태를 간단히 보여준다 — 데스크톱(lg 이상)의 닉네임·로그아웃
+          한 줄은 lg:hidden에 가려 모바일에는 로그인 여부를 알 방법이 메뉴를 열어 맨 아래
+          "로그아웃" 버튼을 보는 것뿐이었다(2026-08-24 피드백 — "메인화면 오른쪽 위에 간략히
+          내 프로필과 로그인 상태가 표시됐으면"). 닉네임 첫 글자 아바타 + 살아있다는 점만 얹는다 —
+          처음엔 아바타 옆에 전체 닉네임도 같이 적었는데, 닉네임이 아바타 글자와 같은 음절로
+          시작하면("튜토리얼테스터" → 아바타 "튜" + 옆 글자 "튜토리얼테스터") 오타처럼 겹쳐
+          보였다(실측). 아바타 하나로 충분히 "간략"하고, 전체 이름은 눌러서 가는 내정보와 메뉴
+          안에 이미 있다.
+        */}
+        {isAuthenticated && (
+          <Link
+            to="/me"
+            aria-label={`내정보 — ${member?.nickname ?? ''}님으로 로그인함`}
+            className="relative flex h-9 w-9 flex-none items-center justify-center rounded-full bg-brand text-xs font-bold text-brand-ink transition-transform active:scale-95 lg:hidden"
+          >
+            {member?.nickname?.charAt(0) ?? ''}
+            <span
+              aria-hidden
+              className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 animate-pulse-soft rounded-full bg-brand ring-2 ring-canvas"
+            />
+          </Link>
+        )}
+
+        {/*
           모바일 햄버거 → X 모프.
           lg 미만에서는 메뉴가 접혀 있어 링크 옆 점이 보이지 않는다 — 버튼 자체에 점을 얹어야
           접힌 상태에서도 신호가 남는다. 메뉴를 연 동안에는 안쪽 링크가 점을 대신하므로 숨긴다.
@@ -191,15 +215,21 @@ export function Nav() {
         풀스크린 글래스 오버레이. 예전엔 이름만 text-4xl로 큼직하게 나열했다 — 처음 오는 사람은
         "AI 복기"·"랭킹" 같은 이름만으로 그 화면이 뭘 하는 곳인지 짐작해야 했다(2026-08-24 피드백).
         이모지 아이콘 + 한 줄 설명을 더해 각 행이 스스로 무엇을 하는지 말하게 하고, 줄 사이 구분선과
-        패딩으로 탭 영역을 넓혔다. 세로로 늘어난 만큼 overflow-y-auto를 더해 작은 화면에서도
-        전부 스크롤해 닿을 수 있게 한다(예전엔 justify-center 하나만 믿고 있어 항목이 늘면 잘릴
-        수 있었다).
+        패딩으로 탭 영역을 넓혔다.
+
+        가운데 정렬을 justify-center로 하면 내용이 뷰포트보다 커질 때 **위쪽이 잘리고 스크롤로도
+        닿지 않는다** — flex justify-center가 넘치는 만큼을 위·아래로 똑같이 밀어내는데, 스크롤은
+        양수 방향(아래)만 되고 음수 방향(위로 밀려난 만큼)은 갈 수 없기 때문이다. 실제로 첫 항목
+        "뉴스"의 윗부분이 화면 밖으로 잘려 스크롤해도 안 보였다(2026-08-24 실사용 보고). margin:auto
+        (m-auto) 방식으로 바꾼다 — 이 방식은 넘칠 때 auto 여백이 0으로 접혀 콘텐츠가 자연히 맨 위에
+        붙고, overflow-y-auto로 전부 스크롤해 닿을 수 있다. 다 안 넘칠 때는 지금처럼 가운데 그대로다.
       */}
       <div
-        className={`fixed inset-0 z-30 flex flex-col justify-center overflow-y-auto bg-canvas/90 px-6 py-24 backdrop-blur-2xl transition-all duration-500 ease-spring lg:hidden ${
+        className={`fixed inset-0 z-30 flex overflow-y-auto bg-canvas/90 px-6 py-24 backdrop-blur-2xl transition-all duration-500 ease-spring lg:hidden ${
           open ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
+        <div className="m-auto w-full">
         <div className="flex flex-col">
           {navLinks.map((l, i) => (
             <Link
@@ -256,6 +286,7 @@ export function Nav() {
               </LinkButton>
             </>
           )}
+        </div>
         </div>
       </div>
     </header>

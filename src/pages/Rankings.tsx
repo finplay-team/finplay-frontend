@@ -210,13 +210,23 @@ export function Rankings() {
 
           {!listError && list !== null && shownCount > 0 && (
             <Card className="mt-5" innerClassName="p-2">
+              {/*
+                예전엔 min-w-[28rem]로 폭을 못박아 뒀다 — 375px 화면에서 순위·닉네임과 실현손익이
+                한 화면에 안 들어와, 손익을 보려면 옆으로 밀어야 했다(2026-08-24 실사용 보고).
+                table-fixed로 바꿔 세 칸을 항상 뷰포트 안에 맞춘다: 순위·실현손익은 내용 폭에 맞춘
+                고정 칸, 닉네임만 남는 폭을 전부 받는 가변 칸이다. 닉네임 td에 max-w-0(테이블 셀은
+                일반 요소와 달리 min-width:0을 그냥 줘도 안 먹혀 이 값으로 강제한다) +
+                overflow-hidden을 주고, 그 안 span에 truncate를 줘 — "내 닉네임과 같음" 배지는
+                shrink-0으로 남기고 닉네임 글자만 말줄임된다. 그래도 아주 긴 값이 있을 경우를 대비해
+                overflow-x-auto는 안전망으로 남긴다(평소엔 스크롤할 게 없다).
+              */}
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[28rem] border-collapse text-sm">
+                <table className="w-full table-fixed border-collapse text-sm">
                   <thead>
                     <tr className="text-xs text-muted">
-                      <th className="px-4 py-3 text-left font-medium">순위</th>
-                      <th className="px-4 py-3 text-left font-medium">닉네임</th>
-                      <th className="px-4 py-3 text-right font-medium">실현손익</th>
+                      <th className="w-12 px-2 py-3 text-left font-medium sm:w-16 sm:px-4">순위</th>
+                      <th className="px-2 py-3 text-left font-medium sm:px-4">닉네임</th>
+                      <th className="w-24 px-2 py-3 text-right font-medium sm:w-32 sm:px-4">실현손익</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
@@ -229,18 +239,20 @@ export function Rankings() {
                           key={`${index}-${entry.nickname}`}
                           className={mine ? (isCrypto ? 'bg-coin-soft/50' : 'bg-brand-soft/50') : undefined}
                         >
-                          <td className="px-4 py-3 text-ink tabular">
+                          <td className="px-2 py-3 text-ink tabular sm:px-4">
                             {entry.rank.toLocaleString('ko-KR')}
                           </td>
-                          <td className="px-4 py-3 text-ink">
-                            {entry.nickname}
-                            {mine && (
-                              <span className="ml-2 inline-block rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-muted">
-                                내 닉네임과 같음
-                              </span>
-                            )}
+                          <td className="max-w-0 overflow-hidden px-2 py-3 text-ink sm:px-4">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate">{entry.nickname}</span>
+                              {mine && (
+                                <span className="flex-none rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-muted">
+                                  내 닉네임과 같음
+                                </span>
+                              )}
+                            </span>
                           </td>
-                          <td className={`px-4 py-3 text-right tabular ${pnlTone(entry.realizedPnl)}`}>
+                          <td className={`px-2 py-3 text-right tabular sm:px-4 ${pnlTone(entry.realizedPnl)}`}>
                             {signedKRW(entry.realizedPnl)}
                           </td>
                         </tr>
