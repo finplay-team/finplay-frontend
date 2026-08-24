@@ -1,4 +1,5 @@
 // 랜딩 최상단 히어로 — 헤드라인, CTA, 검증 가능한 사실만 담은 요약 카드
+import { useAuth } from '../../auth/AuthContext'
 import { LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Eyebrow } from '../ui/Eyebrow'
@@ -31,6 +32,13 @@ const accounts = [
 ]
 
 export function Hero() {
+  // 로그인 상태에서 "무료로 시작하기"를 누르면 이미 끝난 가입 절차(로그인·회원가입 화면)로
+  // 다시 보내던 것을 고친다 — 이미 회원이면 곧장 모의투자로 보낸다(2026-08-24 실사용 보고).
+  // status==='restoring'(복구 중)도 Nav.tsx와 같은 기준으로 "아직 익명이 아님"으로 본다 —
+  // 로그인 세션이 있는데 복구 중인 순간에 잠깐 /signup 이 보였다 바뀌는 깜빡임을 피한다.
+  const { status } = useAuth()
+  const isAuthenticated = status !== 'anonymous'
+
   return (
     <section className="relative overflow-hidden px-4 pb-20 pt-32 md:pb-28 md:pt-40">
       {/* 은은한 민트 글로우 오브 */}
@@ -66,7 +74,7 @@ export function Hero() {
 
         <Reveal delay={240}>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <LinkButton to="/signup" size="lg" withIcon>
+            <LinkButton to={isAuthenticated ? '/trade' : '/signup'} size="lg" withIcon>
               무료로 시작하기
             </LinkButton>
             <LinkButton to="/support" size="lg" variant="ghost">

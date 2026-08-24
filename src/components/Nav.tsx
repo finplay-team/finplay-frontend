@@ -182,7 +182,10 @@ export function Nav() {
         )}
 
         {/*
-          모바일 햄버거 → X 모프.
+          모바일 햄버거 → X 모프. 아이콘만 있으면 "이게 눌리는 버튼인지, 메뉴가 맞는지"를 아이콘
+          관례에 익숙하지 않은 사용자는 못 알아볼 수 있다(2026-08-24 피드백 — 40~50대 사용자 편의).
+          그래서 아이콘 옆에 "메뉴"/"닫기" 글자를 더한다 — 아이콘은 계속 X로 바뀌지만, 글자가 상태를
+          다시 한번 말로 확인해 준다.
           lg 미만에서는 메뉴가 접혀 있어 링크 옆 점이 보이지 않는다 — 버튼 자체에 점을 얹어야
           접힌 상태에서도 신호가 남는다. 메뉴를 연 동안에는 안쪽 링크가 점을 대신하므로 숨긴다.
         */}
@@ -190,24 +193,27 @@ export function Nav() {
           aria-label={showTutorialNudge && !open ? '메뉴 (튜토리얼을 아직 완료하지 않았습니다)' : '메뉴'}
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] ring-1 ring-white/[0.08] lg:hidden"
+          className="relative flex h-10 items-center gap-2 rounded-full bg-white/[0.04] pl-3.5 pr-4 ring-1 ring-white/[0.08] lg:hidden"
         >
           {showTutorialNudge && !open && (
             <span
               aria-hidden
-              className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-brand ring-2 ring-canvas"
+              className="absolute right-1 top-1 h-2 w-2 rounded-full bg-brand ring-2 ring-canvas"
             />
           )}
-          <span
-            className={`absolute h-[1.5px] w-4 bg-ink transition-all duration-500 ease-spring ${
-              open ? 'rotate-45' : '-translate-y-1'
-            }`}
-          />
-          <span
-            className={`absolute h-[1.5px] w-4 bg-ink transition-all duration-500 ease-spring ${
-              open ? '-rotate-45' : 'translate-y-1'
-            }`}
-          />
+          <span className="relative flex h-4 w-4 flex-none items-center justify-center" aria-hidden>
+            <span
+              className={`absolute h-[1.5px] w-4 bg-ink transition-all duration-500 ease-spring ${
+                open ? 'rotate-45' : '-translate-y-1'
+              }`}
+            />
+            <span
+              className={`absolute h-[1.5px] w-4 bg-ink transition-all duration-500 ease-spring ${
+                open ? '-rotate-45' : 'translate-y-1'
+              }`}
+            />
+          </span>
+          <span className="text-sm font-medium text-ink">{open ? '닫기' : '메뉴'}</span>
         </button>
       </nav>
 

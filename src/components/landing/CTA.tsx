@@ -1,8 +1,13 @@
 // 랜딩 최하단 전환 CTA — 가입 유도 배너
+import { useAuth } from '../../auth/AuthContext'
 import { LinkButton } from '../ui/Button'
 import { Reveal } from '../ui/Reveal'
 
 export function CTA() {
+  // Hero.tsx와 같은 이유 — 로그인 상태라면 이미 끝난 가입 절차 대신 모의투자로 곧장 보낸다.
+  const { status } = useAuth()
+  const isAuthenticated = status !== 'anonymous'
+
   return (
     <section className="px-4 py-20 md:py-28">
       <Reveal className="mx-auto max-w-5xl">
@@ -26,7 +31,7 @@ export function CTA() {
               지급됩니다. 실전이 아니니 마음껏 시험해 보세요.
             </p>
             <div className="mt-9 flex justify-center">
-              <LinkButton to="/signup" size="lg" withIcon>
+              <LinkButton to={isAuthenticated ? '/trade' : '/signup'} size="lg" withIcon>
                 무료로 시작하기
               </LinkButton>
             </div>
