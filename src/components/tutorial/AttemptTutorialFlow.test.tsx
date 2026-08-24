@@ -2102,8 +2102,11 @@ describe('AttemptTutorialFlow', () => {
     expect(screen.getByText('정해 둔 −3% 선에 닿아 규칙이 대신 팔았습니다.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지금 값에 구매하기' })).toBeInTheDocument()
     // 국면 이름이 "팔 기준을 미리 정하기"로 **되돌아간다** — 그 되돌아감 자체가 "한 번 더 한다"는
-    // 신호다. 전진만 하는 로드맵에서는 이 반복이 버그처럼 보였다.
-    expect(screen.getByText('흔들리기 전에 팔 기준 정하기')).toBeInTheDocument()
+    // 신호다. 전진만 하는 로드맵에서는 이 반복이 버그처럼 보였다. 같은 이름이 상단 학습 단계
+    // 목록(TutorialPhaseProgress)에도 함께 뜨므로, "지금 배우는 것" 카드로 좁혀서 확인한다.
+    expect(
+      within(screen.getByRole('region', { name: '지금 배우는 것' })).getByText('흔들리기 전에 팔 기준 정하기'),
+    ).toBeInTheDocument()
   })
 
   it('대본이 FINISHED에 닿은 뒤의 전량 매도는 진짜 끝이라 되돌아보기로 넘긴다', async () => {

@@ -3071,19 +3071,15 @@ export function AttemptTutorialFlow({
           <div className="flex flex-wrap items-center gap-2">
             {/*
               끝난 연습(replay)에는 안내가 가리킬 대상이 하나도 없다 — 눌러도 아무 일이 없는
-              버튼이라 아예 숨긴다. 재시작만큼 자주 쓰는 동작이 아니라서(도움말성 보조 기능) 글자
-              버튼 대신 물음표 아이콘으로 줄였다 — 재시작과 무게가 같아 보이면 진행을 되돌리는
-              동작이 가벼워 보인다(2026-08-20 피드백).
+              버튼이라 아예 숨긴다. 물음표 아이콘 하나로만 두었더니(2026-08-20 피드백) "안내 끄기"로
+              끈 뒤 다시 켜는 길이 눈에 띄지 않는다는 피드백을 받아, 글자로 무엇을 하는 버튼인지
+              바로 읽히게 되돌린다(2026-08-24 피드백). 재시작과 나란히 둬도 무게가 같아 보이지 않게
+              variant는 그대로 ghost를 쓴다.
             */}
             {!replay && (
-              <button
-                type="button"
-                aria-label="안내 다시 보기"
-                onClick={handleReplayTour}
-                className="flex h-7 w-7 items-center justify-center rounded-full border border-line text-xs text-muted transition-colors hover:border-ink/40 hover:text-ink"
-              >
-                ?
-              </button>
+              <Button type="button" size="sm" variant="ghost" onClick={handleReplayTour}>
+                안내 다시 보기
+              </Button>
             )}
             <Button
               type="button"
