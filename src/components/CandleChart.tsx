@@ -102,6 +102,29 @@ function useElementSize<T extends HTMLElement>(measureHeight: boolean) {
 }
 
 /**
+ * 캔버스 2D 컨텍스트로 실제 폰트 렌더링 폭을 잰다. 가격 라벨 여백(아래 priceLabelWidth)은
+ * 원래 "숫자 6.2px·쉼표 3.4px" 같은 하드코딩 추정치였는데, 이 값은 어느 한 브라우저에서 눈대중으로
+ * 잰 것이라 다른 브라우저·폰트 폴백에서는 안 맞을 수 있다 — 실제로 아이폰(Safari)에서는 여백이
+ * 모자라 가격 라벨(특히 마지막 종가 칩)이 캔들 위로 흘러나와 잘린 것처럼 보였는데, 갤럭시(Chrome)
+ * 에서는 문제가 없었다(2026-08-24 실사용 보고). 캔버스로 실측하면 지금 그리는 바로 그 브라우저의
+ * 실제 폰트 폭을 쓰므로 어느 브라우저·폰트 폴백에서도 스스로 맞는 값이 나온다.
+ */
+let measureCtx: CanvasRenderingContext2D | null | undefined
+function measureTextWidth(text: string, font: string): number {
+  if (measureCtx === undefined) {
+    measureCtx = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
+  }
+  // 캔버스 2D를 못 얻는 환경(SSR·구식 브라우저)에서는 예전 추정치로 폴백한다.
+  if (!measureCtx) {
+    let w = 0
+    for (const ch of text) w += ch === ',' ? 3.4 : 6.2
+    return w
+  }
+  measureCtx.font = font
+  return measureCtx.measureText(text).width
+}
+
+/**
  * 주기별 축 라벨. 집계봉에 HH:mm 을 쓰면 sourceTime 이 버킷 시작 00:00:00 이라
  * 모든 봉이 "00:00" 으로 찍힌다 — 실제로 있었던 버그다.
  */
@@ -368,14 +391,12 @@ export function CandleChart({
    * 써서 초과분이 어두운 배경 위로 흘러나가 "잘린 것처럼" 보였다(2026-08-22 피드백). 반대로
    * 도지코인처럼 자릿수가 적으면 고정폭이 헐렁해 보여, 위아래 모두 라벨 폭에 맞춰 움직인다.
    */
-  const priceLabelWidth = (text: string) => {
-    let w = 0
-    for (const ch of text) w += ch === ',' ? 3.4 : 6.2 // fontSize 10, tabular-nums
-    return w
-  }
+  // 가격 그리드 라벨은 기본 굵기, 마지막 종가 칩은 fontWeight 600 — 굵기가 다르면 폭도 달라 각각 잰다.
+  const priceLabelWidth = (text: string, weight: 400 | 600 = 400) =>
+    measureTextWidth(text, `${weight} 10px Pretendard, "Pretendard Variable", system-ui, sans-serif`)
   const maxPriceLabelWidth = Math.max(
     ...levels.map((v) => priceLabelWidth(won(v))),
-    priceLabelWidth(won(last.close)),
+    priceLabelWidth(won(last.close), 600),
   )
   const padRight = Math.max(PAD.right, Math.ceil(maxPriceLabelWidth) + 14)
 
