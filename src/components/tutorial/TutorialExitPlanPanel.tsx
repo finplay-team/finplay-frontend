@@ -66,7 +66,7 @@ export function TutorialExitPlanPanel({
   if (stageLocked) {
     return (
       <div className="rounded-2xl border border-line p-4">
-        <p className="text-sm font-medium text-ink">손절·익절 예약(자동 매도)</p>
+        <p className="text-sm font-medium text-ink">손절·익절 예약(예약 매도)</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
           지금은 주문 방법을 배우는 자리라, 팔 기준은 다음에 직접 정해 봅니다.
         </p>
@@ -79,7 +79,7 @@ export function TutorialExitPlanPanel({
       <div className="rounded-2xl border border-line p-4">
         <p className="text-sm font-medium text-ink">걸어 둔 예약</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
-          먼저 닿는 쪽으로 자동 매도되고, 나머지 하나는 자동 취소돼요.
+          먼저 닿는 쪽으로 예약 매도되고, 나머지 하나는 자동 취소돼요.
         </p>
         <div className="mt-3 rounded-xl bg-elevated p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -130,7 +130,7 @@ export function TutorialExitPlanPanel({
   if (holding && !canReserve) {
     return (
       <div className="rounded-2xl border border-line p-4">
-        <p className="text-sm font-medium text-ink">손절·익절 예약(자동 매도)</p>
+        <p className="text-sm font-medium text-ink">손절·익절 예약(예약 매도)</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted">
           {cancelledOnce ? '방금 예약을 취소했습니다. ' : ''}값이 밀리면 손절선을 조금만 내리고
           싶어지는 게 보통입니다. 그 자리를 막으려고 한 진입에 한 번만 걸리고, 직접 팔고 다시 사면
@@ -159,9 +159,9 @@ export function TutorialExitPlanPanel({
 
   return (
     <div className="rounded-2xl border border-line p-4">
-      <p className="text-sm font-medium text-ink">손절·익절 예약(자동 매도)</p>
+      <p className="text-sm font-medium text-ink">손절·익절 예약(예약 매도)</p>
       <p className="mt-1.5 text-xs leading-relaxed text-muted">
-        먼저 닿는 쪽으로 자동 매도되고, 나머지 하나는 자동 취소돼요.
+        먼저 닿는 쪽으로 예약 매도되고, 나머지 하나는 자동 취소돼요.
       </p>
       {cancelledOnce && (
         <p className="mt-2 text-xs leading-relaxed text-loss">

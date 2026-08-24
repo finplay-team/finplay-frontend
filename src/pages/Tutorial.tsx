@@ -246,7 +246,8 @@ export function Tutorial() {
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted">
             {market === 'CRYPTO'
               ? '값이 흔들릴 때 감정으로 팔지 않도록, 팔 기준을 미리 정해 두는 연습입니다.'
-              : '가짜 돈으로 주식을 한 번 사고, 팔아 보는 연습입니다.'}{' '}
+              : '가짜 돈으로 주식을 한 번 사고, 팔아 보는 연습입니다.'}
+            <br />
             {rewardAmount === null
               ? '한 시장을 처음 끝내면 연습용 투자금이 한 번 지급됩니다.'
               : `한 시장을 처음 끝내면 연습용 투자금 ${formatManEok(rewardAmount)}원이 한 번 지급됩니다.`}
