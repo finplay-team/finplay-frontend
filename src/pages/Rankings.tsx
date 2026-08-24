@@ -23,6 +23,21 @@ function signedKRW(value: number): string {
   return `${sign}${formatKRW(Math.abs(value))}`
 }
 
+/**
+ * 서버가 준 entry.rank 는 Redis ZSET에 남은 삭제 계정("유령" 멤버, RankingService.calculateRanks 주석
+ * 참고)까지 세어 부풀 수 있어 화면에 그대로 못 쓴다. 대신 이미 필터링·정렬까지 끝난 목록 안에서만
+ * 표준 경쟁 순위(1,1,3)를 다시 매긴다 — 실현손익이 같으면 같은 순위, 다음 순위는 그 인원수만큼
+ * 건너뛴다. 목록 자체가 항상 1위부터 시작하는 걸 전제한다(진짜 1위가 유령 계정에 밀려 아예
+ * 안 보이는 경우까지는 다루지 않는다).
+ */
+function competitionRanks(entries: readonly { realizedPnl: number }[]): number[] {
+  const ranks: number[] = []
+  entries.forEach((entry, index) => {
+    ranks.push(index > 0 && entry.realizedPnl === entries[index - 1].realizedPnl ? ranks[index - 1] : index + 1)
+  })
+  return ranks
+}
+
 export function Rankings() {
   const [market, setMarket] = useState<Market>('CRYPTO')
   const [reloadKey, setReloadKey] = useState(0)
@@ -70,6 +85,7 @@ export function Rankings() {
   const accent = isCrypto ? 'coin' : 'brand'
   // 요청 limit 이 아니라 실제로 받은 개수를 쓴다. 서버가 조용히 클램핑하므로 두 값이 다를 수 있다.
   const shownCount = list?.content.length ?? 0
+  const displayRanks = list !== null ? competitionRanks(list.content) : []
   const listEmpty = list !== null && shownCount === 0
   // 닉네임이 같은 행이 실제로 있었는지 — 하이라이트 각주를 그때만 붙인다.
   const highlighted = me !== null && list !== null && list.content.some((e) => e.nickname === me.nickname)
@@ -239,13 +255,14 @@ export function Rankings() {
                       // 하이라이트 근거는 닉네임 문자열뿐이다(응답에 userId 가 없다). 확정이 아니라 힌트다.
                       const mine = me !== null && me.nickname === entry.nickname
                       return (
-                        // rank 는 공동 순위로 중복되고(1,1,3) index+1 과도 다르다 → key 는 위치+닉네임 조합.
+                        // 서버 entry.rank 대신 competitionRanks 로 다시 매긴 순위를 쓴다(위 함수 설명 참고).
+                        // 그 값도 공동 순위로 중복될 수 있어(1,1,3) key 는 위치+닉네임 조합으로 둔다.
                         <tr
                           key={`${index}-${entry.nickname}`}
                           className={mine ? (isCrypto ? 'bg-coin-soft/50' : 'bg-brand-soft/50') : undefined}
                         >
                           <td className="px-2 py-3 text-ink tabular sm:px-4">
-                            {entry.rank.toLocaleString('ko-KR')}
+                            {displayRanks[index].toLocaleString('ko-KR')}
                           </td>
                           <td className="max-w-0 overflow-hidden px-2 py-3 text-ink sm:px-4">
                             <span className="flex items-center gap-1.5">
