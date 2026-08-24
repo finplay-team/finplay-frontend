@@ -121,6 +121,43 @@ describe('SpotlightTour', () => {
     expect(screen.queryByText(steps[0].title)).not.toBeInTheDocument()
   })
 
+  it('"이전"을 누르면 앞 단계로 돌아간다', () => {
+    mountTargets(['instrument', 'buy'])
+    renderTour()
+    fireEvent.click(screen.getByRole('button', { name: '다음' }))
+    expect(screen.getByText(steps[1].title)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '이전' }))
+
+    expect(screen.getByText(steps[0].title)).toBeInTheDocument()
+    expect(screen.queryByText(steps[1].title)).not.toBeInTheDocument()
+  })
+
+  it('첫 단계에서는 "이전" 버튼을 보여주지 않는다', () => {
+    mountTargets(['instrument', 'buy'])
+    renderTour()
+
+    expect(screen.queryByRole('button', { name: '이전' })).not.toBeInTheDocument()
+  })
+
+  it('종목을 고른 뒤 목록이 사라지면(실제 화면과 같은 흐름) "이전"을 보여주지 않는다', async () => {
+    // sync()의 앞쪽 탐색(findTarget)처럼 뒤쪽 탐색도 없는 대상을 건너뛰지 않으면, "이전"을 눌러도
+    // 제자리로 되튕겨 아무 일도 안 하는 것처럼 보인다 — 그래서 갈 곳이 없으면 버튼 자체를 감춘다.
+    mountTargets(['instrument'])
+    vi.useFakeTimers()
+    renderTour(true, threeSteps)
+
+    fireEvent.click(screen.getByRole('button', { name: '대상 instrument' }))
+    document.querySelector('[data-tour="instrument"]')?.remove()
+    appendTarget('quantity')
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+
+    expect(screen.getByText(threeSteps[1].title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '이전' })).not.toBeInTheDocument()
+  })
+
   it('대상 요소를 직접 클릭해도 다음 단계로 넘어간다', () => {
     mountTargets(['instrument', 'buy'])
     renderTour()

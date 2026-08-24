@@ -79,6 +79,20 @@ function findTarget(steps: SpotlightStep[], fromIndex: number) {
   return null
 }
 
+/**
+ * "이전"이 부르는 뒤쪽 탐색. 앞쪽 탐색(`findTarget`)과 방향만 반대가 아니다 — 대상이 없으면
+ * **더 이전 단계**로 계속 내려가 찾는다. 종목을 고르고 나면 그 목록 자체가 사라지므로(`instrument`
+ * 단계), 앞쪽 탐색과 같은 방식으로 이 방향에서도 없는 대상을 건너뛰지 않으면 "이전"이 조용히
+ * 아무 일도 하지 않는 것처럼 보인다.
+ */
+function findTargetBackward(steps: SpotlightStep[], fromIndex: number) {
+  for (let i = fromIndex; i >= 0; i -= 1) {
+    const el = queryTarget(steps[i])
+    if (el) return { index: i, el }
+  }
+  return null
+}
+
 function readSpot(el: HTMLElement): Spot {
   const rect = el.getBoundingClientRect()
   return {
@@ -194,15 +208,20 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
     setIndex(next)
   }, [finish])
 
-  /** 이전 단계로 돌아간다. 사용자가 직접 누른 이동이라 건너뛰기 유예 없이 곧바로 그 단계 대상을 찾는다. */
+  /**
+   * 이전 단계로 돌아간다. `sync()`(=`findTarget`)에 맡기면 앞쪽으로만 훑어서, 방금 왔던 단계의
+   * 대상이 이미 사라졌을 때(예: 종목을 고른 뒤의 `instrument` 단계) 제자리로 되튕겨 "이전"이 아무
+   * 일도 안 하는 것처럼 보인다. 그래서 여기서 직접 뒤쪽으로 찾고, 찾은 대상을 곧바로 확정한다.
+   */
   const goPrev = useCallback(() => {
-    const prev = indexRef.current - 1
-    if (prev < 0) return
-    indexRef.current = prev
-    lockedRef.current = false
+    const found = findTargetBackward(stepsRef.current, indexRef.current - 1)
+    if (!found) return
+    indexRef.current = found.index
+    lockedRef.current = true
     graceUntilRef.current = 0
-    setIndex(prev)
-  }, [])
+    setIndex(found.index)
+    applySpot(found.el)
+  }, [applySpot])
 
   // 애니메이션 축소 선호 감지. jsdom 등 matchMedia가 없는 환경도 있으므로 존재를 확인한다.
   useEffect(() => {
@@ -302,6 +321,8 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
   const bubbleLeft = Math.min(Math.max(EDGE_MARGIN, desiredLeft), maxLeft)
 
   const isLast = index === steps.length - 1
+  // 대상이 이미 사라진 단계로는 되돌아갈 수 없으므로, 갈 곳이 실제로 있을 때만 "이전"을 보여준다.
+  const canGoPrev = findTargetBackward(steps, index - 1) !== null
   const motion = reduced ? '' : 'transition-[top,left,width,height] duration-200 ease-spring'
 
   return (
@@ -351,7 +372,7 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
             안내 끄기
           </Button>
           <div className="flex items-center gap-2">
-            {index > 0 && (
+            {canGoPrev && (
               <Button type="button" variant="ghost" size="sm" onClick={goPrev}>
                 이전
               </Button>
