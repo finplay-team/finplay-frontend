@@ -74,8 +74,9 @@ export function ReplayScrub() {
   const cut = `inset(0 ${(100 - (revealed / TOTAL_MINUTES) * 100).toFixed(3)}% 0 0)`
 
   return (
-    // 컨테이너를 뷰포트보다 높게 잡아야 sticky 자식이 머무는 동안 스크롤 여유가 생긴다
-    <section ref={ref} className="relative h-[300vh]">
+    // 컨테이너를 뷰포트보다 높게 잡아야 sticky 자식이 머무는 동안 스크롤 여유가 생긴다.
+    // 300vh는 스크롤 이동 거리가 뷰포트의 3배라 콘텐츠 변화 없이 스크롤만 계속되는 구간이 길었다.
+    <section ref={ref} className="relative h-[150vh]">
       {/* pt 로 떠 있는 내비 아래를 확보한다 — 없으면 좁은 화면에서 제목이 내비 뒤로 잘린다 */}
       <div className="sticky top-0 flex h-[100dvh] flex-col justify-center overflow-hidden px-4 pb-6 pt-24 md:pt-28">
         <div aria-hidden className="orb -left-32 top-1/4 h-96 w-96" />
