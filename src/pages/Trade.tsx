@@ -775,7 +775,15 @@ export function Trade() {
         : '아직 공개된 분봉이 없습니다. 매분 새 봉이 추가됩니다.'
 
   return (
-    <div className="relative flex h-[100dvh] flex-col overflow-hidden px-8 pb-8 pt-20 md:pt-24">
+    /*
+      모바일(<lg)에서는 h-[100dvh]가 고정 높이로 굳어, 목록→차트→주문이 한 컬럼으로 쌓이면서
+      늘어난 실제 콘텐츠 높이를 그 안에 욱여넣었다. 아래 두 그리드의 grid-rows-[minmax(0,1fr)]가
+      "남는 높이를 목록에 준다"는 뜻이라, 차트+주문(두 번째 칸)이 뷰포트보다 커지는 순간 목록
+      칸의 몫이 0으로 계산돼 종목 목록이 통째로 안 보였다(2026-08-24 실사용 보고 — "모바일에서
+      종목이 안 뜬다"). lg 미만에서는 다른 화면들(Portfolio·News 등)과 같은 min-h(자연 높이 +
+      페이지 스크롤)로 두고, 컬럼별 내부 스크롤·고정 뷰포트 셸은 lg부터만 켠다.
+    */
+    <div className="relative flex min-h-[100dvh] flex-col overflow-hidden px-8 pb-8 pt-20 md:pt-24 lg:h-[100dvh]">
       <div className="orb -top-24 left-1/4 h-72 w-72 animate-float-orb" aria-hidden />
 
       {/*
@@ -898,7 +906,7 @@ export function Trade() {
           합쳐져서 나온다 — 안쪽 grid 의 "나머지" 트랙이 이 그리드의 68fr 만큼만 받으므로,
           46:22 로 다시 나눈 값이 전체 기준으로도 정확히 20:46:22 가 된다).
         */}
-        <div className="mt-5 grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]">
+        <div className="mt-5 grid min-h-0 flex-1 gap-5 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]">
           {/* 3. 종목 목록 */}
           {/*
             목록·차트·주문 세 컬럼이 전부 부모 그리드 행(위 min-h-0 flex-1)에서 나온 h-full 을 쓴다
@@ -978,7 +986,7 @@ export function Trade() {
             20:46:22 비율이 유지되게 한다. 창을 넓히고 좁혀도 세 컬럼이 이 비율 그대로 같이
             커지고 작아진다(2026-08-19 피드백).
           */}
-          <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,46fr)_minmax(0,22fr)]">
+          <div className="grid h-full min-h-0 gap-5 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,46fr)_minmax(0,22fr)]">
             <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
             {/*
               계좌 요약 스트립(총 평가자산·주문가능 현금·평가손익 3개)을 헤더 오른쪽으로 옮겨도
