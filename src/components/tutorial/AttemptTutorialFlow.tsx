@@ -2766,7 +2766,7 @@ export function AttemptTutorialFlow({
                       : 'text-muted hover:text-ink'
                   }`}
                 >
-                  손절·익절 예약(자동 매도)
+                  예약 매도
                 </button>
               </div>
               {limitOrderStageLocked && !reservedSellTabOpen && (
@@ -3127,22 +3127,14 @@ export function AttemptTutorialFlow({
       {/*
         목록 | (차트 · 주문) 2단 그리드. 폭 비율 20:46:22 와 중첩 구조 모두 모의투자 화면
         (pages/Trade.tsx)을 그대로 따른다 — 왜 한 그리드가 아니라 중첩인지는 그 파일 주석에 있다.
-      */}
-      {/*
-        고른 뒤에는 목록이 좌측 20%를 계속 차지할 이유가 없다 — 고른 것 외에는 눌리지도 않는 행이
-        셋 남아 있었다. 접고 그만큼의 폭을 차트로 넘긴다. 사건 피드는 그대로 좌측에 남는다.
+        전에는 종목을 고른 뒤 목록 폭을 13:75로 줄였는데, 모의투자 화면과 좌우 비율이 달라져
+        보인다는 피드백으로 그 축소를 없애고 항상 20:68로 고정한다(2026-08-24).
 
         grid-rows-[minmax(0,1fr)]는 lg부터만 켠다 — 이게 항상 켜져 있으면 모바일(<lg)에서 목록·
         차트·주문이 한 컬럼으로 쌓일 때 두 번째 칸(차트+주문)의 자연 높이가 뷰포트를 넘는 순간
         목록 칸의 몫이 0으로 계산돼 종목 목록이 안 보인다(pages/Trade.tsx와 같은 원인, 2026-08-24).
       */}
-      <div
-        className={`grid min-h-0 flex-1 gap-5 lg:grid-rows-[minmax(0,1fr)] ${
-          instrumentListOpen
-            ? 'lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]'
-            : 'lg:grid-cols-[minmax(0,13fr)_minmax(0,75fr)]'
-        }`}
-      >
+      <div className="grid min-h-0 flex-1 gap-5 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,20fr)_minmax(0,68fr)]">
         {/* 1. 종목 목록 — 아직 고르지 않은 동안은 이 카드가 "지금 눌러야 할 것"이므로 테두리와
             글로우로 강조한다. 고르고 나면 다른 카드와 같은 무게로 되돌아간다. */}
         <Card
@@ -3162,12 +3154,23 @@ export function AttemptTutorialFlow({
             </div>
           ) : (
             <div className="shrink-0 px-2 pb-2">
-              <h2 className={`truncate text-sm font-semibold ${activeRowText}`}>
-                {selectedInstrument?.name ?? (market === 'CRYPTO' ? '코인' : '종목')}
-              </h2>
-              <p className="mt-0.5 truncate text-xs text-muted tabular">
-                {selectedInstrument?.symbol ?? '—'}
-              </p>
+              {/* 이름 옆 가격 — 모의투자 화면 종목 목록 행과 같은 배치(pages/Trade.tsx의
+                  renderInstrumentRow, 2026-08-24 피드백). */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className={`truncate text-sm font-semibold ${activeRowText}`}>
+                    {selectedInstrument?.name ?? (market === 'CRYPTO' ? '코인' : '종목')}
+                  </h2>
+                  <p className="mt-0.5 truncate text-xs text-muted tabular">
+                    {selectedInstrument?.symbol ?? '—'}
+                  </p>
+                </div>
+                {latestPrice !== null && (
+                  <span className="flex-none text-sm font-medium text-ink tabular">
+                    {formatKRW(latestPrice)}
+                  </span>
+                )}
+              </div>
             </div>
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -3235,7 +3238,7 @@ export function AttemptTutorialFlow({
           </div>
         </Card>
 
-        <div className="grid h-full min-h-0 gap-5 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,38fr)_minmax(0,30fr)]">
+        <div className="grid h-full min-h-0 gap-5 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,46fr)_minmax(0,22fr)]">
           {/* 2. 차트 */}
           <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
             {/*
