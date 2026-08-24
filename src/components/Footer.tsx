@@ -29,7 +29,13 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
+          {/*
+            grid-cols-2였을 때는 세 칸("서비스"·"계정"·"문서")이 2열에 갇혀 "문서"만 다음 줄로
+            혼자 밀려났다(2026-08-24 실사용 보고 — "문서가 밑으로 내려가 있다"). 각 칸 내용이
+            짧아(제일 긴 게 "고객센터" 4자) 모바일 폭에서도 3열이 들어가므로 처음부터 3열로 둔다.
+            좁은 화면에서는 gap만 줄인다.
+          */}
+          <div className="grid grid-cols-3 gap-6 sm:gap-10">
             <FooterCol
               title="서비스"
               items={[

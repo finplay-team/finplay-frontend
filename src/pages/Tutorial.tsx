@@ -1,6 +1,7 @@
 // 사용자·시장별 영속 attempt를 진입 정본으로 사용하는 튜토리얼 페이지
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AttemptTutorialFlow } from '../components/tutorial/AttemptTutorialFlow'
+import { Eyebrow } from '../components/ui/Eyebrow'
 import { MarketTabs } from '../components/ui/MarketTabs'
 import { toUserMessage } from '../lib/errorMessages'
 import { formatManEok } from '../lib/format'
@@ -216,9 +217,12 @@ export function Tutorial() {
         {/* 헤더 구성(가운데 정렬 · 시장 탭 · 상태 배지 한 줄 · 설명 한 문단)도 모의투자 화면을 따른다.
             탭 크기는 다른 화면과 통일해 기본(md) — size="lg" 는 뗀다(2026-08-22 피드백). */}
         <header className="shrink-0 pb-3 pt-3 text-center">
+          {/* 다른 화면(모의투자·랭킹 등)은 전부 이 자리에 화면 이름 배지가 있는데 튜토리얼만 없었다
+              (2026-08-24 피드백 — "다른 메뉴들처럼 튜토리얼이라고 떴으면"). */}
+          <Eyebrow>튜토리얼</Eyebrow>
           {/* 주식 튜토리얼 입구를 닫은 동안에도 이미 주식을 진행 중인 사용자에겐 탭을 남긴다. */}
           {showBothMarkets && (
-            <MarketTabs market={market} onChange={setMarket} markets={markets} />
+            <MarketTabs market={market} onChange={setMarket} markets={markets} className="mt-3" />
           )}
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
