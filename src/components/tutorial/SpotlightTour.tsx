@@ -194,6 +194,16 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
     setIndex(next)
   }, [finish])
 
+  /** 이전 단계로 돌아간다. 사용자가 직접 누른 이동이라 건너뛰기 유예 없이 곧바로 그 단계 대상을 찾는다. */
+  const goPrev = useCallback(() => {
+    const prev = indexRef.current - 1
+    if (prev < 0) return
+    indexRef.current = prev
+    lockedRef.current = false
+    graceUntilRef.current = 0
+    setIndex(prev)
+  }, [])
+
   // 애니메이션 축소 선호 감지. jsdom 등 matchMedia가 없는 환경도 있으므로 존재를 확인한다.
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
@@ -340,9 +350,16 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
           <Button type="button" variant="ghost" size="sm" onClick={finish}>
             안내 끄기
           </Button>
-          <Button type="button" variant="primary" size="sm" onClick={goNext}>
-            {isLast ? '안내 마치기' : '다음'}
-          </Button>
+          <div className="flex items-center gap-2">
+            {index > 0 && (
+              <Button type="button" variant="ghost" size="sm" onClick={goPrev}>
+                이전
+              </Button>
+            )}
+            <Button type="button" variant="primary" size="sm" onClick={goNext}>
+              {isLast ? '안내 마치기' : '다음'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

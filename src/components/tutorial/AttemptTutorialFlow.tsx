@@ -15,6 +15,7 @@ import { TutorialModal } from './TutorialModal'
 import { TutorialGoalRail } from './TutorialGoalRail'
 import type { TutorialGoal } from './TutorialGoalRail'
 import { TutorialPhaseCard } from './TutorialPhaseCard'
+import { TutorialPhaseProgress } from './TutorialPhaseProgress'
 import { phaseText, tutorialPhase } from './tutorialPhase'
 import { ExitOutcomeModal } from './ExitOutcomeModal'
 import { ExitRuleIntroModal } from './ExitRuleIntroModal'
@@ -3055,6 +3056,7 @@ export function AttemptTutorialFlow({
           <p className="text-sm font-medium text-ink">
             {attempt.runNumber}번째 연습 · {replay ? '완료 기록 다시 보기' : '진행 중'}
           </p>
+          {!replay && <TutorialPhaseProgress market={market} phase={phase} />}
           {!replay && (
             <div className="mt-2">
               <TutorialGoalRail
@@ -3112,11 +3114,19 @@ export function AttemptTutorialFlow({
             : 'lg:grid-cols-[minmax(0,13fr)_minmax(0,75fr)]'
         }`}
       >
-        {/* 1. 종목 목록 */}
-        <Card className="min-h-0" innerClassName="flex h-full min-h-0 flex-col p-3">
+        {/* 1. 종목 목록 — 아직 고르지 않은 동안은 이 카드가 "지금 눌러야 할 것"이므로 테두리와
+            글로우로 강조한다. 고르고 나면 다른 카드와 같은 무게로 되돌아간다. */}
+        <Card
+          className={`min-h-0 ${instrumentListOpen ? 'ring-2 ring-brand/60' : ''}`}
+          innerClassName="flex h-full min-h-0 flex-col p-3"
+          accent={instrumentListOpen ? 'brand' : 'none'}
+        >
           {instrumentListOpen ? (
             <div className="shrink-0 px-2 pb-2">
-              <h2 className="text-sm font-semibold text-ink">연습할 종목을 고릅니다</h2>
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5 text-[11px] font-medium text-brand">
+                먼저 여기서 고르세요
+              </span>
+              <h2 className="mt-1.5 text-sm font-semibold text-ink">연습할 종목을 고릅니다</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted">
                 실제 회사가 아니라 연습용으로 만든 가상 종목이에요. 고르면 바로 값이 움직이기 시작합니다.
               </p>
@@ -3196,7 +3206,7 @@ export function AttemptTutorialFlow({
           </div>
         </Card>
 
-        <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,46fr)_minmax(0,22fr)]">
+        <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,38fr)_minmax(0,30fr)]">
           {/* 2. 차트 */}
           <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto">
             {/*
