@@ -333,6 +333,7 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
   const motion = reduced ? '' : 'transition-[top,left,width,height] duration-200 ease-spring'
 
   return (
+    <>
     <div
       role="dialog"
       aria-label="화면 사용법 안내"
@@ -390,20 +391,28 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
           </div>
         </div>
       </div>
-
-      <ConfirmDialog
-        open={confirmingOff}
-        title="안내를 끌까요?"
-        message="화면 위쪽 '안내 다시 보기' 버튼을 누르면 언제든 다시 볼 수 있어요. 다만 지금 끄면 다음에 뭘 해야 할지 헷갈릴 수 있어요."
-        confirmLabel="끄기"
-        cancelLabel="켜고 계속 진행"
-        confirmVariant="ghost"
-        onConfirm={() => {
-          setConfirmingOff(false)
-          finish()
-        }}
-        onCancel={() => setConfirmingOff(false)}
-      />
     </div>
+
+    {/*
+      root(위 div)의 pointer-events-none 밖에 둔다 — CSS pointer-events는 상속되는 속성이라,
+      ConfirmDialog가 그 안에 있으면 자기 배경·버튼에 pointer-events-auto를 따로 주지 않는 한
+      전부 클릭이 통과해 버린다. 실제로 "끄기"·"켜고 계속 진행" 둘 다 눌러도 반응이 없었다
+      (2026-08-24 실사용 보고) — ConfirmDialog를 고치는 대신(다른 호출부는 이 문제가 없다) 여기서
+      바깥으로 뺀다.
+    */}
+    <ConfirmDialog
+      open={confirmingOff}
+      title="안내를 끌까요?"
+      message="화면 위쪽 '안내 다시 보기' 버튼을 누르면 언제든 다시 볼 수 있어요. 다만 지금 끄면 다음에 뭘 해야 할지 헷갈릴 수 있어요."
+      confirmLabel="끄기"
+      cancelLabel="켜고 계속 진행"
+      confirmVariant="ghost"
+      onConfirm={() => {
+        setConfirmingOff(false)
+        finish()
+      }}
+      onCancel={() => setConfirmingOff(false)}
+    />
+    </>
   )
 }
