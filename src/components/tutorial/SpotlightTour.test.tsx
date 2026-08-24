@@ -167,22 +167,55 @@ describe('SpotlightTour', () => {
     expect(screen.getByText(steps[1].title)).toBeInTheDocument()
   })
 
-  it('"안내 끄기"를 누르면 사라지고 localStorage 에 기록된다', () => {
+  it('"안내 끄기"를 누르면 바로 끄지 않고 먼저 확인을 받는다', () => {
+    // 되돌리는 길("안내 다시 보기")을 모르는 채로 끄면 다음에 뭘 해야 할지 헷갈릴 수 있어서,
+    // 그 자리에서 한 번 물어본다(2026-08-24 피드백).
     mountTargets(['instrument', 'buy'])
     renderTour()
 
     fireEvent.click(screen.getByRole('button', { name: '안내 끄기' }))
 
+    expect(screen.getByRole('dialog', { name: '안내를 끌까요?' })).toBeInTheDocument()
+    expect(screen.getByText(/안내 다시 보기.*버튼을 누르면 언제든 다시 볼 수 있어요/)).toBeInTheDocument()
+    // 확인하기 전까지는 안내 자체가 그대로 남아 있다.
+    expect(screen.getByText(steps[0].title)).toBeInTheDocument()
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
+  it('확인창에서 "끄기"를 누르면 그제서야 사라지고 localStorage 에 기록된다', () => {
+    mountTargets(['instrument', 'buy'])
+    renderTour()
+
+    fireEvent.click(screen.getByRole('button', { name: '안내 끄기' }))
+    fireEvent.click(screen.getByRole('button', { name: '끄기' }))
+
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
   })
 
-  it('Esc 를 누르면 즉시 종료하고 기록을 남긴다', () => {
+  it('확인창에서 "켜고 계속 진행"을 누르면 누르기 전 상태로 돌아간다', () => {
+    mountTargets(['instrument', 'buy'])
+    renderTour()
+
+    fireEvent.click(screen.getByRole('button', { name: '안내 끄기' }))
+    fireEvent.click(screen.getByRole('button', { name: '켜고 계속 진행' }))
+
+    expect(screen.queryByRole('dialog', { name: '안내를 끌까요?' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '화면 사용법 안내' })).toBeInTheDocument()
+    expect(screen.getByText(steps[0].title)).toBeInTheDocument()
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
+  it('Esc 를 누르면 즉시 끄지 않고 같은 확인창을 띄운다', () => {
     mountTargets(['instrument', 'buy'])
     renderTour()
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
+    expect(screen.getByRole('dialog', { name: '안내를 끌까요?' })).toBeInTheDocument()
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '끄기' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
   })

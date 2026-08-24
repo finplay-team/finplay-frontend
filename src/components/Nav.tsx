@@ -6,7 +6,12 @@ import { useTutorialProgress } from '../hooks/useTutorialProgress'
 import { LinkButton } from './ui/Button'
 import { Logout } from './ui/icons'
 
-const supportLink = { to: '/support', label: '고객센터' }
+/**
+ * emoji·description은 모바일 풀스크린 메뉴에서만 쓴다(2026-08-24 피드백 — 큰 글씨만 있어 각
+ * 항목이 무엇을 하는 화면인지 이름만으로 짐작해야 했다). lg 이상의 pill 메뉴는 폭이 좁아 이름
+ * 하나로도 이미 붐빈다 — 그 자리는 그대로 라벨만 쓴다.
+ */
+const supportLink = { to: '/support', label: '고객센터', emoji: '💬', description: '문의하고 도움받기' }
 
 /**
  * 로그인 시 추가로 노출되는 메뉴.
@@ -17,13 +22,13 @@ const supportLink = { to: '/support', label: '고객센터' }
  * 자체는 그대로 있다.
  */
 const authLinks = [
-  { to: '/news', label: '뉴스' },
-  { to: '/tutorial', label: '튜토리얼' },
-  { to: '/trade', label: '모의투자' },
-  { to: '/portfolio', label: '포트폴리오' },
-  { to: '/feedback', label: 'AI 복기' },
-  { to: '/rankings', label: '랭킹' },
-  { to: '/me', label: '내정보' },
+  { to: '/news', label: '뉴스', emoji: '📰', description: '시장 소식과 시황 브리핑' },
+  { to: '/tutorial', label: '튜토리얼', emoji: '🎓', description: '따라 하며 배우는 첫 연습' },
+  { to: '/trade', label: '모의투자', emoji: '📈', description: '실시간 시세로 매매 연습' },
+  { to: '/portfolio', label: '포트폴리오', emoji: '💼', description: '내 자산과 체결 내역' },
+  { to: '/feedback', label: 'AI 복기', emoji: '🤖', description: '오늘 매매를 되짚어보기' },
+  { to: '/rankings', label: '랭킹', emoji: '🏆', description: '다른 사용자와 성과 비교' },
+  { to: '/me', label: '내정보', emoji: '👤', description: '계정 정보와 내 활동' },
 ]
 
 export function Nav() {
@@ -182,33 +187,48 @@ export function Nav() {
         </button>
       </nav>
 
-      {/* 풀스크린 글래스 오버레이 */}
+      {/*
+        풀스크린 글래스 오버레이. 예전엔 이름만 text-4xl로 큼직하게 나열했다 — 처음 오는 사람은
+        "AI 복기"·"랭킹" 같은 이름만으로 그 화면이 뭘 하는 곳인지 짐작해야 했다(2026-08-24 피드백).
+        이모지 아이콘 + 한 줄 설명을 더해 각 행이 스스로 무엇을 하는지 말하게 하고, 줄 사이 구분선과
+        패딩으로 탭 영역을 넓혔다. 세로로 늘어난 만큼 overflow-y-auto를 더해 작은 화면에서도
+        전부 스크롤해 닿을 수 있게 한다(예전엔 justify-center 하나만 믿고 있어 항목이 늘면 잘릴
+        수 있었다).
+      */}
       <div
-        className={`fixed inset-0 z-30 flex flex-col justify-center bg-canvas/90 px-6 backdrop-blur-2xl transition-all duration-500 ease-spring lg:hidden ${
+        className={`fixed inset-0 z-30 flex flex-col justify-center overflow-y-auto bg-canvas/90 px-6 py-24 backdrop-blur-2xl transition-all duration-500 ease-spring lg:hidden ${
           open ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col">
           {navLinks.map((l, i) => (
             <Link
               key={l.to}
               to={l.to}
               onClick={() => setOpen(false)}
-              className={`font-display text-4xl font-semibold tracking-tight text-ink transition-all duration-500 ease-spring ${
+              className={`flex items-center gap-4 border-b border-white/[0.06] py-4 transition-all duration-500 ease-spring first:border-t active:scale-[0.99] ${
                 open ? 'translate-y-0 opacity-100' : 'translate-y-12 opacity-0'
               }`}
               style={{ transitionDelay: open ? `${100 + i * 60}ms` : '0ms' }}
             >
-              {l.label}
-              {showTutorialNudge && l.to === '/tutorial' && (
-                <>
-                  <span
-                    aria-hidden
-                    className="ml-2 inline-block h-2.5 w-2.5 rounded-full bg-brand align-middle"
-                  />
-                  <span className="sr-only"> (아직 완료하지 않았습니다)</span>
-                </>
-              )}
+              <span
+                aria-hidden
+                className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-white/[0.04] text-xl"
+              >
+                {l.emoji}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
+                  {l.label}
+                  {showTutorialNudge && l.to === '/tutorial' && (
+                    <>
+                      <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-brand" />
+                      <span className="sr-only"> (아직 완료하지 않았습니다)</span>
+                    </>
+                  )}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted">{l.description}</span>
+              </span>
             </Link>
           ))}
         </div>

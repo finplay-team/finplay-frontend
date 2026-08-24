@@ -74,6 +74,12 @@ export function ExitOutcomeModal({
   const stopLoss = outcome.cause === 'STOP_LOSS'
   const allDone = goals.every((goal) => goal.done)
   const remaining = goals.filter((goal) => !goal.done).length
+  /**
+   * "둘 다"라고 못박아 뒀던 문구를 목표 칸 수에 맞춘다 — 코인은 이제 목표가 세 칸(시장가·지정가·
+   * 손절익절)이라 항상 "둘"일 수 없다(2026-08-24). 자연스러운 한글 수사만 쓰고, 다섯 칸을 넘는
+   * 목표는 이 화면에 없으므로 그 이상은 다루지 않는다.
+   */
+  const countWord = (count: number) => ['', '하나', '둘', '셋', '넷', '다섯'][count] ?? `${count}개`
 
   /**
    * 규칙이 지켜 준 금액. 두 값이 다 있고 **실제로 덜 잃었을 때만** 말한다 — 손절 뒤에 값이 되돌아온
@@ -125,7 +131,11 @@ export function ExitOutcomeModal({
         ))}
       </div>
       <p className="mt-1.5 text-xs text-muted">
-        {allDone ? '둘 다 채웠습니다.' : remaining === 1 ? '하나 남았습니다.' : '둘 다 남았습니다.'}
+        {allDone
+          ? `${countWord(goals.length)} 다 채웠습니다.`
+          : remaining === goals.length
+            ? `${countWord(goals.length)} 다 남았습니다.`
+            : `${countWord(remaining)} 남았습니다.`}
       </p>
 
       <Button
