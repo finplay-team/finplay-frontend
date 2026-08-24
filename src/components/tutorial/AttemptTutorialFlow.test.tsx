@@ -2742,6 +2742,19 @@ describe('AttemptTutorialFlow', () => {
       expect(
         within(phaseCard).getByText('얼마나 내려가면 팔지, 올라가면 팔지 지금 정하세요'),
       ).toBeInTheDocument()
+      // 시장가·지정가를 마친 뒤에도 손절·익절 단계를 지금 당장 끝내지 않아도 된다는 것과, 그래도
+      // 완료·보상에는 결국 필요하다는 것을 함께 말한다(2026-08-24 피드백).
+      expect(within(phaseCard).getByText(/지금 끝내지 않아도 괜찮아요/)).toBeInTheDocument()
+      expect(within(phaseCard).getByText(/손절과 익절을 한 번씩은 실제로 겪어야/)).toBeInTheDocument()
+    })
+
+    it('국면 — 주식은 손절·익절 개념이 없어 "지금 끝내지 않아도" 안내를 보여주지 않는다', async () => {
+      renderFlow(attempt({ market: 'STOCK', riskSnapshot: risk }), progress(holdingEvidence()))
+      await flushPromises()
+
+      const phaseCard = screen.getByLabelText('지금 배우는 것')
+      expect(within(phaseCard).getByText('팔아보기')).toBeInTheDocument()
+      expect(within(phaseCard).queryByText(/지금 끝내지 않아도 괜찮아요/)).not.toBeInTheDocument()
     })
 
     it('D 국면 — 예약을 걸면 지켜보는 자리로 이름이 바뀐다', async () => {
@@ -2754,6 +2767,9 @@ describe('AttemptTutorialFlow', () => {
       const phaseCard = screen.getByLabelText('지금 배우는 것')
       expect(within(phaseCard).getByText('규칙이 대신 파는 것 지켜보기')).toBeInTheDocument()
       expect(within(phaseCard).getByText('선에 닿을 때까지 기다립니다')).toBeInTheDocument()
+      // PLAN뿐 아니라 WATCH(예약을 걸고 지켜보는 중)에도 같은 안내가 남아 있어야 한다 — 이
+      // 국면에서도 굳이 지금 지켜보지 않고 나중에 와도 된다는 사실은 똑같다.
+      expect(within(phaseCard).getByText(/지금 끝내지 않아도 괜찮아요/)).toBeInTheDocument()
     })
 
     it('E 국면 — 목표 두 칸을 채우면 되돌아보기 탭이 실제로 열리고 마무리 버튼이 생긴다', async () => {
