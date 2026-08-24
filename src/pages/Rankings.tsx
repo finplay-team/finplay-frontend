@@ -219,6 +219,11 @@ export function Rankings() {
                 overflow-hidden을 주고, 그 안 span에 truncate를 줘 — "내 닉네임과 같음" 배지는
                 shrink-0으로 남기고 닉네임 글자만 말줄임된다. 그래도 아주 긴 값이 있을 경우를 대비해
                 overflow-x-auto는 안전망으로 남긴다(평소엔 스크롤할 게 없다).
+
+                실현손익 칸은 처음엔 줄바꿈을 허용해 뒀는데, 자릿수가 큰 값이 두 줄로 접혀 오히려
+                읽기 불편했다(2026-08-24 피드백 — "글자가 작아지는 쪽으로"). whitespace-nowrap으로
+                한 줄을 강제하고, 그 대신 이 칸만 작은 글자(text-xs)를 쓴다 — 이 앱의 시드머니
+                규모(최대 8자리대)에서 나올 수 있는 값이 한 줄 폭(w-28) 안에 항상 들어간다.
               */}
               <div className="overflow-x-auto">
                 <table className="w-full table-fixed border-collapse text-sm">
@@ -226,7 +231,7 @@ export function Rankings() {
                     <tr className="text-xs text-muted">
                       <th className="w-12 px-2 py-3 text-left font-medium sm:w-16 sm:px-4">순위</th>
                       <th className="px-2 py-3 text-left font-medium sm:px-4">닉네임</th>
-                      <th className="w-24 px-2 py-3 text-right font-medium sm:w-32 sm:px-4">실현손익</th>
+                      <th className="w-28 px-2 py-3 text-right font-medium sm:w-36 sm:px-4">실현손익</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
@@ -252,7 +257,9 @@ export function Rankings() {
                               )}
                             </span>
                           </td>
-                          <td className={`px-2 py-3 text-right tabular sm:px-4 ${pnlTone(entry.realizedPnl)}`}>
+                          <td
+                            className={`whitespace-nowrap px-2 py-3 text-right text-xs tabular sm:px-4 sm:text-sm ${pnlTone(entry.realizedPnl)}`}
+                          >
                             {signedKRW(entry.realizedPnl)}
                           </td>
                         </tr>
