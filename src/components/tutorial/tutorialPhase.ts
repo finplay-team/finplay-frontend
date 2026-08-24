@@ -7,7 +7,7 @@ import type { Market } from '../../services/types'
  * 숫자가 같은 순간에 화면에 동시에 떴다. 더 근본적인 문제는 **여섯 체계가 전부 조작을 셌다는 것**이다 —
  * 손절을 겪는 그 순간에도 화면이 하는 말이 "지켜보기"였다.
  *
- * 그래서 국면에는 학습 목표로 이름만 붙이고, 진행감은 상단의 목표 두 칸(`TutorialGoalRail`)이 전담한다.
+ * 그래서 국면에는 학습 목표로 이름만 붙이고, 진행감은 상단의 목표 칸들(`TutorialGoalRail`)이 전담한다.
  * `PLAN`↔`WATCH`가 손절·익절을 겪을 때마다 되풀이되므로 번호로는 애초에 정직하게 셀 수 없다 —
  * 이름이 `PLAN`으로 되돌아가는 것 자체가 "한 번 더 한다"는 신호다.
  */
@@ -30,7 +30,7 @@ export interface TutorialPhaseInput {
   supportsExitPlan: boolean
   holding: boolean
   hasPlan: boolean
-  /** 상단의 목표 두 칸을 다 채웠는가. */
+  /** 상단의 목표 칸들을 다 채웠는가. */
   goalsComplete: boolean
 }
 

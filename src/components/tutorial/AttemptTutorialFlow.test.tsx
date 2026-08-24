@@ -906,11 +906,11 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(screen.getByText('아직 팔 기준이 없습니다')).toBeInTheDocument()
-    // 남은 목표는 국면 본문이 아니라 상단 목표 두 칸이 말한다 — 한 국면의 문장은 하나다.
+    // 남은 목표는 국면 본문이 아니라 상단 목표 칸이 말한다 — 한 국면의 문장은 하나다. 손절만
+    // 겪은 지금은 손절·익절 겪기가 아직 안 채워졌다(2026-08-24 — 둘을 한 칸으로 합쳤다).
     const goalRail = screen.getByLabelText('오늘의 목표')
-    expect(within(goalRail).getByText('✓ 손절 겪기')).toBeInTheDocument()
-    expect(within(goalRail).getByText('익절 겪기')).toBeInTheDocument()
-    expect(screen.getByText('✓ 손절 겪기')).toBeInTheDocument()
+    expect(within(goalRail).getByText('손절·익절 겪기')).toBeInTheDocument()
+    expect(within(goalRail).queryByText('✓ 손절·익절 겪기')).not.toBeInTheDocument()
   })
 
   it('예약 생성이 거부되면 그 자리에 이유를 보여준다', async () => {
@@ -970,8 +970,7 @@ describe('AttemptTutorialFlow', () => {
     expect(
       screen.getByText('규칙이 아니라 당신이 팔았습니다'),
     ).toBeInTheDocument()
-    expect(screen.getByText('손절 겪기')).toBeInTheDocument()
-    expect(screen.getByText('익절 겪기')).toBeInTheDocument()
+    expect(screen.getByLabelText('오늘의 목표')).toHaveTextContent('손절·익절 겪기')
   })
 
   it('손절만 겪었으면 이제 익절을 겪을 차례라고 다음 할 일을 말해 준다', async () => {
@@ -984,10 +983,10 @@ describe('AttemptTutorialFlow', () => {
 
     expect(screen.getByText('손절을 겪었습니다')).toBeInTheDocument()
     expect(screen.getByText('이제 익절을 겪어 볼 차례입니다.')).toBeInTheDocument()
-    expect(screen.getByText('✓ 손절 겪기')).toBeInTheDocument()
-    expect(screen.getByText('익절 겪기')).toBeInTheDocument()
-    // 다시 사라고 권할 뿐, 나가는 길을 막지 않는다.
-    expect(screen.getByText('이제 익절을 겪어 볼 차례입니다.')).toBeInTheDocument()
+    // 다음 할 일은 이 문장이 말하고, 위 요약 칸(손절·익절 겪기)은 둘 다 겪기 전엔 체크되지 않는다.
+    expect(
+      within(screen.getByLabelText('오늘의 목표')).queryByText('✓ 손절·익절 겪기'),
+    ).not.toBeInTheDocument()
   })
 
   it('둘 다 겪으면 목표를 다 채웠다고 말한다', async () => {
@@ -999,8 +998,9 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     expect(screen.getByText('손절과 익절을 다 겪었습니다')).toBeInTheDocument()
-    expect(screen.getByText('✓ 손절 겪기')).toBeInTheDocument()
-    expect(screen.getByText('✓ 익절 겪기')).toBeInTheDocument()
+    expect(
+      within(screen.getByLabelText('오늘의 목표')).getByText('✓ 손절·익절 겪기'),
+    ).toBeInTheDocument()
   })
 
   it('서버가 경험 판정을 내려주면 진입 기록 폴백 대신 그 값을 따른다', async () => {
@@ -1020,8 +1020,10 @@ describe('AttemptTutorialFlow', () => {
 
     expect(screen.getByText('익절을 겪었습니다')).toBeInTheDocument()
     expect(screen.getByText('이제 손절을 겪어 볼 차례입니다.')).toBeInTheDocument()
-    expect(screen.getByText('✓ 익절 겪기')).toBeInTheDocument()
-    expect(screen.getByText('손절 겪기')).toBeInTheDocument()
+    // 서버 판정으로는 아직 하나뿐이라 요약 칸은 체크되지 않는다.
+    expect(
+      within(screen.getByLabelText('오늘의 목표')).queryByText('✓ 손절·익절 겪기'),
+    ).not.toBeInTheDocument()
   })
 
   it('아직 아무것도 안 샀으면 먼저 사라고만 말한다', async () => {
@@ -1061,12 +1063,15 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    expect(screen.getByText('✓ 시장가 매매')).toBeInTheDocument()
-    expect(screen.getByText('지정가 매매')).toBeInTheDocument()
-    expect(screen.queryByText('✓ 지정가 매매')).not.toBeInTheDocument()
+    // "오늘의 목표"에도 같은 이름의 칩이 있어(2026-08-24) 전역 조회로는 둘 다 걸린다 —
+    // 체크리스트 자체 영역으로 좁혀서 확인한다.
+    const checklist = screen.getByLabelText('주문 방법 학습 체크리스트')
+    expect(within(checklist).getByText('✓ 시장가 매매')).toBeInTheDocument()
+    expect(within(checklist).getByText('지정가 매매')).toBeInTheDocument()
+    expect(within(checklist).queryByText('✓ 지정가 매매')).not.toBeInTheDocument()
     // 세 번째 칩("손절·익절 기준 정하기")은 이 국면에서 달성 자체가 불가능해 빼고, 그 목표는
     // 상단 "오늘의 목표"와 예약 국면이 대신 말한다.
-    expect(screen.queryByText(/손절·익절 기준 정하기/)).not.toBeInTheDocument()
+    expect(within(checklist).queryByText(/손절·익절 기준 정하기/)).not.toBeInTheDocument()
   })
 
   it('2단계를 벗어나면 체크리스트를 더 그리지 않는다 (예약을 거는 국면의 할 일이 아니다)', async () => {
@@ -1080,8 +1085,7 @@ describe('AttemptTutorialFlow', () => {
     await waitFor(() => expect(getPracticeAttemptChart).toHaveBeenCalled())
     await flushPromises()
 
-    expect(screen.queryByText(/시장가 매매/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/지정가 매매/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('주문 방법 학습 체크리스트')).not.toBeInTheDocument()
   })
 
   it('손절·익절로 자동 정리된 매도가 있는데도 시장가 매매가 미완료면 그 이유를 알려준다 (실사용 중 발견)', async () => {
@@ -2137,10 +2141,11 @@ describe('AttemptTutorialFlow', () => {
     await flushPromises()
 
     const goalRail = screen.getByLabelText('오늘의 목표')
-    expect(within(goalRail).getByText('손절 겪기')).toBeInTheDocument()
-    expect(within(goalRail).getByText('익절 겪기')).toBeInTheDocument()
+    expect(within(goalRail).getByText('시장가 매매')).toBeInTheDocument()
+    expect(within(goalRail).getByText('지정가 매매')).toBeInTheDocument()
+    expect(within(goalRail).getByText('손절·익절 겪기')).toBeInTheDocument()
     expect(
-      within(goalRail).getByText('손절 한 번, 익절 한 번을 겪으면 마무리할 수 있어요.'),
+      within(goalRail).getByText('시장가·지정가 매매를 마치고 손절·익절을 한 번씩 겪으면 마무리할 수 있어요.'),
     ).toBeInTheDocument()
 
     // 번호 체계는 전부 걷어냈다 — 로드맵 4단계도, 인라인 헤딩 번호도 없다.
@@ -2702,6 +2707,17 @@ describe('AttemptTutorialFlow', () => {
       })
     }
 
+    /**
+     * 이 describe 블록의 시나리오(보유 중·예약·자동 매도)는 전부 ORDER_BASICS를 이미 벗어난
+     * 뒤의 국면이다 — 시장가·지정가를 마치지 않으면 그 국면 자체에 들어올 수 없다. 그래서 이
+     * 두 목표는 여기서는 늘 완료로 둔다(2026-08-24 — 오늘의 목표에 시장가·지정가가 추가됐다).
+     */
+    const stageBasicsDone = {
+      marketBuySellCompleted: true,
+      limitBuySellCompleted: true,
+      exitPresetSelected: true,
+    }
+
     it('A 국면 — 종목을 고르기 전에는 왼쪽에서 고르라고만 말한다', async () => {
       renderFlow(
         attempt({ status: 'SELECTING_INSTRUMENT', instrumentId: null, riskSnapshot: null }),
@@ -2782,7 +2798,7 @@ describe('AttemptTutorialFlow', () => {
         causeStatus: 'NONE_KNOWN',
       })
       renderFlow(attempt({ riskSnapshot: risk }), {
-        ...progress(soldEvidence()),
+        ...progress(soldEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, stageBasicsDone),
         entries: [
           entry({ entrySequence: 1, sellCause: 'STOP_LOSS' }),
           entry({ entrySequence: 2, sellCause: 'TAKE_PROFIT', realizedPnl: 1000 }),
@@ -2792,8 +2808,7 @@ describe('AttemptTutorialFlow', () => {
       await flushPromises()
 
       const goalRail = screen.getByLabelText('오늘의 목표')
-      expect(within(goalRail).getByText('✓ 손절 겪기')).toBeInTheDocument()
-      expect(within(goalRail).getByText('✓ 익절 겪기')).toBeInTheDocument()
+      expect(within(goalRail).getByText('✓ 손절·익절 겪기')).toBeInTheDocument()
 
       expect(screen.getByRole('button', { name: '되돌아보기' })).toBeEnabled()
       expect(screen.getByText("아래 '지금 마무리하기'를 누르면 끝납니다.")).toBeInTheDocument()
@@ -2804,31 +2819,32 @@ describe('AttemptTutorialFlow', () => {
       ).toBeInTheDocument()
     })
 
-    it('목표 두 칸은 겪은 것만 센다 — 예약을 걸어 둔 것만으로는 채워지지 않는다', async () => {
+    it('목표는 겪은 것만 센다 — 예약을 걸어 둔 것만으로는 채워지지 않는다', async () => {
       const view = renderFlow(attempt({ riskSnapshot: risk }), {
-        ...progress(holdingEvidence()),
+        ...progress(holdingEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, stageBasicsDone),
         pendingExitPlan: exitPlan,
       })
       await flushPromises()
 
-      expect(within(screen.getByLabelText('오늘의 목표')).getByText('손절 겪기')).toBeInTheDocument()
+      expect(within(screen.getByLabelText('오늘의 목표')).getByText('손절·익절 겪기')).toBeInTheDocument()
       expect(
-        within(screen.getByLabelText('오늘의 목표')).queryByText('✓ 손절 겪기'),
+        within(screen.getByLabelText('오늘의 목표')).queryByText('✓ 손절·익절 겪기'),
       ).not.toBeInTheDocument()
 
       rerenderWith(view, {
-        ...progress(soldEvidence()),
+        ...progress(soldEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, stageBasicsDone),
         entries: [entry({ sellCause: 'STOP_LOSS' })],
       })
 
+      // 손절만 겪었을 뿐 익절은 아직이라 손절·익절 겪기 칸은 여전히 안 채워진다.
       const goalRail = screen.getByLabelText('오늘의 목표')
-      expect(within(goalRail).getByText('✓ 손절 겪기')).toBeInTheDocument()
-      expect(within(goalRail).getByText('익절 겪기')).toBeInTheDocument()
+      expect(within(goalRail).getByText('손절·익절 겪기')).toBeInTheDocument()
+      expect(within(goalRail).queryByText('✓ 손절·익절 겪기')).not.toBeInTheDocument()
     })
 
     it('손절로 자동 정리되는 순간 두 숫자를 나란히 보여주고 규칙이 지켜 준 금액을 말한다', async () => {
       const view = renderFlow(attempt({ riskSnapshot: risk }), {
-        ...progress(holdingEvidence()),
+        ...progress(holdingEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, stageBasicsDone),
         pendingExitPlan: exitPlan,
       })
       await flushPromises()
@@ -2836,7 +2852,7 @@ describe('AttemptTutorialFlow', () => {
 
       // 사용자가 누른 적이 없는 사건이다 — tick이 entries에 새 sellCause를 만든 순간에만 잡힌다.
       rerenderWith(view, {
-        ...progress(soldEvidence()),
+        ...progress(soldEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, stageBasicsDone),
         entries: [entry({ sellCause: 'STOP_LOSS', realizedPnl: -600, unrealizedPnlIfHeld: -2000 })],
       })
 
@@ -2902,14 +2918,14 @@ describe('AttemptTutorialFlow', () => {
 
     it('둘 다 겪은 뒤의 자동 매도 모달은 "되돌아보기 쓰기"로 마무리로 데려간다', async () => {
       const view = renderFlow(attempt({ riskSnapshot: risk }), {
-        ...progress(holdingEvidence()),
+        ...progress(holdingEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, stageBasicsDone),
         pendingExitPlan: exitPlan,
         entries: [entry({ entrySequence: 1, sellCause: 'STOP_LOSS' })],
       })
       await flushPromises()
 
       rerenderWith(view, {
-        ...progress(soldEvidence()),
+        ...progress(soldEvidence(), 'IN_PROGRESS', 'IN_PROGRESS', false, stageBasicsDone),
         entries: [
           entry({ entrySequence: 1, sellCause: 'STOP_LOSS' }),
           entry({ entrySequence: 2, sellCause: 'TAKE_PROFIT', realizedPnl: 1000 }),
@@ -2917,7 +2933,8 @@ describe('AttemptTutorialFlow', () => {
       })
 
       expect(await screen.findByText('정해 둔 +5% 선에 닿아 규칙이 대신 팔았습니다')).toBeInTheDocument()
-      expect(screen.getByText('둘 다 채웠습니다.')).toBeInTheDocument()
+      // 목표가 셋(시장가·지정가·손절익절)으로 늘어 "둘 다"가 아니라 "셋 다"다(2026-08-24).
+      expect(screen.getByText('셋 다 채웠습니다.')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: '되돌아보기 쓰기' }))
 
       expect(

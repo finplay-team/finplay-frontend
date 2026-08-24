@@ -176,7 +176,7 @@ export function ExitJourneyGuide({
     <section aria-label="손절·익절 학습 진행" className={`rounded-2xl border p-4 ${toneClass}`}>
       {/*
         자체 3칸("1. 사기 › 2. 예약 걸기 › 3. 기다리기")은 지웠다 — 이 화면에 있던 여섯 번째 번호
-        체계였고, 진행감은 상단의 목표 두 칸(`TutorialGoalRail`)이 전담한다.
+        체계였고, 진행감은 상단의 목표 칸들(`TutorialGoalRail`)이 전담한다.
       */}
       <p className="text-sm font-medium text-ink">{title}</p>
       <p className="mt-1 text-xs leading-relaxed text-muted">{body}</p>
@@ -190,7 +190,7 @@ export function ExitJourneyGuide({
         </p>
       )}
       {/*
-        겪은 것을 세는 두 칸은 이제 화면 맨 위(`TutorialGoalRail`)에 있다 — 여기 묻어 두면 스크롤해야
+        겪은 것을 세는 칸들은 이제 화면 맨 위(`TutorialGoalRail`)에 있다 — 여기 묻어 두면 스크롤해야
         보여서, 끝나는 조건이 화면에서 가장 늦게 읽혔다.
       */}
       {phase === 'BOTH' ? (

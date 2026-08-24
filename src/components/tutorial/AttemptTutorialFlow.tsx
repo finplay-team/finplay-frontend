@@ -381,7 +381,7 @@ function StageProgressChecklist({
   /**
    * **"손절·익절 기준 정하기" 칩은 여기 없다.** 이 체크리스트는 이제 2단계(주문 넣는 법) 국면 전용이고,
    * 그 단계에서는 예약을 걸 수단 자체가 잠겨 있다 — 달성 불가인 칩을 상시 노출하면 "왜 안 채워지지"로
-   * 막힌다(실사용 확인). 그 목표는 상단의 목표 두 칸(`TutorialGoalRail`)과 예약 국면이 대신 말한다.
+   * 막힌다(실사용 확인). 그 목표는 상단의 목표 칸들(`TutorialGoalRail`)과 예약 국면이 대신 말한다.
    */
   const items: { key: string; label: string; done: boolean }[] = [
     { key: 'market', label: '시장가 매매', done: progress.marketBuySellCompleted },
@@ -1228,11 +1228,18 @@ export function AttemptTutorialFlow({
   const saleDeadlineAt = evidence?.saleDeadlineAt ?? null
 
   /**
-   * **오늘의 목표 두 칸.** 이 화면이 약속하는 끝은 "몇 단계를 지났는가"가 아니라 "손절과 익절을
-   * 겪었는가" 하나다 — 그것이 이 튜토리얼의 학습 목표(감정이 아니라 규칙으로 매매한다)이기 때문이다.
+   * **오늘의 목표.** 이 화면이 약속하는 끝은 "몇 단계를 지났는가"가 아니라 커리큘럼 세 걸음(시장가
+   * 매매 → 지정가 매매 → 손절·익절 겪기)을 실제로 겪었는가다 — 마지막 한 걸음이 이 튜토리얼의
+   * 학습 목표(감정이 아니라 규칙으로 매매한다)다. 앞 두 걸음(`tutorialStageProgress`)은 이미
+   * `ORDER_BASICS` 국면을 벗어나는 조건과 같은 값이라 이 칸에서 새로 판정하지 않는다 — 그 국면을
+   * 벗어난 시점엔 항상 참이고, 벗어나기 전엔 항상 거짓이다.
    *
-   * 주식은 예약 기능이 없어 두 칸이 영영 안 채워지므로 **같은 자리에 [사보기]·[팔아보기]를 그린다** —
-   * 오지 않을 목표를 걸어 두면 화면이 끝나지 않는 약속을 하는 셈이 된다.
+   * 손절·익절 두 경험은 **하나로 합쳐서 센다**(2026-08-24 피드백) — 어느 하나만 겪었을 때의 "다음
+   * 할 일"은 이 칸이 아니라 그 아래 `ExitJourneyGuide`가 이미 문장으로 말해 준다("이제 익절을 겪어
+   * 볼 차례입니다" 등). 이 칸은 세 걸음을 한눈에 보여주는 요약이라 항목이 늘어난다.
+   *
+   * 주식은 예약 기능이 없어 손절·익절 칸이 영영 안 채워지므로 **같은 자리에 [사보기]·[팔아보기]를
+   * 그린다** — 오지 않을 목표를 걸어 두면 화면이 끝나지 않는 약속을 하는 셈이 된다.
    */
   const goals: TutorialGoal[] =
     market === 'STOCK'
@@ -1241,14 +1248,15 @@ export function AttemptTutorialFlow({
           { label: '팔아보기', done: progress.entries.some((entry) => entry.sellAt !== null) },
         ]
       : [
-          { label: '손절 겪기', done: exitExperience.stopLoss },
-          { label: '익절 겪기', done: exitExperience.takeProfit },
+          { label: '시장가 매매', done: progress.tutorialStageProgress.marketBuySellCompleted },
+          { label: '지정가 매매', done: progress.tutorialStageProgress.limitBuySellCompleted },
+          { label: '손절·익절 겪기', done: exitExperience.stopLoss && exitExperience.takeProfit },
         ]
   const goalsComplete = goals.every((goal) => goal.done)
   const goalSummary =
     market === 'STOCK'
       ? '한 번 사고 한 번 팔면 마무리할 수 있어요.'
-      : '손절 한 번, 익절 한 번을 겪으면 마무리할 수 있어요.'
+      : '시장가·지정가 매매를 마치고 손절·익절을 한 번씩 겪으면 마무리할 수 있어요.'
   const rewardSentence = rewardSentenceParts(market)
 
   /** 코인 시장가 매수만 금액 입력이다 — 지정가는 값을 직접 정하는 자리라 수량 입력을 그대로 쓴다. */
@@ -3066,7 +3074,13 @@ export function AttemptTutorialFlow({
         예전 4단계 로드맵(`StepRail`)이 있던 자리다. 그 레일은 조작을 세느라 손절을 겪는 순간에도
         "지켜보기"라고 말했고 같은 순간 다른 번호와 어긋났다 — 이제 이 자리는 **끝나는 조건**만 말한다.
       */}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pb-4">
+      {/*
+        모바일(<lg)에서는 세로로 쌓는다 — 가로 한 줄로 두면 오른쪽 버튼 묶음("안내 다시 보기"·
+        "처음부터 다시 시작")이 줄바꿈하지 않는 텍스트라 줄지 않고, 대신 왼쪽(회차·학습 단계·오늘의
+        목표)이 flex-1 min-w-0 때문에 그 남는 자리로 짜부라들었다 — 실측 78px 폭에 국면 알약과
+        목표 칩이 세로로 쌓여 읽을 수 없었다(2026-08-24 실사용 보고). lg부터는 원래대로 한 줄이다.
+      */}
+      <div className="flex shrink-0 flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-ink">
             {attempt.runNumber}번째 연습 · {replay ? '완료 기록 다시 보기' : '진행 중'}

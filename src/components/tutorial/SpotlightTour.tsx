@@ -1,6 +1,7 @@
 // 게임 튜토리얼처럼 화면을 어둡게 덮고 지금 눌러야 할 요소 하나만 밝게 드러내 말풍선으로 설명하는 안내 오버레이
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/Button'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 
 export interface SpotlightStep {
   /** 대상 요소의 data-tour 속성값. 예: 'instrument' → [data-tour="instrument"] */
@@ -124,6 +125,10 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
   const [target, setTarget] = useState<HTMLElement | null>(null)
   const [spot, setSpot] = useState<Spot | null>(null)
   const [reduced, setReduced] = useState(false)
+  /** "안내 끄기"·Esc는 바로 끄지 않고 먼저 물어본다 — 되돌릴 수 없는 동작은 아니지만("안내 다시
+   *  보기"로 언제든 다시 켤 수 있다), 그 되돌리는 길 자체를 모르는 채로 끄면 다음에 뭘 해야 할지
+   *  헷갈릴 수 있다는 걸 그 자리에서 한 번 말해 준다(2026-08-24 피드백). */
+  const [confirmingOff, setConfirmingOff] = useState(false)
 
   // steps·storageKey는 부모가 매 렌더 새 참조로 넘길 수 있다. ref로 받아 두면 아래 콜백들이
   // 의존성 없이 안정적으로 유지돼 리렌더마다 리스너를 재등록하지 않는다.
@@ -292,11 +297,13 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
   useEffect(() => {
     if (!enabled) return
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') finish()
+      // 바로 끄지 않고 "안내 끄기" 버튼과 같은 확인 절차를 탄다 — ConfirmDialog가 열려 있는
+      // 동안의 Esc는 그 다이얼로그 자신의 핸들러가 취소로 처리한다(뒤에 등록돼 나중에 실행된다).
+      if (event.key === 'Escape') setConfirmingOff(true)
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [enabled, finish])
+  }, [enabled])
 
   // 단계가 바뀔 때만 말풍선으로 포커스를 옮긴다. 포커스 트랩은 만들지 않아 대상 클릭을 막지 않는다.
   useEffect(() => {
@@ -368,7 +375,7 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
         <p className="mt-1.5 text-sm font-semibold text-ink">{step.title}</p>
         <p className="mt-1.5 text-sm leading-relaxed text-muted">{step.body}</p>
         <div className="mt-4 flex items-center justify-between gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={finish}>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingOff(true)}>
             안내 끄기
           </Button>
           <div className="flex items-center gap-2">
@@ -383,6 +390,20 @@ export function SpotlightTour({ steps, storageKey, active }: Props) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmingOff}
+        title="안내를 끌까요?"
+        message="화면 위쪽 '안내 다시 보기' 버튼을 누르면 언제든 다시 볼 수 있어요. 다만 지금 끄면 다음에 뭘 해야 할지 헷갈릴 수 있어요."
+        confirmLabel="끄기"
+        cancelLabel="켜고 계속 진행"
+        confirmVariant="ghost"
+        onConfirm={() => {
+          setConfirmingOff(false)
+          finish()
+        }}
+        onCancel={() => setConfirmingOff(false)}
+      />
     </div>
   )
 }
